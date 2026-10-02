@@ -1,0 +1,12 @@
+# dsh-web-terminal bundle patch.
+#
+# Inserts the host row that registers the PTY WebSocket upgrade route
+# (/terminal/ws) and the small /api/dsh-web-terminal/info endpoint.
+#
+# The browser half (the floating terminal panel) is discovered separately by the
+# client-modules registry from the `dsh.client` and `exports["./client"]` fields
+# in package.json — it activates whenever this package is loaded into the web
+# profile, so no extra row is needed here.
+- insert:
+    - id: web-terminal
+      name: dsh-web-terminal
