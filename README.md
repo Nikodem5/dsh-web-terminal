@@ -127,3 +127,38 @@ for a brand-new shell, which is when the startup command runs), `{"type":"data",
 - The Trajectory tab is hidden unless developer tools are enabled; the Terminals tab is not gated.
 - The conversation's chat input (and its queue/todo docks) is hidden while the Terminals tab is showing, so the terminals use the full height; it returns on Chat and Trajectory. This is a CSS rule that matches the shell's composer by class substring (`composerSeat`), so a future app build that renames it would need the rule updated in `src/client/styles.ts`.
 - Not yet: clickable file paths, font zoom (Ctrl+wheel), per-terminal colour tags, quick-send snippets.
+
+## Roadmap (planned ideas, not built yet)
+
+Ordered roughly by how much they help when running several agents. Recommended first picks are marked ★.
+
+### Agent awareness
+- ★ **Pattern alerts** — notify when a terminal prints something you choose (`error`, `Do you want to proceed?` for an agent waiting on a permission prompt, a test-failure line).
+- **Idle-too-long alert** — flag a "working" terminal that has produced no output for N minutes (hung agent).
+- **Resume a Claude session** — a picker in the New terminal dialog listing recent Claude sessions for the folder, opening one with `claude --resume <id>`.
+- **Git status in the header** — branch name and dirty marker per terminal.
+- **Worktree launcher** — one click to create a git worktree and open an agent terminal in it, so parallel agents don't clash.
+
+### Speed and navigation
+- ★ **Shortcuts** — `Ctrl+Alt+N` new terminal, `Ctrl+Alt+W` close, `Ctrl+Alt+1–9` jump to a terminal.
+- ★ **Focus mode** — one key maximizes the current terminal and the same key restores the layout.
+- **Smarter placement** — new terminals fill the largest free gap instead of cascading over others.
+- **Search all terminals** — one search box across every terminal's scrollback, jumping to the match.
+
+### Files and input
+- ★ **Clickable file paths** — `Ctrl+click` on `src/foo.ts:42` opens it (URLs already work).
+- **Drag a file or folder onto a terminal** — pastes its quoted path.
+- **Quick-send snippets** — saved prompts sent to one terminal or to the broadcast group.
+
+### Terminal polish
+- **`Ctrl+wheel` font zoom**, copy on select, scrollback size and cursor style settings.
+- **Colour tag per terminal** — a coloured strip on the title bar and list row.
+- **Shell profiles** — named presets with shell, folder, environment variables and startup command (a WSL distro, an SSH host).
+
+### Housekeeping
+- **Per-workspace layouts** — open a saved layout automatically for a given DSH workspace.
+- **Import / export layouts** as a file, to move between machines.
+- **CI** — GitHub Actions running `npm test` (host, client registration, jsdom render) on every push.
+
+### Larger, with a caveat
+- **Let the DSH chat agent read a terminal's output.** Blocked on purpose today: it would hand a model unsandboxed shells and their credentials. If built, it should be opt-in per terminal and read-only.
