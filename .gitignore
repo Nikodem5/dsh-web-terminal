@@ -1,3 +1,7 @@
 node_modules/
 lib/client.js
 *.log
+CLAUDE.md
+GLOSSARY.md
+docs/adr/
+HANDOFF.md
