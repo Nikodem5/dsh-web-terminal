@@ -72,6 +72,19 @@ export function exitAlert(agentState: AgentState | undefined, exitCode: number |
     : { level: 'quiet', label: 'exited', reason: 'The process exited' }
 }
 
+/**
+ * Alert for a terminal whose shell vanished with the host (the page stayed open). Urgent when an
+ * agent was mid-task: that work is gone and nothing else will say so.
+ */
+export function hostRestartAlert(agentState: AgentState | undefined): Alert {
+  const interrupted = agentState === 'working' || agentState === 'needs-you'
+  return {
+    level: interrupted ? 'urgent' : 'quiet',
+    label: 'host restarted',
+    reason: interrupted ? 'The host restarted and the agent was lost mid-task. Restart this window to resume' : 'The host restarted and this shell is gone. Restart this window',
+  }
+}
+
 /** Alert for an agent that has been "working" with no output and no signal for too long, or undefined. */
 export function hungAlert(agent: AgentInfo | undefined, lastOutputAt: number, now: number, minutes: number): Alert | undefined {
   if (agent?.state !== 'working' || minutes <= 0) return undefined
@@ -246,6 +259,14 @@ export function noteHostBusy(rt: Runtime, busy: boolean): void {
 /** The shell itself exited. */
 export function noteExit(rt: Runtime, exitCode: number | null | undefined): void {
   const alert = exitAlert(rt.agent?.state, exitCode)
+  refreshActivity(rt)
+  raiseAttention(rt, alert)
+  emit()
+}
+
+/** The host restarted under an open page and this terminal's shell is gone. */
+export function noteHostRestart(rt: Runtime): void {
+  const alert = hostRestartAlert(rt.agent?.state)
   refreshActivity(rt)
   raiseAttention(rt, alert)
   emit()

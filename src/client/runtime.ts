@@ -7,13 +7,36 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { emit, hostInfo, hostInfoReady, prefs, runtimes, store, updateWin } from './state.ts'
 import { cleanTitle, displayName } from './names.ts'
-import { noteExit, noteHostBusy, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
+import { noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
 let ticker: ReturnType<typeof setInterval> | undefined
+
+/**
+ * Most output bytes a terminal may have queued in xterm before further output is dropped.
+ * term.write is fire-and-forget and xterm parses it far slower than a socket can deliver, so a
+ * runaway program (or a host that stops pacing itself) would otherwise grow the queue until the
+ * page runs out of memory. Dropping is crude but bounded; the host's own backpressure and its
+ * `resync` repaint are the real fix, this is the last line of defence.
+ */
+export const MAX_PENDING_BYTES = 5_000_000
+
+/** Whether `incoming` more bytes fit in the queue without passing the limit. */
+export function admitOutput(pending: number, incoming: number, limit = MAX_PENDING_BYTES): boolean {
+  return pending + incoming <= limit
+}
+
+/**
+ * A reconnect that finds a brand-new shell (`created`) for a terminal that was already attached in
+ * this page lifetime means the host restarted or lost the session. The first attach after a page
+ * reload also has `created: true`, but that is how a saved terminal comes back and resumes.
+ */
+export function isHostRestart(attachedBefore: boolean, created: boolean): boolean {
+  return attachedBefore && created
+}
 
 function setConn(rt: Runtime, conn: Conn, detail = ''): void {
   rt.conn = conn
@@ -86,6 +109,10 @@ export function ensureRuntime(win: WinState): Runtime {
     title: '',
     killed: false,
     retry: 0,
+    attachedOnce: false,
+    hostLost: false,
+    pendingBytes: 0,
+    droppedOutput: false,
     timer: undefined,
     lastCols: 0,
     lastRows: 0,
@@ -183,6 +210,19 @@ export function ensureRuntime(win: WinState): Runtime {
       }
       if (frame.type === 'attached') {
         rt.retry = 0
+        if (isHostRestart(rt.attachedOnce, frame.created === true)) {
+          // Keep the old screen as the record of what was lost, and do not replace a long-running
+          // agent with a fresh shell unasked: kill the one the host just spawned and offer Restart.
+          rt.hostLost = true
+          try {
+            socket.send(JSON.stringify({ type: 'kill' }))
+          } catch {}
+          setConn(rt, 'exited', 'host restarted')
+          noteHostRestart(rt)
+          term.write('\r\n\x1b[2m[host restarted: this shell is gone, restart this window]\x1b[0m\r\n')
+          return
+        }
+        rt.attachedOnce = true
         // A fresh shell has no agent yet; a reattached one reports what its agent was last doing.
         rt.agent = undefined
         restoreAgent(rt, frame.agent)
@@ -208,14 +248,33 @@ export function ensureRuntime(win: WinState): Runtime {
             })
           }
         }
+      } else if (frame.type === 'resync') {
+        // The host dropped output on a congested socket; its replay is the screen as it really is.
+        if (typeof frame.replay !== 'string') return
+        term.reset()
+        if (frame.replay.length > 0) term.write(frame.replay)
       } else if (frame.type === 'data') {
+        if (rt.hostLost || typeof frame.data !== 'string') return
         rt.lastOutputAt = Date.now()
-        term.write(frame.data ?? '')
+        if (!admitOutput(rt.pendingBytes, frame.data.length)) {
+          rt.droppedOutput = true
+          return
+        }
+        const size = frame.data.length
+        rt.pendingBytes += size
+        term.write(frame.data, () => {
+          rt.pendingBytes = Math.max(0, rt.pendingBytes - size)
+          if (rt.droppedOutput && rt.pendingBytes === 0) {
+            rt.droppedOutput = false
+            term.write('\r\n\x1b[2m[output was too fast and part of it was dropped]\x1b[0m\r\n')
+          }
+        })
       } else if (frame.type === 'activity') {
         noteHostBusy(rt, frame.busy === true)
       } else if (frame.type === 'agent') {
         if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at, session: frame.session })
       } else if (frame.type === 'exit') {
+        if (rt.hostLost) return
         setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
         noteExit(rt, frame.exitCode)
         term.write('\r\n\x1b[2m[process exited — close or restart this window]\x1b[0m\r\n')
