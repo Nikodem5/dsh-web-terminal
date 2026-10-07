@@ -96,7 +96,12 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `src/client/new-dialog.tsx` | New-terminal dialog |
 | `src/client/menus.tsx` | Layouts and settings popovers |
 | `src/client/actions.ts` | Safe-close prompts, native folder picker |
-| `src/client/terminal-store.ts` | Window state, runtimes (xterm + socket), activity/attention, preferences |
+| `src/client/terminal-store.ts` | Barrel re-exporting the modules below |
+| `src/client/state.ts`, `types.ts` | Window store, preferences, live runtime map, persistence; shared types |
+| `src/client/windows.ts` | Open, close, focus, maximize, layout presets |
+| `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
+| `src/client/attention.ts` | Activity detection, attention badge, desktop notifications |
+| `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
 | `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs` | Tests |
 
