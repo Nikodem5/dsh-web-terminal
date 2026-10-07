@@ -107,17 +107,27 @@ test('cleanTitle rejects shell banners and paths', () => {
   }
 })
 
-// Known bug: the leading-symbol strip (meant for Claude's status glyph) also eats the
-// "/" or "~" that the path check looks for, so a POSIX path title becomes a window name.
-test('cleanTitle rejects POSIX paths', { todo: 'bug: leading "/" and "~" are stripped before the path check' }, () => {
-  for (const raw of ['/usr/bin/bash', '~/code']) {
-    assert.equal(s.cleanTitle(raw, '/x'), undefined, `should reject ${JSON.stringify(raw)}`)
+test('cleanTitle rejects banners and paths real shells set', () => {
+  const rejected = [
+    '/usr/bin/bash', '~/code', '~', '/', '\\\\server\\share', 'C:\\Users\\me', 'C:/Users/me',
+    'MINGW64:/c/Users/me', 'MINGW32', 'MSYS', 'user@host: ~/projects', 'user@host:/var/log', 'me@box',
+    'Windows PowerShell', 'PowerShell 7', 'PowerShell 7.4.1', 'pwsh', 'cmd', 'Command Prompt', 'Administrator: Windows PowerShell',
+    'wsl', 'Ubuntu', 'zsh', 'bash', 'fish', 'bash: ~/x', '✳ ~/code', 'x', // last: bare directory name == cwd folder
+  ]
+  for (const raw of rejected) {
+    assert.equal(s.cleanTitle(raw, '/home/me/x'), undefined, `should reject ${JSON.stringify(raw)}`)
   }
 })
 
-// Known bug: the banner pattern is `MINGW\b`, which does not match "MINGW64" (Git Bash's title).
-test('cleanTitle rejects the Git Bash title', { todo: 'bug: "MINGW64:/c/x" is not recognised as a shell banner' }, () => {
-  assert.equal(s.cleanTitle('MINGW64:/c/Users/me', '/x'), undefined)
+test('cleanTitle keeps real program titles', () => {
+  const accepted = [
+    ['Fix login bug', 'Fix login bug'], ['✳ Fix login bug', 'Fix login bug'], ['vim main.ts', 'vim main.ts'],
+    ['npm run dev', 'npm run dev'], ['sh deploy.sh', 'sh deploy.sh'], ['ssh me@host', 'ssh me@host'],
+    ['bashing the build', 'bashing the build'], ['Ubuntu setup notes', 'Ubuntu setup notes'], ['cmd-k palette', 'cmd-k palette'],
+  ]
+  for (const [raw, want] of accepted) {
+    assert.equal(s.cleanTitle(raw, '/home/me/x'), want, `should accept ${JSON.stringify(raw)}`)
+  }
 })
 
 test('cleanTitle truncates long titles', () => {

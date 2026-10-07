@@ -16,7 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const bundle = readFileSync(join(here, 'lib', 'client.js'), 'utf8')
 
 const profileRequire = createRequire(
-  pathToFileURL(join(process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? '', '.dsh'), 'profiles', 'package.json')).href,
+  pathToFileURL(join(process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh'), 'profiles', 'package.json')).href,
 )
 const { JSDOM } = createRequire(import.meta.url)(process.env.DSH_JSDOM ?? 'jsdom')
 

@@ -8,13 +8,25 @@
 //   3. /info lists the live session, and a `kill` frame ends it.
 
 import { createServer } from 'node:http'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply, name, inject } from './lib/index.js'
 
 /** The real local subprocess provider, loaded from the installed profile. */
-const PROVIDER = process.env.DSH_SUBPROCESS_LOCAL ?? 'file:///C:/Users/nikod/.dsh/profiles/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js'
+const home = process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh')
+const PROVIDER = process.env.DSH_SUBPROCESS_LOCAL
+  ?? pathToFileURL(join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-subprocess-local', 'lib', 'index.js')).href
 
-const { default: LocalSubprocessRuntime } = await import(PROVIDER)
+// No installed profile (fresh checkout, CI) means there is no real PTY provider to test against.
+const LocalSubprocessRuntime = await import(PROVIDER).then(
+  (mod) => mod.default,
+  (err) => {
+    console.log(`SKIP: local subprocess provider not loadable (${PROVIDER}): ${err.message}`)
+    console.log('Set DSH_HOME or DSH_SUBPROCESS_LOCAL to a profile that has @deepseek-ai/dsh-subprocess-local.')
+    process.exit(0)
+  },
+)
 const provider = new LocalSubprocessRuntime({
   // Minimal cordis-shaped context: the provider is a Service, so it only needs
   // the reflect hook the base class registers itself through, plus the small
@@ -114,13 +126,17 @@ const first = await session(
 )
 const echoed = first.text.includes(marker)
 console.log(echoed ? 'PASS: marker echoed back through the real PTY' : 'FAIL: marker never came back')
+// A long-lived child of the shell, typed as one command line. `node` is on PATH wherever this
+// script runs, and the double-quoted body has no characters that PowerShell, cmd or bash/zsh
+// treat specially, so one string works in every default shell (unlike `ping -n`/`sleep`).
+const LONG_CHILD = 'node -e "setTimeout(function(){},12000)"'
 // 1b) a child process under the shell is reported as busy (providers with inspectActivity only).
 let activityNote = 'skipped'
 let activityOk = true
 if (true) {
   const busy = await session(
     base,
-    (ws) => setTimeout(() => ws.send(JSON.stringify({ type: 'input', data: 'ping -n 12 127.0.0.1 > nul\r' })), 300),
+    (ws) => setTimeout(() => ws.send(JSON.stringify({ type: 'input', data: LONG_CHILD + '\r' })), 300),
     (o) => o.frames.some((f) => f.type === 'activity' && f.busy === true),
   )
   activityOk = busy.frames.some((f) => f.type === 'activity' && f.busy === true)
