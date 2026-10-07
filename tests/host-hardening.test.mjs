@@ -114,32 +114,35 @@ const until = async (predicate, ms = 3000) => {
 
 // ── origin ──
 
-test('originAllowed: absent, same-origin, loopback, dsh-app and configured origins pass', () => {
+test('originAllowed: absent, same-origin loopback, dsh-app and configured origins pass', () => {
   const extra = parseExtraOrigins(' https://Mine.example/ , http://other.test:8080 ')
   assert.deepEqual(extra, ['https://mine.example', 'http://other.test:8080'])
   for (const origin of [
     undefined,
-    'http://127.0.0.1:3000',
-    'https://127.0.0.1',
-    'http://localhost:5173',
+    'http://127.0.0.1:3000', // the harness itself
+    'http://localhost:3000', // loopback names are interchangeable
     'http://[::1]:3000',
+    'HTTP://LOCALHOST:3000',
+    'https://127.0.0.1:3000', // the scheme is not compared, the host and port are
     'dsh-app://app',
     'dsh-app://anything/path',
-    'http://harness.lan:3000', // same as the Host header below
-    'HTTP://Harness.LAN:3000',
     'https://mine.example',
     'http://other.test:8080',
   ]) {
-    assert.equal(originAllowed(origin, 'harness.lan:3000', extra), true, String(origin))
+    assert.equal(originAllowed(origin, '127.0.0.1:3000', extra), true, String(origin))
   }
+  // Default ports count as the port they are.
+  assert.equal(originAllowed('http://localhost', '127.0.0.1', []), true)
+  assert.equal(originAllowed('https://localhost', '127.0.0.1:443', []), true)
 })
 
-test('originAllowed: foreign and malformed origins are refused', () => {
+test('originAllowed: foreign, malformed and other-port origins are refused', () => {
   for (const origin of [
     'https://evil.example',
-    'http://127.0.0.1.evil.example',
-    'http://localhost.evil.example',
-    'http://harness.lan:9999', // different port than Host
+    'http://127.0.0.1.evil.example:3000',
+    'http://localhost.evil.example:3000',
+    'http://127.0.0.1:9999', // another local web app, not the harness
+    'http://localhost:5173',
     'null',
     '',
     'not a url',
@@ -147,8 +150,20 @@ test('originAllowed: foreign and malformed origins are refused', () => {
     'chrome-extension://abc',
     'javascript:alert(1)',
   ]) {
-    assert.equal(originAllowed(origin, 'harness.lan:3000', []), false, JSON.stringify(origin))
+    assert.equal(originAllowed(origin, '127.0.0.1:3000', []), false, JSON.stringify(origin))
   }
+})
+
+test('originAllowed: DNS rebinding (Origin equals Host, but not loopback) is refused', () => {
+  assert.equal(originAllowed('http://attacker.example:3000', 'attacker.example:3000', []), false)
+  assert.equal(originAllowed('http://harness.lan:3000', 'harness.lan:3000', []), false)
+  // ...unless the owner lists it.
+  const extra = parseExtraOrigins('http://harness.lan:3000')
+  assert.equal(originAllowed('http://harness.lan:3000', 'harness.lan:3000', extra), true)
+  // A loopback Origin with a rebinding Host is refused too.
+  assert.equal(originAllowed('http://127.0.0.1:3000', 'attacker.example:3000', []), false)
+  assert.equal(originAllowed('http://127.0.0.1:3000', undefined, []), false)
+  assert.equal(originAllowed('http://127.0.0.1:3000', '', []), false)
 })
 
 test('upgrade: a foreign Origin gets 403 and no shell is spawned', async () => {
@@ -181,8 +196,8 @@ test('upgrade: every allowed Origin form is accepted', async () => {
   const origins = [
     undefined,
     `http://127.0.0.1:${host.port}`, // same origin as the Host header
-    'http://localhost:1234',
-    'http://[::1]:5555',
+    `http://localhost:${host.port}`,
+    `http://[::1]:${host.port}`,
     'dsh-app://app',
     'https://extra.example',
   ]
