@@ -11,6 +11,7 @@
 //   search.ts       find-in-terminal
 //   layouts.ts      saved layouts
 //   broadcast.ts    send to several terminals
+//   launch.ts       startup command rewriting (agent hooks)
 //   preferences.ts  folders, favourites, on/off switches
 //   appearance.ts   font and colour preferences
 //   theme.ts        xterm palette and surface measurement
@@ -24,6 +25,7 @@ export * from './attention.ts'
 export * from './search.ts'
 export * from './layouts.ts'
 export * from './broadcast.ts'
+export * from './launch.ts'
 export * from './preferences.ts'
 export * from './appearance.ts'
 export * from './theme.ts'

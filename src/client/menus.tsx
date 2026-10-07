@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { requestCloseAll } from './actions.ts'
-import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setNotify, setTermTheme } from './terminal-store.ts'
+import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setHungMinutes, setNotify, setSound, setTermTheme } from './terminal-store.ts'
 
 const FONT_CHOICES = [
   { label: 'Cascadia Code (VS Code default)', value: DEFAULT_FONT.family },
@@ -135,7 +135,15 @@ export function SettingsMenu(): ReactElement {
       <div className="wt-pop-title">Notifications</div>
       <label className="wt-item" style={{ cursor: 'pointer' }}>
         <input type="checkbox" checked={prefs.notify} onChange={(e) => setNotify(e.target.checked)} />
-        <span className="wt-grow">Notify when an agent finishes while I am elsewhere</span>
+        <span className="wt-grow">Desktop notification when an agent needs me or finishes while I am elsewhere</span>
+      </label>
+      <label className="wt-item" style={{ cursor: 'pointer' }}>
+        <input type="checkbox" checked={prefs.sound} onChange={(e) => setSound(e.target.checked)} />
+        <span className="wt-grow">Play a chime when an agent needs me</span>
+      </label>
+      <label className="wt-field">
+        Flag a working agent as stuck after (minutes, 0 = never)
+        <input className="wt-input" type="number" min={0} max={240} step={1} value={prefs.hungMinutes} onChange={(e) => setHungMinutes(Number(e.target.value))} />
       </label>
     </div>
   )

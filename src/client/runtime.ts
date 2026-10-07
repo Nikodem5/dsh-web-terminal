@@ -5,12 +5,13 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { emit, prefs, runtimes, store, updateWin } from './state.ts'
+import { emit, hostInfo, prefs, runtimes, store, updateWin } from './state.ts'
 import { cleanTitle, displayName } from './names.ts'
-import { raiseAttention, tick } from './attention.ts'
+import { noteExit, noteHostBusy, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
+import { withAgentHooks } from './launch.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
-import type { Conn, Runtime, WinState } from './types.ts'
+import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
 let ticker: ReturnType<typeof setInterval> | undefined
 
@@ -92,7 +93,10 @@ export function ensureRuntime(win: WinState): Runtime {
     hostBusy: undefined,
     lastOutputAt: 0,
     lastInputAt: 0,
-    workStart: 0,
+    agent: undefined,
+    hungRaised: false,
+    attentionLevel: null,
+    attentionLabel: '',
     attention: false,
     attentionReason: '',
   }
@@ -101,6 +105,7 @@ export function ensureRuntime(win: WinState): Runtime {
 
   term.onData((data) => {
     rt.lastInputAt = Date.now()
+    noteUserInput(rt)
     if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'input', data }))
     // Live mirror: keystrokes typed here also go to the other selected terminals.
     if (store.broadcast.on && store.broadcast.live && store.broadcast.ids.has(rt.id)) {
@@ -124,7 +129,7 @@ export function ensureRuntime(win: WinState): Runtime {
     tick()
     emit()
   })
-  term.onBell(() => raiseAttention(rt, 'Rang the terminal bell'))
+  term.onBell(() => raiseAttention(rt, { level: 'quiet', label: 'bell', reason: 'Rang the terminal bell' }))
   search.onDidChangeResults(({ resultIndex, resultCount }) => {
     rt.searchCount = resultCount
     rt.searchIndex = resultCount === 0 || resultIndex < 0 ? 0 : resultIndex + 1
@@ -168,7 +173,7 @@ export function ensureRuntime(win: WinState): Runtime {
     setConn(rt, 'connecting')
 
     socket.onmessage = (event) => {
-      let frame: { type: string; data?: string; replay?: string; created?: boolean; exited?: boolean; exitCode?: number | null; message?: string; busy?: boolean }
+      let frame: { type: string; data?: string; replay?: string; created?: boolean; exited?: boolean; exitCode?: number | null; message?: string; busy?: boolean; agent?: AgentSignal | null } & Partial<AgentSignal>
       try {
         frame = JSON.parse(String(event.data))
       } catch {
@@ -176,6 +181,9 @@ export function ensureRuntime(win: WinState): Runtime {
       }
       if (frame.type === 'attached') {
         rt.retry = 0
+        // A fresh shell has no agent yet; a reattached one reports what its agent was last doing.
+        rt.agent = undefined
+        restoreAgent(rt, frame.agent)
         term.reset()
         if ((frame.replay ?? '').length > 0) term.write(frame.replay as string)
         if (frame.exited === true) {
@@ -186,8 +194,9 @@ export function ensureRuntime(win: WinState): Runtime {
           sizeToHost(rt)
           const startup = store.wins.find((w) => w.id === rt.id)?.startup
           if (frame.created === true && startup !== undefined && startup.trim().length > 0) {
+            const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings)
             setTimeout(() => {
-              if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data: `${startup}\r` }))
+              if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
             }, 500)
           }
         }
@@ -195,11 +204,12 @@ export function ensureRuntime(win: WinState): Runtime {
         rt.lastOutputAt = Date.now()
         term.write(frame.data ?? '')
       } else if (frame.type === 'activity') {
-        rt.hostBusy = frame.busy === true
-        tick()
-        emit()
+        noteHostBusy(rt, frame.busy === true)
+      } else if (frame.type === 'agent') {
+        if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at })
       } else if (frame.type === 'exit') {
         setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
+        noteExit(rt, frame.exitCode)
         term.write('\r\n\x1b[2m[process exited — close or restart this window]\x1b[0m\r\n')
       } else if (frame.type === 'error') {
         setConn(rt, 'failed', frame.message ?? 'error')

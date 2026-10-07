@@ -34,3 +34,16 @@ export function setNotify(on: boolean): void {
   emit()
   persistSoon()
 }
+
+export function setSound(on: boolean): void {
+  prefs.sound = on
+  emit()
+  persistSoon()
+}
+
+/** Minutes of silence before a working agent is flagged; 0 turns the alert off. */
+export function setHungMinutes(minutes: number): void {
+  prefs.hungMinutes = Math.min(240, Math.max(0, Math.round(minutes) || 0))
+  emit()
+  persistSoon()
+}

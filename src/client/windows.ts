@@ -127,7 +127,7 @@ export function closeAll(): void {
 export function busyAmong(ids: string[]): WinState[] {
   return store.wins.filter((w) => ids.includes(w.id)).filter((w) => {
     const a = runtimes.get(w.id)?.activity
-    return a === 'working' || a === 'waiting'
+    return a === 'working' || a === 'needs-you' || a === 'running'
   })
 }
 

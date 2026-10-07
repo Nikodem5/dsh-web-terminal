@@ -400,3 +400,274 @@ test('luminanceOf reads rgb colours and treats transparent as unknown', () => {
   assert.equal(s.luminanceOf('rgba(255, 255, 255, 0.1)'), undefined)
   assert.equal(s.luminanceOf('transparent'), undefined)
 })
+
+// ── attention: pure decisions ──
+
+const agent = (state, detail = '') => ({ provider: 'claude', state, detail, since: 0 })
+const signal = (state, detail = '') => ({ provider: 'claude', state, detail })
+
+test('deriveActivity: agent signals drive the dot, plain shells show only facts', () => {
+  const live = (a, hostBusy) => s.deriveActivity({ conn: 'live', agent: a, hostBusy })
+  assert.equal(live(agent('working'), false), 'working')
+  assert.equal(live(agent('needs-you'), true), 'needs-you')
+  assert.equal(live(agent('failed'), true), 'needs-you')
+  assert.equal(live(agent('finished'), true), 'finished')
+  assert.equal(live(agent('idle'), true), 'idle')
+  // No agent, or one that ended: only whether a program runs under the shell.
+  assert.equal(live(undefined, true), 'running')
+  assert.equal(live(undefined, false), 'idle')
+  assert.equal(live(undefined, undefined), 'idle')
+  assert.equal(live(agent('ended'), true), 'running')
+  assert.equal(live(agent('ended'), false), 'idle')
+})
+
+test('deriveActivity: connection state wins over agent state', () => {
+  assert.equal(s.deriveActivity({ conn: 'exited', agent: agent('working'), hostBusy: true }), 'exited')
+  for (const conn of ['connecting', 'lost', 'failed']) {
+    assert.equal(s.deriveActivity({ conn, agent: agent('working'), hostBusy: true }), 'offline', conn)
+  }
+})
+
+test('output alone never makes a plain shell look busy (no guessing)', () => {
+  // Recent output is not an input to the decision at all.
+  assert.equal(s.deriveActivity({ conn: 'live', agent: undefined, hostBusy: false, lastOutputAt: Date.now() }), 'idle')
+})
+
+test('alertFor: blocked and failed are urgent, finished is quiet, working is silent', () => {
+  assert.deepEqual(s.alertFor('working', signal('needs-you', 'Permission: Bash: ls')), { level: 'urgent', label: 'needs you', reason: 'Needs you: Permission: Bash: ls' })
+  assert.deepEqual(s.alertFor('working', signal('failed', 'rate_limit')), { level: 'urgent', label: 'failed', reason: 'Failed: rate_limit' })
+  assert.equal(s.alertFor('working', signal('finished')).level, 'quiet')
+  assert.equal(s.alertFor('finished', signal('working')), undefined)
+  assert.equal(s.alertFor('working', signal('ended')), undefined)
+  assert.equal(s.alertFor(undefined, signal('idle')), undefined)
+  assert.equal(s.alertFor('working', signal('needs-you')).reason, 'Needs you')
+})
+
+test('alertFor: a repeated state does not alert twice', () => {
+  // Claude reports both a permission request and a notification for one prompt, and an idle notice after Stop.
+  assert.equal(s.alertFor('needs-you', signal('needs-you', 'again')), undefined)
+  assert.equal(s.alertFor('finished', signal('finished')), undefined)
+  assert.equal(s.alertFor('failed', signal('failed')), undefined)
+})
+
+test('exitAlert: urgent when an agent was mid-task or the code is non-zero, else quiet', () => {
+  assert.equal(s.exitAlert('working', 0).level, 'urgent')
+  assert.equal(s.exitAlert('needs-you', 0).level, 'urgent')
+  assert.equal(s.exitAlert(undefined, 2).level, 'urgent')
+  assert.match(s.exitAlert(undefined, 2).reason, /code 2/)
+  assert.equal(s.exitAlert('finished', 0).level, 'quiet')
+  assert.equal(s.exitAlert(undefined, 0).level, 'quiet')
+  assert.equal(s.exitAlert(undefined, null).level, 'quiet')
+})
+
+test('hungAlert: only a working agent, quiet long enough, with the check enabled', () => {
+  const min = 60_000
+  assert.equal(s.hungAlert(agent('working'), 0, 9 * min, 10), undefined)
+  assert.equal(s.hungAlert(agent('working'), 0, 10 * min, 10).level, 'urgent')
+  assert.equal(s.hungAlert(agent('working'), 0, 99 * min, 0), undefined, '0 minutes turns it off')
+  assert.equal(s.hungAlert(agent('needs-you'), 0, 99 * min, 10), undefined)
+  assert.equal(s.hungAlert(undefined, 0, 99 * min, 10), undefined)
+  // Output resets the clock.
+  assert.equal(s.hungAlert(agent('working'), 9 * min, 10 * min, 10), undefined)
+  // So does a state change: `since` is the later of the two.
+  assert.equal(s.hungAlert({ ...agent('working'), since: 9 * min }, 0, 10 * min, 10), undefined)
+})
+
+// ── attention: applying signals to a runtime ──
+
+/** The parts of a Runtime the attention logic touches; no xterm needed. */
+function fakeRuntime(id) {
+  return {
+    id,
+    conn: 'live',
+    agent: undefined,
+    hostBusy: undefined,
+    activity: 'idle',
+    lastOutputAt: 0,
+    hungRaised: false,
+    attention: false,
+    attentionLevel: null,
+    attentionLabel: '',
+    attentionReason: '',
+    // What closeAll/disposeRuntime touches when a test's windows are cleared.
+    socket: null,
+    timer: undefined,
+    killed: false,
+    term: { dispose() {} },
+    holder: { remove() {} },
+  }
+}
+
+/** A window plus a fake runtime registered for it. */
+function terminalWithRuntime() {
+  const id = s.openTerminal({ cwd: 'C:\\a' })
+  const rt = fakeRuntime(id)
+  s.runtimes.set(id, rt)
+  return rt
+}
+
+beforeEach(() => s.runtimes.clear())
+
+test('a permission request raises an urgent flag; the next working signal clears it', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, signal('working'))
+  assert.equal(rt.activity, 'working')
+  assert.equal(rt.attention, false)
+  s.applyAgentSignal(rt, signal('needs-you', 'Permission: Bash: ls'))
+  assert.equal(rt.activity, 'needs-you')
+  assert.equal(rt.attention, true)
+  assert.equal(rt.attentionLevel, 'urgent')
+  assert.equal(rt.attentionLabel, 'needs you')
+  s.applyAgentSignal(rt, signal('working'))
+  assert.equal(rt.attention, false)
+  assert.equal(rt.attentionLevel, null)
+})
+
+test('finishing raises a quiet flag, and a quiet flag never replaces an urgent one', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, signal('working'))
+  s.applyAgentSignal(rt, signal('finished'))
+  assert.equal(rt.attentionLevel, 'quiet')
+  assert.equal(rt.activity, 'finished')
+
+  const blocked = terminalWithRuntime()
+  s.applyAgentSignal(blocked, signal('needs-you'))
+  s.raiseAttention(blocked, { level: 'quiet', label: 'bell', reason: 'Rang the terminal bell' })
+  assert.equal(blocked.attentionLevel, 'urgent')
+  assert.equal(blocked.attentionLabel, 'needs you')
+})
+
+test('typing into a terminal that needs you counts as answering', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, signal('needs-you'))
+  s.noteUserInput(rt)
+  assert.equal(rt.agent.state, 'working')
+  assert.equal(rt.activity, 'working')
+  assert.equal(rt.attention, false)
+  // Typing while merely working or finished changes nothing.
+  s.noteUserInput(rt)
+  assert.equal(rt.agent.state, 'working')
+  s.applyAgentSignal(rt, signal('finished'))
+  s.noteUserInput(rt)
+  assert.equal(rt.agent.state, 'finished')
+})
+
+test('the program under the shell vanishing mid-task is an urgent "stopped" flag', () => {
+  const rt = terminalWithRuntime()
+  s.noteHostBusy(rt, true)
+  s.applyAgentSignal(rt, signal('working'))
+  s.noteHostBusy(rt, false)
+  assert.equal(rt.agent.state, 'ended')
+  assert.equal(rt.attentionLevel, 'urgent')
+  assert.equal(rt.attentionLabel, 'stopped')
+  assert.equal(rt.activity, 'idle')
+})
+
+test('the program ending after a finished turn, or with no agent, raises nothing', () => {
+  const done = terminalWithRuntime()
+  s.applyAgentSignal(done, signal('working'))
+  s.applyAgentSignal(done, signal('finished'))
+  s.clearAttention(done)
+  s.noteHostBusy(done, false)
+  assert.equal(done.agent.state, 'ended')
+  assert.equal(done.attention, false)
+
+  const plain = terminalWithRuntime()
+  s.noteHostBusy(plain, true)
+  assert.equal(plain.activity, 'running')
+  s.noteHostBusy(plain, false)
+  assert.equal(plain.activity, 'idle')
+  assert.equal(plain.attention, false)
+})
+
+test('restoring an agent after a reload shows the flag but stays silent', () => {
+  const rt = terminalWithRuntime()
+  s.restoreAgent(rt, { ...signal('needs-you', 'Permission: Bash: ls'), at: 123 })
+  assert.equal(rt.agent.state, 'needs-you')
+  assert.equal(rt.agent.since, 123)
+  assert.equal(rt.attention, true)
+  s.restoreAgent(terminalWithRuntime(), null)
+})
+
+test('a shell exiting mid-task is urgent; an idle shell exiting is quiet', () => {
+  const busy = terminalWithRuntime()
+  s.applyAgentSignal(busy, signal('working'))
+  busy.conn = 'exited'
+  s.noteExit(busy, 0)
+  assert.equal(busy.attentionLevel, 'urgent')
+  assert.equal(busy.activity, 'exited')
+
+  const idle = terminalWithRuntime()
+  idle.conn = 'exited'
+  s.noteExit(idle, 0)
+  assert.equal(idle.attentionLevel, 'quiet')
+})
+
+test('tick flags a working agent that has been silent past the threshold, once', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, signal('working'))
+  rt.agent.since = Date.now() - 11 * 60_000
+  s.tick()
+  assert.equal(rt.attentionLevel, 'urgent')
+  assert.equal(rt.attentionLabel, 'stuck?')
+  s.clearAttention(rt)
+  s.tick()
+  assert.equal(rt.attention, false, 'does not re-alert for the same stretch of silence')
+  s.applyAgentSignal(rt, signal('working'))
+  rt.agent.since = Date.now() - 11 * 60_000
+  s.tick()
+  assert.equal(rt.attention, true, 'a new turn can be flagged again')
+})
+
+test('focusing a terminal clears its attention', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, signal('needs-you'))
+  s.focusWin(rt.id)
+  assert.equal(rt.attention, false)
+  assert.equal(rt.attentionLevel, null)
+  assert.equal(rt.attentionLabel, '')
+})
+
+test('closing a terminal that is running a program or an agent asks first', () => {
+  const rt = terminalWithRuntime()
+  s.noteHostBusy(rt, true)
+  assert.deepEqual(s.busyAmong([rt.id]).map((w) => w.id), [rt.id])
+  s.noteHostBusy(rt, false)
+  assert.deepEqual(s.busyAmong([rt.id]), [])
+  s.applyAgentSignal(rt, signal('needs-you'))
+  assert.equal(s.busyAmong([rt.id]).length, 1)
+})
+
+// ── launch command ──
+
+test('withAgentHooks adds --settings after claude and keeps the other flags', () => {
+  const file = 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json'
+  assert.equal(s.withAgentHooks('claude', file), 'claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json"')
+  assert.equal(s.withAgentHooks('claude --resume', file), 'claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json" --resume')
+  assert.equal(s.withAgentHooks('  claude --continue', file), '  claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json" --continue')
+})
+
+test('withAgentHooks leaves other commands, an existing --settings and a missing file alone', () => {
+  const file = '/home/me/.dsh/web-terminal/s.json'
+  for (const command of ['npm run dev', 'claude-code-router start', 'echo claude', 'claude --settings x.json', 'claude --settings=x.json', 'mclaude']) {
+    assert.equal(s.withAgentHooks(command, file), command, command)
+  }
+  assert.equal(s.withAgentHooks('claude', null), 'claude')
+  assert.equal(s.withAgentHooks('claude', undefined), 'claude')
+  assert.equal(s.withAgentHooks('claude', ''), 'claude')
+})
+
+// ── preferences added with attention ──
+
+test('setHungMinutes clamps to 0..240; sound and notify toggle', () => {
+  s.setHungMinutes(-5)
+  assert.equal(s.getPrefs().hungMinutes, 0)
+  s.setHungMinutes(9999)
+  assert.equal(s.getPrefs().hungMinutes, 240)
+  s.setHungMinutes(Number.NaN)
+  assert.equal(s.getPrefs().hungMinutes, 0)
+  s.setHungMinutes(10)
+  s.setSound(false)
+  assert.equal(s.getPrefs().sound, false)
+  s.setSound(true)
+})

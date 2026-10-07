@@ -7,9 +7,16 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { createServer } from 'node:http'
+import { createServer, request } from 'node:http'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+
+// The plugin writes its Claude settings file under DSH_HOME; keep tests out of the real one.
+const testHome = join(dirname(fileURLToPath(import.meta.url)), '..', '.test-home')
+process.env.DSH_HOME = testHome
 
 /** A subprocess handle that records what the plugin does to it. */
 function fakeHandle() {
@@ -41,6 +48,7 @@ let server
 let port
 
 before(async () => {
+  rmSync(testHome, { recursive: true, force: true })
   apply({
     webServer: {
       register: (route) => { routes.http.push(route); return () => {} },
@@ -69,6 +77,7 @@ before(async () => {
 after(() => {
   if (typeof teardown === 'function') teardown()
   server.close()
+  rmSync(testHome, { recursive: true, force: true })
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -270,4 +279,151 @@ test('/info lists live sessions and platform shells', async () => {
   assert.ok(Array.isArray(info.shells))
   assert.ok(info.sessions.some((s) => s.id === id && s.exited === false))
   ws.close()
+})
+
+// ── agent signals ──
+
+/** Read the generated Claude settings file the way `claude --settings` would. */
+async function settingsFile() {
+  const { agent } = await infoOf()
+  assert.ok(agent.claudeSettings, 'info reports the generated settings file')
+  return JSON.parse(readFileSync(agent.claudeSettings, 'utf8'))
+}
+
+/** POST to the plugin's signal server, at the URL from the settings file, as a Claude hook would. */
+async function postSignal({ token, body, path = '/signal/claude', method = 'POST', raw }) {
+  const target = new URL((await settingsFile()).hooks.Stop[0].hooks[0].url)
+  return new Promise((resolve, reject) => {
+    const headers = token === undefined ? {} : { 'x-dsh-wt-token': token }
+    const req = request({ host: target.hostname, port: target.port, path, method, headers }, (res) => {
+      res.resume()
+      res.on('end', () => resolve(res.statusCode))
+    })
+    req.on('error', reject)
+    req.end(raw ?? (body === undefined ? undefined : JSON.stringify(body)))
+  })
+}
+
+/** Secret of the most recently spawned shell, as that shell sees it. */
+const latestToken = () => spawned.at(-1).spec.env.DSH_WT_TOKEN
+
+test('/info points at a generated Claude settings file with HTTP hooks', async () => {
+  const { agent } = await infoOf()
+  assert.ok(existsSync(agent.claudeSettings))
+  const hook = (await settingsFile()).hooks.PermissionRequest[0].hooks[0]
+  assert.equal(hook.type, 'http')
+  assert.match(hook.url, /^http:\/\/127\.0\.0\.1:\d+\/signal\/claude$/)
+})
+
+test('every shell gets its own secret in its environment', async () => {
+  const a = await connect(`id=${freshId()}`)
+  const b = await connect(`id=${freshId()}`)
+  await until(() => a.frames.length > 0 && b.frames.length > 0)
+  const first = spawned.at(-2).spec.env.DSH_WT_TOKEN
+  const second = spawned.at(-1).spec.env.DSH_WT_TOKEN
+  assert.match(first, /^[0-9a-f]{48}$/)
+  assert.notEqual(first, second)
+  a.ws.close()
+  b.ws.close()
+})
+
+test('a signal with the right secret is pushed to the attached browser', async () => {
+  const { ws, frames } = await connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  const status = await postSignal({
+    token: latestToken(),
+    body: { hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'rm -rf x' } },
+  })
+  assert.equal(status, 204)
+  assert.ok(await until(() => frames.some((f) => f.type === 'agent')))
+  const agent = frames.find((f) => f.type === 'agent')
+  assert.equal(agent.state, 'needs-you')
+  assert.equal(agent.provider, 'claude')
+  assert.equal(agent.detail, 'Permission: Bash: rm -rf x')
+  ws.close()
+})
+
+test('the agent state survives a reattach', async () => {
+  const id = freshId()
+  const first = await connect(`id=${id}`)
+  await until(() => first.frames.length > 0)
+  await postSignal({ token: latestToken(), body: { hook_event_name: 'Stop' } })
+  await until(() => first.frames.some((f) => f.type === 'agent'))
+  first.ws.close()
+  await first.closed
+  const second = await connect(`id=${id}`)
+  await until(() => second.frames.length > 0)
+  assert.equal(second.frames[0].agent.state, 'finished')
+  second.ws.close()
+})
+
+test('a signal while no browser is attached is kept for the next attach', async () => {
+  const id = freshId()
+  const first = await connect(`id=${id}`)
+  await until(() => first.frames.length > 0)
+  const token = latestToken()
+  first.ws.close()
+  await first.closed
+  assert.equal(await postSignal({ token, body: { hook_event_name: 'UserPromptSubmit' } }), 204)
+  const second = await connect(`id=${id}`)
+  await until(() => second.frames.length > 0)
+  assert.equal(second.frames[0].agent.state, 'working')
+  second.ws.close()
+})
+
+test('signals without a valid secret are refused and change nothing', async () => {
+  const { ws, frames } = await connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  const token = latestToken()
+  assert.equal(await postSignal({ body: { hook_event_name: 'Stop' } }), 401)
+  assert.equal(await postSignal({ token: 'nope', body: { hook_event_name: 'Stop' } }), 401)
+  assert.equal(await postSignal({ token: token.toUpperCase(), body: { hook_event_name: 'Stop' } }), 401)
+  await sleep(50)
+  assert.ok(!frames.some((f) => f.type === 'agent'))
+  ws.close()
+})
+
+test('the secret stops working once the shell is killed', async () => {
+  const { ws, frames } = await connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  const token = latestToken()
+  ws.send(JSON.stringify({ type: 'kill' }))
+  await until(() => spawned.at(-1).handle.terminated)
+  assert.equal(await postSignal({ token, body: { hook_event_name: 'Stop' } }), 401)
+})
+
+test('the signal endpoint rejects wrong methods, paths, bad JSON and oversized bodies', async () => {
+  const { ws, frames } = await connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  const token = latestToken()
+  assert.equal(await postSignal({ token, method: 'GET' }), 405)
+  assert.equal(await postSignal({ token, path: '/elsewhere', body: {} }), 404)
+  assert.equal(await postSignal({ token, raw: '{not json' }), 400)
+  assert.equal(await postSignal({ token, raw: JSON.stringify({ hook_event_name: 'Stop', pad: 'x'.repeat(70_000) }) }), 413)
+  assert.ok(!frames.some((f) => f.type === 'agent'))
+  ws.close()
+})
+
+test('events that carry no state are accepted but not forwarded', async () => {
+  const { ws, frames } = await connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  assert.equal(await postSignal({ token: latestToken(), body: { hook_event_name: 'PreCompact' } }), 204)
+  await sleep(50)
+  assert.ok(!frames.some((f) => f.type === 'agent'))
+  ws.close()
+})
+
+test('a provider-neutral signal works for a provider with no adapter', async () => {
+  const { ws, frames } = await connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  await postSignal({ token: latestToken(), path: '/signal/codex', body: { state: 'needs-you', detail: 'approve?' } })
+  assert.ok(await until(() => frames.some((f) => f.type === 'agent')))
+  assert.equal(frames.find((f) => f.type === 'agent').provider, 'codex')
+  ws.close()
+})
+
+test('an oversized WebSocket message closes the connection', async () => {
+  const { ws, closed } = await connect(`id=${freshId()}`)
+  ws.send('x'.repeat(2 * 1024 * 1024))
+  assert.equal(await closed, 1009)
 })

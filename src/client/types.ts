@@ -39,7 +39,31 @@ export interface WinState extends Rect {
 export type Conn = 'connecting' | 'live' | 'exited' | 'lost' | 'failed'
 
 /** What the terminal is doing right now, for the status dot and list. */
-export type Activity = 'working' | 'waiting' | 'idle' | 'exited' | 'offline'
+export type Activity = 'working' | 'needs-you' | 'finished' | 'running' | 'idle' | 'exited' | 'offline'
+
+/** What an agent reports about itself (see lib/agent-signals.js on the host). */
+export type AgentState = 'idle' | 'working' | 'needs-you' | 'finished' | 'failed' | 'ended'
+
+/** One agent signal as it arrives from the host. */
+export interface AgentSignal {
+  provider: string
+  state: AgentState
+  detail: string
+  /** Host time the signal arrived (ms). */
+  at?: number
+}
+
+/** The latest signal an agent sent, kept on the runtime. */
+export interface AgentInfo {
+  provider: string
+  state: AgentState
+  detail: string
+  /** When the agent entered this state (ms). */
+  since: number
+}
+
+/** How hard a terminal asks for the user: urgent interrupts, quiet only marks. */
+export type AttentionLevel = 'urgent' | 'quiet'
 
 /** Live (non-serializable) side of one terminal window. */
 export interface Runtime {
@@ -66,9 +90,15 @@ export interface Runtime {
   hostBusy: boolean | undefined
   lastOutputAt: number
   lastInputAt: number
-  workStart: number
-  /** Needs the user's eyes: finished, exited or rang the bell while unattended. */
+  /** What the agent in this terminal last reported; undefined for a plain shell. */
+  agent: AgentInfo | undefined
+  /** The "may be stuck" alert already fired for the current working spell. */
+  hungRaised: boolean
+  /** Needs the user's eyes: an agent is blocked, failed or finished, or the shell exited, while unattended. */
   attention: boolean
+  attentionLevel: AttentionLevel | null
+  /** Short badge text and the longer tooltip/notification text. */
+  attentionLabel: string
   attentionReason: string
 }
 
@@ -96,6 +126,8 @@ export interface HostInfo {
   cwd?: string
   claude?: { available?: boolean; path?: string | null }
   maxSessions?: number
+  /** Files the host generated for agents; claudeSettings is null when it could not write one. */
+  agent?: { claudeSettings?: string | null }
 }
 
 /** Persisted user preferences. */
@@ -115,6 +147,10 @@ export interface Prefs {
   lastCwd: string
   sidebar: boolean
   notify: boolean
+  /** Play a chime for urgent alerts. */
+  sound: boolean
+  /** Minutes without output or signals before a working agent is flagged as stuck; 0 turns it off. */
+  hungMinutes: number
 }
 
 /** Everything the view reads; mutated in place, `version` bumps on change. */

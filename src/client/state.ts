@@ -34,6 +34,8 @@ export const prefs: Prefs = {
   lastCwd: '',
   sidebar: true,
   notify: true,
+  sound: true,
+  hungMinutes: 10,
 }
 
 export const store: Store = { wins: [], zTop: 1, focusId: null, searchId: null, version: 0, broadcast: { on: false, live: false, ids: new Set() } }
@@ -139,6 +141,8 @@ export function focusWin(id: string): void {
   let changed = false
   if (rt !== undefined && rt.attention) {
     rt.attention = false
+    rt.attentionLevel = null
+    rt.attentionLabel = ''
     rt.attentionReason = ''
     changed = true
   }

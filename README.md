@@ -32,13 +32,24 @@ Open a session and click the **Terminals** tab.
 | Links | URLs in terminal output are underlined on hover; **Ctrl+click** (Cmd+click) opens them in your system browser (plain clicks still select text) |
 
 ### Knowing what your agents are doing
-- **Status dot** on every window, chip and list row: **Working** (output streaming, or Claude's spinner title),
-  **Waiting** (a program is running under the shell but quiet — typically an agent waiting for you),
-  **Idle** (at the shell prompt), **Exited**, **Offline**.
-- **Attention badge + desktop notification**: when a terminal that worked for 3 s+ goes quiet, exits, or rings the
-  bell while you are looking elsewhere (another window, another tab, another terminal), its border turns amber,
-  the list row gets a `!`, the toolbar shows "N need you", and — if the app is in the background or the
-  Terminals tab is hidden — a notification fires (click it to jump to the terminal). Toggle in **Aa**.
+Status comes from the agent itself, not from guessing at output.
+
+- **Claude Code reports its own state.** A terminal started with **✦ Claude** (or any startup command beginning
+  with `claude`) is launched as `claude --settings <file>`. The file adds HTTP hooks that tell the plugin when
+  Claude starts a turn, is **blocked on a permission or question**, **finishes**, or **fails**. `--settings` only
+  adds to your own Claude configuration; nothing in `~/.claude` is edited. A `claude` you type by hand in a plain
+  shell is not covered.
+- **Status dot** on every window, chip and list row: **Working** (the agent is on a turn), **Needs you** (blocked or
+  failed), **Finished** (waiting for your next prompt), **Running** (a program is running in a plain shell),
+  **Idle**, **Exited**, **Offline**. A plain shell shows only facts (running or not), never a guess.
+- **Two levels of attention**, raised only while you are looking elsewhere (another window, tab or terminal):
+  - *Needs you* (permission, question, failure, the agent died mid-task, the shell exited mid-task or with an error,
+    or a working agent that has been silent for 10 minutes): red-orange border, `needs you` badge, desktop
+    notification and a chime.
+  - *Finished* (a turn ended) and the terminal bell: amber border and badge; a desktop notification only when the
+    whole app is in the background.
+  - Answering clears it: typing into the terminal, the agent's next turn, or focusing the terminal.
+- **Aa** → Notifications: desktop notifications, the chime, and the "stuck after N minutes" threshold (0 = never).
 - **Broadcast**: **⇉ Broadcast** adds checkboxes to the list. Type a command in the bar and Enter sends it to
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
@@ -90,6 +101,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | Path | Role |
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
+| `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
 | `src/client/index.ts` | Registers the `terminals` entry into `conversation.view`; injects the session's folder |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
 | `src/client/sidebar.tsx` | Right-hand terminal list |
@@ -100,7 +112,8 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `src/client/state.ts`, `types.ts` | Window store, preferences, live runtime map, persistence; shared types |
 | `src/client/windows.ts` | Open, close, focus, maximize, layout presets |
 | `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
-| `src/client/attention.ts` | Activity detection, attention badge, desktop notifications |
+| `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, stuck detection |
+| `src/client/launch.ts` | Adds `--settings` to a `claude` startup command |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
 | `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs` | Tests |
@@ -113,17 +126,30 @@ exists the socket reattaches to it, otherwise a shell is spawned.
 Browser → host: `{"type":"input","data"}`, `{"type":"resize","cols","rows"}`, `{"type":"signal","signal"}`,
 `{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only).
 
-Host → browser: `{"type":"attached","created","replay","exited","exitCode"}` (always first; `created` is true only
-for a brand-new shell, which is when the startup command runs), `{"type":"data","data"}`,
-`{"type":"activity","busy"}`, `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
+Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent"}` (always first; `created` is true only
+for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`),
+`{"type":"data","data"}`, `{"type":"activity","busy"}` (a program runs under the shell),
+`{"type":"agent","provider","state","detail","at"}` (an agent signal; `state` is one of `idle`, `working`,
+`needs-you`, `finished`, `failed`, `ended`), `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
+
+### Agent signals
+
+Each shell gets a random secret in `DSH_WT_TOKEN`. The host runs a small HTTP server on `127.0.0.1` (random port)
+and writes `~/.dsh/web-terminal/claude-settings-<pid>.json` (`/api/dsh-web-terminal/info` reports the path as
+`agent.claudeSettings`). That file subscribes Claude Code HTTP hooks to `POST /signal/claude` and sends the secret in
+the `x-dsh-wt-token` header (interpolated from the environment). The body is Claude's hook JSON; a small adapter
+(`lib/agent-signals.js`) maps events to a state. Any other tool can report by POSTing
+`{"state":"needs-you","detail":"..."}` to `/signal/<provider>` with the same header. Requests with an unknown secret
+get 401; bodies over 64 KB get 413.
 
 ## Notes and limits
 
 - **Desktop WebSocket address**: the page is served from `dsh-app://app`, so the client connects to
   `__DSH_TRANSPORT__.streamBaseUrl` (the loopback host origin); the app adds the auth cookie.
-- **Activity** is a heuristic: output recency, Claude's title glyphs, and "does the shell have a live child
-  process" (one OS process-table query every 3 s while any terminal is attached). "Waiting" cannot distinguish an
-  agent awaiting input from a silent long-running command.
+- **Agent state** is reported, not inferred (see *Agent signals*). The only inferred fact is "does the shell have a
+  live child process" (one OS process-table query every 3 s while any terminal is attached), shown as Running and
+  used to notice an agent that died without saying so. If your Claude settings restrict hooks with
+  `allowedHttpHookUrls`, add `http://127.0.0.1:*/signal/claude`.
 - **Resize** needs the 0.2.x subprocess provider (the desktop app's); older hosts skip it.
 - **Security**: the PTY runs as you, unsandboxed, with the harness's full environment (credentials included) —
   that is what a terminal is. It is human-driven only and not exposed to model tool calls. The route is
