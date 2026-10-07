@@ -22,7 +22,7 @@ const documentStub = {
 // React comes from the installed profile, exactly as the page's shared module
 // registry supplies it — the bundle must never carry its own copy.
 const profileRequire = createRequire(
-  pathToFileURL(join(process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? '', '.dsh'), 'profiles', 'package.json')).href,
+  pathToFileURL(join(process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh'), 'profiles', 'package.json')).href,
 )
 const React = await import(pathToFileURL(profileRequire.resolve('react')).href)
 const jsxRuntime = await import(pathToFileURL(profileRequire.resolve('react/jsx-runtime')).href)

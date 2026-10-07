@@ -16,7 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const bundle = readFileSync(join(here, 'lib', 'client.js'), 'utf8')
 
 const profileRequire = createRequire(
-  pathToFileURL(join(process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? '', '.dsh'), 'profiles', 'package.json')).href,
+  pathToFileURL(join(process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh'), 'profiles', 'package.json')).href,
 )
 const { JSDOM } = createRequire(import.meta.url)(process.env.DSH_JSDOM ?? 'jsdom')
 
@@ -50,7 +50,8 @@ window.WebSocket = class {
 }
 window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
 window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
-window.fetch = () => Promise.resolve({ ok: true, json: async () => ({ shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, sessions: [] }) })
+// The host probe is slow on a cold start (it looks shells up on PATH): answer after the terminal attaches.
+window.fetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
 window.confirm = () => true
 window.__DSH_TRANSPORT__ = { streamBaseUrl: 'http://127.0.0.1:19387' }
 window.HTMLCanvasElement.prototype.getContext = () => null
@@ -132,21 +133,56 @@ check(sock.url.startsWith('ws://127.0.0.1:19387/terminal/ws?') && sock.url.inclu
 // host attaches a fresh shell: startup command is typed
 
 sock.push({ type: 'attached', created: true, replay: '', exited: false, exitCode: null })
-await sleep(700)
-check(sock.sent.some((f) => f.type === 'input' && f.data === 'claude --resume\r'), 'startup command typed into a fresh shell')
+await sleep(1700)
+check(
+  sock.sent.some((f) => f.type === 'input' && f.data === 'claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json" --resume\r'),
+  'startup command waits for a slow host probe, then is typed with the agent hooks added to claude',
+)
 
 // Claude-style title becomes the default name
 sock.push({ type: 'data', data: '\x1b]0;\u2733 Fix login bug\x07' })
 await sleep(150)
 check(q('.wt-li-name')?.textContent === 'Fix login bug', `list shows the Claude session name (got "${q('.wt-li-name')?.textContent}")`)
 
-// output => working, then waiting via host busy flag
+// status comes from facts and agent signals, never from guessing at output.
+// The app is in the background here, so flags are raised (a watched terminal gets none: tested below).
+window.document.hasFocus = () => false
+const dot = () => q('.wt-li .wt-dot')?.dataset.a
 sock.push({ type: 'data', data: 'compiling…\r\n' })
 await sleep(1200)
-check(q('.wt-li .wt-dot')?.dataset.a === 'working', 'recent output shows Working')
+check(dot() === 'idle', `output alone does not make a terminal look busy (got ${dot()})`)
 sock.push({ type: 'activity', busy: true })
-await sleep(3800)
-check(q('.wt-li .wt-dot')?.dataset.a === 'waiting', `quiet + running child shows Waiting (got ${q('.wt-li .wt-dot')?.dataset.a})`)
+await sleep(60)
+check(dot() === 'running', `a program under the shell shows Running (got ${dot()})`)
+sock.push({ type: 'agent', provider: 'claude', state: 'working', detail: '' })
+await sleep(60)
+check(dot() === 'working', `an agent working signal shows Working (got ${dot()})`)
+check(q('.wt-li .wt-badge') === null, 'working raises no flag')
+sock.push({ type: 'agent', provider: 'claude', state: 'needs-you', detail: 'Permission: Bash: npm test' })
+await sleep(60)
+check(dot() === 'needs-you', `a permission request shows Needs you (got ${dot()})`)
+check(q('.wt-li .wt-badge') !== null, 'the list row gets a flag')
+check(q('.wt-win .wt-badge')?.textContent === 'needs you' && q('.wt-win .wt-badge')?.dataset.level === 'urgent', 'the window badge says needs you, urgent')
+check((q('.wt-win .wt-badge')?.title ?? '').includes('Permission: Bash: npm test'), 'the badge tooltip carries the agent detail')
+check(q('.wt-li-sub')?.textContent.startsWith('Needs you'), 'the list row reads Needs you')
+sock.push({ type: 'agent', provider: 'claude', state: 'working', detail: '' })
+await sleep(60)
+check(q('.wt-li .wt-badge') === null && dot() === 'working', 'the next working signal clears the flag')
+sock.push({ type: 'agent', provider: 'claude', state: 'finished', detail: '' })
+await sleep(60)
+check(dot() === 'finished' && q('.wt-win .wt-badge')?.dataset.level === 'quiet', 'a finished turn shows Finished with a quiet flag')
+sock.push({ type: 'agent', provider: 'claude', state: 'ended', detail: '' })
+await sleep(60)
+check(dot() === 'running', `after the agent ends the plain-shell facts show again (got ${dot()})`)
+
+// a terminal the user is looking at is not flagged (the dot still follows the agent)
+window.document.hasFocus = () => true
+sock.push({ type: 'agent', provider: 'claude', state: 'working', detail: '' })
+sock.push({ type: 'agent', provider: 'claude', state: 'needs-you', detail: 'Permission: Edit: a.ts' })
+await sleep(60)
+check(dot() === 'needs-you' && q('.wt-li .wt-badge') === null, 'a terminal in front of the user shows Needs you but raises no flag')
+sock.push({ type: 'agent', provider: 'claude', state: 'ended', detail: '' })
+await sleep(60)
 
 // rename sticks over the auto name
 const nameEl = q('.wt-li-name')

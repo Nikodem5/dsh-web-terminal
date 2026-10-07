@@ -128,9 +128,11 @@ type Dir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 const DIRS: Dir[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 
 const ACTIVITY_TITLE: Record<Activity, string> = {
-  working: 'Working — output is streaming',
-  waiting: 'Waiting — a program is running but quiet (often an agent waiting for you)',
-  idle: 'Idle — at the shell prompt',
+  working: 'Working — the agent is on a turn',
+  'needs-you': 'Needs you — the agent is blocked on a permission, a question or an error',
+  finished: 'Finished — the agent is waiting for your next prompt',
+  running: 'Running — a program is running in the shell',
+  idle: 'Idle — nothing is running',
   exited: 'The process exited',
   offline: 'Not connected',
 }
@@ -328,7 +330,7 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
     <div
       className="wt-win"
       data-focused={focused}
-      data-attn={rt.attention && !focused}
+      data-attn={rt.attention && !focused ? rt.attentionLevel ?? 'quiet' : false}
       data-dragging={dragging}
       data-pinned={win.pinned}
       data-max={win.maximized}
@@ -361,7 +363,7 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
             {name}
           </span>
         )}
-        {rt.attention ? <span className="wt-badge" title={rt.attentionReason}>needs you</span> : null}
+        {rt.attention ? <span className="wt-badge" data-level={rt.attentionLevel ?? 'quiet'} title={rt.attentionReason}>{rt.attentionLabel || 'needs you'}</span> : null}
         <span className="wt-sub" title={win.cwd}>{sub}</span>
         {rt.conn === 'exited' || rt.conn === 'failed' ? (
           <button type="button" className="wt-hbtn" title="Restart shell" onClick={() => restartWin(win.id)}>↻</button>
@@ -379,7 +381,7 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { openSearch(win.id); setMore(false) }}>⌕ Find…  <span className="wt-state">Ctrl+F</span></button>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { duplicateWin(win.id); setMore(false) }}>⧉ Duplicate</button>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { saveLog(win.id); setMore(false) }}>⤓ Save log…</button>
-          <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'idle' || rt.activity === 'exited' || window.confirm('This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ Restart shell</button>
+          <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'idle' || rt.activity === 'finished' || rt.activity === 'exited' || window.confirm('This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ Restart shell</button>
           <div style={{ fontSize: 11, color: 'var(--wt-dim)', padding: '2px 8px' }}>{baseName(win.cwd) || win.cwd}{win.startup !== undefined ? ` · runs “${win.startup}”` : ''}</div>
         </div>
       ) : null}

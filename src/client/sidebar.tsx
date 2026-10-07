@@ -21,7 +21,9 @@ import type { Activity, WinState } from './terminal-store.ts'
 
 const LABEL: Record<Activity, string> = {
   working: 'Working',
-  waiting: 'Waiting',
+  'needs-you': 'Needs you',
+  finished: 'Finished',
+  running: 'Running',
   idle: 'Idle',
   exited: 'Exited',
   offline: 'Offline',
