@@ -86,6 +86,14 @@ export interface Runtime {
   title: string
   killed: boolean
   retry: number
+  /** The host has attached this terminal at least once in this page lifetime (a reload resets it). */
+  attachedOnce: boolean
+  /** The host lost this terminal's shell (restart); the shell it spawned for the reconnect was killed. */
+  hostLost: boolean
+  /** Bytes handed to xterm whose write has not been parsed yet. */
+  pendingBytes: number
+  /** Output was dropped while `pendingBytes` was over the limit. */
+  droppedOutput: boolean
   timer: ReturnType<typeof setTimeout> | undefined
   lastCols: number
   lastRows: number

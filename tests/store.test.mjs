@@ -8,64 +8,12 @@
 
 import { test, before, beforeEach, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { build } from 'esbuild'
-
-const here = dirname(fileURLToPath(import.meta.url))
-const root = join(here, '..')
-const { JSDOM } = createRequire(import.meta.url)('jsdom')
-
-const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://127.0.0.1:19387/', pretendToBeVisual: true })
-const { window } = dom
-window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
-window.HTMLCanvasElement.prototype.getContext = () => null
-window.fetch = () => Promise.resolve({ ok: false })
-const WebSocketStub = class {
-  static OPEN = 1
-  constructor(url) {
-    this.url = url
-    this.readyState = 1
-    this.sent = []
-  }
-  send(data) { this.sent.push(JSON.parse(data)) }
-  close() { this.readyState = 3 }
-}
-window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
-for (const [key, value] of Object.entries({
-  window,
-  document: window.document,
-  localStorage: window.localStorage,
-  navigator: window.navigator,
-  getComputedStyle: window.getComputedStyle.bind(window),
-  requestAnimationFrame: window.requestAnimationFrame.bind(window),
-  cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
-  HTMLElement: window.HTMLElement,
-  Element: window.Element,
-  Node: window.Node,
-  WebSocket: WebSocketStub,
-  ResizeObserver: window.ResizeObserver,
-})) {
-  Object.defineProperty(globalThis, key, { value, configurable: true, writable: true })
-}
+import { loadStore, window } from './helpers/load-store.mjs'
 
 let s // the loaded store module
 
 before(async () => {
-  const result = await build({
-    entryPoints: [join(root, 'src', 'client', 'terminal-store.ts')],
-    bundle: true,
-    format: 'esm',
-    platform: 'browser',
-    target: 'es2022',
-    outfile: 'store.mjs',
-    write: false,
-    logLevel: 'silent',
-  })
-  // Imported from memory: no file is written anywhere.
-  const code = result.outputFiles[0].text
-  s = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+  s = await loadStore()
 })
 
 after(() => {
