@@ -427,3 +427,19 @@ test('an oversized WebSocket message closes the connection', async () => {
   ws.send('x'.repeat(2 * 1024 * 1024))
   assert.equal(await closed, 1009)
 })
+
+test('the conversation id reaches the browser, and survives a reattach', async () => {
+  const id = freshId()
+  const session = '3f4a3c42-a672-45ff-a7f5-ac6abdc48a8e'
+  const first = await connect(`id=${id}`)
+  await until(() => first.frames.length > 0)
+  await postSignal({ token: latestToken(), body: { hook_event_name: 'UserPromptSubmit', session_id: session } })
+  assert.ok(await until(() => first.frames.some((f) => f.type === 'agent')))
+  assert.equal(first.frames.find((f) => f.type === 'agent').session, session)
+  first.ws.close()
+  await first.closed
+  const second = await connect(`id=${id}`)
+  await until(() => second.frames.length > 0)
+  assert.equal(second.frames[0].agent.session, session)
+  second.ws.close()
+})

@@ -50,7 +50,8 @@ window.WebSocket = class {
 }
 window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
 window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
-window.fetch = () => Promise.resolve({ ok: true, json: async () => ({ shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) })
+// The host probe is slow on a cold start (it looks shells up on PATH): answer after the terminal attaches.
+window.fetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
 window.confirm = () => true
 window.__DSH_TRANSPORT__ = { streamBaseUrl: 'http://127.0.0.1:19387' }
 window.HTMLCanvasElement.prototype.getContext = () => null
@@ -132,10 +133,10 @@ check(sock.url.startsWith('ws://127.0.0.1:19387/terminal/ws?') && sock.url.inclu
 // host attaches a fresh shell: startup command is typed
 
 sock.push({ type: 'attached', created: true, replay: '', exited: false, exitCode: null })
-await sleep(700)
+await sleep(1700)
 check(
   sock.sent.some((f) => f.type === 'input' && f.data === 'claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json" --resume\r'),
-  'startup command typed into a fresh shell, with the agent hooks added to claude',
+  'startup command waits for a slow host probe, then is typed with the agent hooks added to claude',
 )
 
 // Claude-style title becomes the default name

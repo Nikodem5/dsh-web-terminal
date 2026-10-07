@@ -33,6 +33,8 @@ export interface WinState extends Rect {
   restore?: Rect
   /** Bumped on restart so the host never confuses a new shell with the one being killed. */
   gen?: number
+  /** Latest conversation id the agent in this window reported; a fresh shell resumes it. */
+  agentSession?: string
 }
 
 /** Connection phase of one terminal runtime. */
@@ -51,6 +53,8 @@ export interface AgentSignal {
   detail: string
   /** Host time the signal arrived (ms). */
   at?: number
+  /** The agent's conversation id, when it reported a safe one. */
+  session?: string
 }
 
 /** The latest signal an agent sent, kept on the runtime. */

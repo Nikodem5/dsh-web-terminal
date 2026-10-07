@@ -5,7 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { emit, hostInfo, prefs, runtimes, store, updateWin } from './state.ts'
+import { emit, hostInfo, hostInfoReady, prefs, runtimes, store, updateWin } from './state.ts'
 import { cleanTitle, displayName } from './names.ts'
 import { noteExit, noteHostBusy, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
@@ -105,7 +105,6 @@ export function ensureRuntime(win: WinState): Runtime {
 
   term.onData((data) => {
     rt.lastInputAt = Date.now()
-    noteUserInput(rt)
     if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'input', data }))
     // Live mirror: keystrokes typed here also go to the other selected terminals.
     if (store.broadcast.on && store.broadcast.live && store.broadcast.ids.has(rt.id)) {
@@ -119,6 +118,9 @@ export function ensureRuntime(win: WinState): Runtime {
       }
     }
   })
+  // Only real key presses count as the user answering a prompt. `onData` also carries the mouse and
+  // focus reports xterm sends once a TUI turns on mouse tracking, so hovering would otherwise "answer".
+  term.onKey(() => noteUserInput(rt))
   term.onTitleChange((title) => {
     rt.title = title
     const w = store.wins.find((x) => x.id === rt.id)
@@ -194,10 +196,16 @@ export function ensureRuntime(win: WinState): Runtime {
           sizeToHost(rt)
           const startup = store.wins.find((w) => w.id === rt.id)?.startup
           if (frame.created === true && startup !== undefined && startup.trim().length > 0) {
-            const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings)
-            setTimeout(() => {
-              if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
-            }, 500)
+            // Wait for the host probe first: it names the agent-hook settings file, and on a cold app
+            // start it can answer after the shell is already up.
+            void hostInfoReady().then(() => {
+              // Read the session when typing, not at attach: a slow probe may have delayed us.
+              const session = store.wins.find((w) => w.id === rt.id)?.agentSession
+              const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings, session)
+              setTimeout(() => {
+                if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
+              }, 500)
+            })
           }
         }
       } else if (frame.type === 'data') {
@@ -206,7 +214,7 @@ export function ensureRuntime(win: WinState): Runtime {
       } else if (frame.type === 'activity') {
         noteHostBusy(rt, frame.busy === true)
       } else if (frame.type === 'agent') {
-        if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at })
+        if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at, session: frame.session })
       } else if (frame.type === 'exit') {
         setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
         noteExit(rt, frame.exitCode)
@@ -319,4 +327,9 @@ export function disposeRuntime(id: string, kill: boolean): void {
   } catch {}
   rt.holder.remove()
   runtimes.delete(id)
+  // Nothing left to watch: stop the once-a-second tick until the next terminal opens.
+  if (runtimes.size === 0 && ticker !== undefined) {
+    clearInterval(ticker)
+    ticker = undefined
+  }
 }

@@ -6,7 +6,7 @@
 //
 //   npm test   (or: node --test tests/*.test.mjs)
 
-import { test, before, beforeEach } from 'node:test'
+import { test, before, beforeEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -19,10 +19,20 @@ const { JSDOM } = createRequire(import.meta.url)('jsdom')
 
 const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://127.0.0.1:19387/', pretendToBeVisual: true })
 const { window } = dom
-window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} })
+window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
 window.HTMLCanvasElement.prototype.getContext = () => null
 window.fetch = () => Promise.resolve({ ok: false })
-const WebSocketStub = class { static OPEN = 1 }
+const WebSocketStub = class {
+  static OPEN = 1
+  constructor(url) {
+    this.url = url
+    this.readyState = 1
+    this.sent = []
+  }
+  send(data) { this.sent.push(JSON.parse(data)) }
+  close() { this.readyState = 3 }
+}
+window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
 for (const [key, value] of Object.entries({
   window,
   document: window.document,
@@ -35,6 +45,7 @@ for (const [key, value] of Object.entries({
   Element: window.Element,
   Node: window.Node,
   WebSocket: WebSocketStub,
+  ResizeObserver: window.ResizeObserver,
 })) {
   Object.defineProperty(globalThis, key, { value, configurable: true, writable: true })
 }
@@ -55,6 +66,12 @@ before(async () => {
   // Imported from memory: no file is written anywhere.
   const code = result.outputFiles[0].text
   s = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+})
+
+after(() => {
+  // Let the process exit: stop the runtime ticker and jsdom's timers.
+  s.closeAll()
+  window.close()
 })
 
 beforeEach(() => {
@@ -480,6 +497,7 @@ function fakeRuntime(id) {
   return {
     id,
     conn: 'live',
+    title: '',
     agent: undefined,
     hostBusy: undefined,
     activity: 'idle',
@@ -640,11 +658,14 @@ test('closing a terminal that is running a program or an agent asks first', () =
 
 // ── launch command ──
 
+const SETTINGS = 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json'
+const SETTINGS_ARG = '--settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json"'
+const SESSION = '3f4a3c42-a672-45ff-a7f5-ac6abdc48a8e'
+
 test('withAgentHooks adds --settings after claude and keeps the other flags', () => {
-  const file = 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json'
-  assert.equal(s.withAgentHooks('claude', file), 'claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json"')
-  assert.equal(s.withAgentHooks('claude --resume', file), 'claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json" --resume')
-  assert.equal(s.withAgentHooks('  claude --continue', file), '  claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json" --continue')
+  assert.equal(s.withAgentHooks('claude', SETTINGS), `claude ${SETTINGS_ARG}`)
+  assert.equal(s.withAgentHooks('claude --resume', SETTINGS), `claude ${SETTINGS_ARG} --resume`)
+  assert.equal(s.withAgentHooks('  claude --continue', SETTINGS), `  claude ${SETTINGS_ARG} --continue`)
 })
 
 test('withAgentHooks leaves other commands, an existing --settings and a missing file alone', () => {
@@ -655,6 +676,84 @@ test('withAgentHooks leaves other commands, an existing --settings and a missing
   assert.equal(s.withAgentHooks('claude', null), 'claude')
   assert.equal(s.withAgentHooks('claude', undefined), 'claude')
   assert.equal(s.withAgentHooks('claude', ''), 'claude')
+})
+
+test('commands that are not claude never get a conversation added', () => {
+  for (const command of ['npm run dev', 'claude-code-router start', 'echo claude', 'mclaude']) {
+    assert.equal(s.withAgentHooks(command, SETTINGS, SESSION), command, command)
+  }
+  // An existing --settings is kept, but the conversation is still resumed.
+  assert.equal(s.withAgentHooks('claude --settings x.json', SETTINGS, SESSION), `claude --settings x.json --resume ${SESSION}`)
+})
+
+test('a remembered conversation is resumed by a fresh claude', () => {
+  assert.equal(s.withAgentHooks('claude', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION}`)
+  assert.equal(s.withAgentHooks('claude --model sonnet', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --model sonnet --resume ${SESSION}`)
+  // Even when the settings file is unavailable, the conversation still resumes.
+  assert.equal(s.withAgentHooks('claude', null, SESSION), `claude --resume ${SESSION}`)
+})
+
+test('a bare --resume or --continue becomes a resume of the remembered conversation', () => {
+  for (const flag of ['--resume', '-r', '--continue', '-c']) {
+    assert.equal(s.withAgentHooks(`claude ${flag}`, SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION}`, flag)
+    assert.equal(s.withAgentHooks(`claude ${flag} --model opus`, SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION} --model opus`, `${flag} then a flag`)
+  }
+})
+
+test('a command that already names a conversation is left alone', () => {
+  assert.equal(s.withAgentHooks('claude --resume abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume abc-123-def-456`)
+  assert.equal(s.withAgentHooks('claude -r abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} -r abc-123-def-456`)
+  assert.equal(s.withAgentHooks('claude --resume=abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume=abc-123-def-456`)
+})
+
+test('an unsafe or missing conversation id is never put in the command', () => {
+  for (const bad of ['x; rm -rf ~', '$(whoami)', '', 'short', '--help', undefined, null]) {
+    assert.equal(s.withAgentHooks('claude', SETTINGS, bad), `claude ${SETTINGS_ARG}`, String(bad))
+    assert.equal(s.withAgentHooks('claude --resume', SETTINGS, bad), `claude ${SETTINGS_ARG} --resume`, `bare resume, ${String(bad)}`)
+  }
+  assert.equal(s.isSessionId(SESSION), true)
+  assert.equal(s.isSessionId('a;b'), false)
+})
+
+// ── remembering the conversation ──
+
+test('a terminal remembers the conversation its agent reports, once a prompt has been sent', () => {
+  const rt = terminalWithRuntime()
+  const win = () => byId(rt.id)
+  s.applyAgentSignal(rt, { ...signal('idle'), session: SESSION })
+  assert.equal(win().agentSession, undefined, 'a session that has said nothing yet cannot be resumed')
+  s.applyAgentSignal(rt, { ...signal('working'), session: SESSION })
+  assert.equal(win().agentSession, SESSION)
+  const next = '11111111-2222-3333-4444-555555555555'
+  s.applyAgentSignal(rt, { ...signal('finished'), session: next })
+  assert.equal(win().agentSession, next, 'the latest id wins (a new conversation after /clear)')
+})
+
+test('ending, a missing id and an unsafe id do not change what is remembered', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, { ...signal('working'), session: SESSION })
+  s.applyAgentSignal(rt, { ...signal('ended'), session: '99999999-2222-3333-4444-555555555555' })
+  s.applyAgentSignal(rt, signal('working'))
+  s.applyAgentSignal(rt, { ...signal('working'), session: 'x; rm -rf ~' })
+  assert.equal(byId(rt.id).agentSession, SESSION)
+})
+
+test('the remembered conversation is restored from the host after a page reload, and saved with the window', async () => {
+  const rt = terminalWithRuntime()
+  s.restoreAgent(rt, { ...signal('finished'), session: SESSION, at: 1 })
+  assert.equal(byId(rt.id).agentSession, SESSION)
+  await new Promise((r) => setTimeout(r, 400))
+  const saved = JSON.parse(window.localStorage.getItem('dsh.web-terminal.layout.v1'))
+  assert.equal(saved.wins.find((w) => w.id === rt.id).agentSession, SESSION)
+})
+
+test('duplicates and saved layouts start fresh conversations', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, { ...signal('working'), session: SESSION })
+  s.duplicateWin(rt.id)
+  assert.equal(wins()[0].agentSession, undefined)
+  s.saveLayout('conv')
+  assert.ok(!JSON.stringify(s.getPrefs().layouts.find((l) => l.name === 'conv')).includes(SESSION))
 })
 
 // ── preferences added with attention ──
@@ -670,4 +769,26 @@ test('setHungMinutes clamps to 0..240; sound and notify toggle', () => {
   s.setSound(false)
   assert.equal(s.getPrefs().sound, false)
   s.setSound(true)
+})
+
+// ── a real xterm runtime ──
+
+test('moving the mouse over a terminal that needs you does not answer it; a key press does', () => {
+  const id = s.openTerminal({ cwd: 'C:\a' })
+  const rt = s.ensureRuntime(byId(id))
+  s.applyAgentSignal(rt, signal('needs-you', 'Permission: Bash: ls'))
+  assert.equal(rt.attention, true)
+
+  // A TUI with mouse tracking on makes xterm report every pointer move, and focus changes, as input data.
+  let reports = 0
+  rt.term.onData(() => reports++)
+  for (const report of ['[<35;10;10M', '[<35;11;10M', '[<0;11;10M', '[<0;11;10m', '[I', '[O']) rt.term.input(report)
+  assert.equal(reports, 6, 'the reports really did reach the input handler')
+  assert.equal(rt.agent.state, 'needs-you')
+  assert.equal(rt.attention, true)
+
+  // A real key press (answering the prompt) does clear it.
+  rt.term.textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: '1', code: 'Digit1', keyCode: 49, bubbles: true }))
+  assert.equal(rt.agent.state, 'working')
+  assert.equal(rt.attention, false)
 })

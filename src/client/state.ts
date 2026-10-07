@@ -98,10 +98,11 @@ export function hydrate(): void {
 
 /** Fetch the host probe once; harmless to call repeatedly. */
 let infoRequested = false
+let infoDone: Promise<void> | undefined
 export function loadHostInfo(): void {
   if (infoRequested) return
   infoRequested = true
-  fetch('/api/dsh-web-terminal/info', { headers: { accept: 'application/json' } })
+  infoDone = fetch('/api/dsh-web-terminal/info', { headers: { accept: 'application/json' } })
     .then((response) => (response.ok ? response.json() : undefined))
     .then((info: HostInfo | undefined) => {
       if (info === undefined) return
@@ -109,6 +110,16 @@ export function loadHostInfo(): void {
       emit()
     })
     .catch(() => {})
+}
+
+/**
+ * Resolves once the host probe has answered (or failed, or `timeoutMs` passed).
+ * The probe is slow on a cold start (it looks shells up on PATH), and a startup command typed
+ * before it arrives would miss the host's agent-hook settings file.
+ */
+export function hostInfoReady(timeoutMs = 10_000): Promise<void> {
+  loadHostInfo()
+  return Promise.race([infoDone ?? Promise.resolve(), new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))])
 }
 
 // ── shared window mutations ────────────────────────────────────────────────

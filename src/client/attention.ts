@@ -6,7 +6,8 @@
 // program or not, exited, offline. The decision functions here are pure so they can be
 // tested without a browser; the stateful half applies them to runtimes.
 
-import { emit, focusWin, prefs, runtimes, store } from './state.ts'
+import { emit, focusWin, prefs, runtimes, store, updateWin } from './state.ts'
+import { isSessionId } from './launch.ts'
 import { displayName } from './names.ts'
 import type { Activity, AgentInfo, AgentSignal, AgentState, AttentionLevel, Conn, Runtime, WinState } from './types.ts'
 
@@ -172,9 +173,20 @@ function refreshActivity(rt: Runtime): boolean {
 
 // ── applying signals ───────────────────────────────────────────────────────
 
+/**
+ * Remember the conversation id so a fresh shell can resume it. `idle` (session opened, nothing
+ * said yet) is skipped: that conversation does not exist on disk, and resuming it would fail.
+ */
+function rememberSession(rt: Runtime, signal: AgentSignal): void {
+  if (signal.state === 'idle' || signal.state === 'ended' || !isSessionId(signal.session)) return
+  const win = store.wins.find((w) => w.id === rt.id)
+  if (win !== undefined && win.agentSession !== signal.session) updateWin(rt.id, { agentSession: signal.session })
+}
+
 /** An agent reported a state. */
 export function applyAgentSignal(rt: Runtime, signal: AgentSignal): void {
   const prev = rt.agent?.state
+  rememberSession(rt, signal)
   rt.agent = { provider: signal.provider, state: signal.state, detail: signal.detail, since: signal.at ?? Date.now() }
   rt.hungRaised = false
   // A new turn, or the answer to a prompt, means whatever raised attention has been dealt with.
@@ -193,6 +205,7 @@ export function applyAgentSignal(rt: Runtime, signal: AgentSignal): void {
  */
 export function restoreAgent(rt: Runtime, signal: AgentSignal | null | undefined): void {
   if (signal === null || signal === undefined) return
+  rememberSession(rt, signal)
   rt.agent = { provider: signal.provider, state: signal.state, detail: signal.detail, since: signal.at ?? Date.now() }
   rt.hungRaised = false
   const alert = alertFor(undefined, signal)

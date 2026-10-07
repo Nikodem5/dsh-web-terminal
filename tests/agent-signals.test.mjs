@@ -4,7 +4,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AGENT_STATES, CLAUDE_HOOK_EVENTS, TOKEN_ENV, TOKEN_HEADER, buildClaudeSettings, claudeAdapter, normalizeSignal } from '../lib/agent-signals.js'
+import { AGENT_STATES, CLAUDE_HOOK_EVENTS, SESSION_ID, TOKEN_ENV, TOKEN_HEADER, buildClaudeSettings, claudeAdapter, normalizeSignal } from '../lib/agent-signals.js'
 
 const claude = (body) => normalizeSignal('claude', body)
 
@@ -102,4 +102,21 @@ test('every subscribed event is understood by the adapter', () => {
     const hit = [{}, { notification_type: 'permission_prompt' }].some((extra) => claudeAdapter({ hook_event_name: event, ...extra }) !== undefined)
     assert.ok(hit, `${event} is subscribed but maps to nothing`)
   }
+})
+
+test('the conversation id rides along on the signal when it is safe', () => {
+  const id = '3f4a3c42-a672-45ff-a7f5-ac6abdc48a8e'
+  assert.equal(claude({ hook_event_name: 'UserPromptSubmit', session_id: id }).session, id)
+  assert.equal(claude({ hook_event_name: 'Stop', session_id: id }).session, id)
+  assert.equal(normalizeSignal('codex', { state: 'working', session: id }).session, id)
+  assert.ok(!('session' in claude({ hook_event_name: 'Stop' })), 'no id, no key')
+})
+
+test('an unsafe conversation id is dropped, because it ends up in a shell command', () => {
+  for (const bad of ['x; rm -rf ~', '$(whoami)', 'a b c d e f g h', '`id`', '--help', 'short', '"quoted-id-1234"', 'a'.repeat(65), 42, null, {}]) {
+    const signal = claude({ hook_event_name: 'Stop', session_id: bad })
+    assert.equal(signal.state, 'finished', 'the state still comes through')
+    assert.ok(!('session' in signal), `rejected ${JSON.stringify(bad)}`)
+  }
+  assert.ok(SESSION_ID.test('3f4a3c42-a672-45ff-a7f5-ac6abdc48a8e'))
 })
