@@ -1,6 +1,6 @@
-// dsh-web-terminal — the "Terminals" conversation view.
+// dsh-web-terminal — the "Terminals" page.
 //
-// A third tab beside Chat and Trajectory: a canvas on which terminal windows are
+// A top-level page (sidebar entry + `main` panel, like Plugins): a canvas on which terminal windows are
 // opened, dragged, resized, snapped to edges and halves/quarters (Windows-style),
 // maximized, minimized and pinned (position + size locked); a right-hand list of
 // every terminal with live status; broadcast input; saved layouts. Window state
@@ -13,6 +13,7 @@ import { requestClose, requestCloseAll } from './actions.ts'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { Sidebar } from './sidebar.tsx'
+import { StatsBar } from './stats-bar.tsx'
 import { ensureStyles } from './styles.ts'
 import {
   arrange,
@@ -48,6 +49,7 @@ import {
   termBackground,
   toggleMaximize,
   updateWin,
+  workspaceChoices,
 } from './terminal-store.ts'
 import type { Activity, FindOptions, Preset, Rect, WinState } from './terminal-store.ts'
 
@@ -408,18 +410,20 @@ const PRESETS: { id: Preset; label: string; title: string }[] = [
 ]
 
 interface ViewProps {
-  /** Folder of the DSH session this view belongs to (injected by the entry). */
-  sessionCwd?: () => string | undefined
+  /** The shell's standard workspaces hook (every `main` entry receives it); absent in older shells. */
+  useWorkspaces?: <T>(select: (snapshot: { items?: unknown }) => T) => T
 }
 
 /**
- * The Terminals view component registered into `conversation.view`.
+ * The Terminals page component registered into the `main` slot.
  * @returns the toolbar, the window canvas and the terminal list.
  */
-export function TerminalsView({ sessionCwd }: ViewProps): ReactElement {
+export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   ensureStyles()
   hydrate()
   useSyncExternalStore(subscribe, getVersion, getVersion)
+  // Selecting `items` keeps the reference stable between workspace changes; the choices are derived below.
+  const workspaceItems = useWorkspaces?.((snapshot) => snapshot.items)
 
   const wins = getWins()
   const focusId = getFocusId()
@@ -492,7 +496,7 @@ export function TerminalsView({ sessionCwd }: ViewProps): ReactElement {
   const needsYou = wins.filter((w) => w.id !== focusId && getRuntimeAttention(w.id)).length
 
   return (
-    <div className="wt-view" ref={viewRef} data-scheme={scheme} style={{ ['--wt-term-bg' as string]: termBackground() }} data-conversation-composer-overlay="" data-dsh-plugin="web-terminal">
+    <div className="wt-view wt-page" ref={viewRef} data-scheme={scheme} style={{ ['--wt-term-bg' as string]: termBackground() }} data-dsh-plugin="web-terminal">
       <div className="wt-main">
         <div className="wt-bar">
           <button type="button" className="wt-btn" data-variant="primary" onClick={() => setDialog({})}>＋ New terminal</button>
@@ -515,6 +519,7 @@ export function TerminalsView({ sessionCwd }: ViewProps): ReactElement {
               {displayName(w)}
             </button>
           ))}
+          <StatsBar />
           {wins.length > 0 ? (
             <button type="button" className="wt-btn" title="Close every terminal and end their shells" onClick={() => requestCloseAll()}>Close all</button>
           ) : null}
@@ -554,7 +559,7 @@ export function TerminalsView({ sessionCwd }: ViewProps): ReactElement {
         </div>
       </div>
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
-      {dialog !== null ? <NewTerminalDialog startup={dialog.startup} sessionCwd={sessionCwd?.()} onClose={() => setDialog(null)} /> : null}
+      {dialog !== null ? <NewTerminalDialog startup={dialog.startup} workspaces={workspaceChoices(workspaceItems)} onClose={() => setDialog(null)} /> : null}
     </div>
   )
 }

@@ -1,20 +1,22 @@
-// dsh-web-terminal — the stats bar in the chat header.
+// dsh-web-terminal — the stats bar: in the chat header and in the Terminals page toolbar.
 //
-// Registered into the harness list seat `conversation.session.header.utilities` (see index.ts).
+// Registered into the harness list seat `conversation.session.header.utilities` (see index.ts)
+// and rendered directly by the page. Both mounts share one poller and the module-level runtimes.
 // Neighbours there are 28px-high round icon buttons in a flex row (gap 8px) with the tertiary
 // label colour; the bar matches that height and colour. The component receives the standard
-// session props (sessionId, useSessions, ...), none of which it needs.
+// session props (sessionId, useSessions, ...); it only uses `sessionCwd`, injected by index.ts,
+// to remember which folder the chat session being viewed lives in (the dialog's fallback default).
 //
-// Agent counts read the module-level runtimes, which outlive the Terminals tab, so they stay
-// live while another tab is showing. Runtimes only exist once the Terminals view has been
+// Agent counts read the module-level runtimes, which outlive the Terminals page, so they stay
+// live while the chat is showing. Runtimes only exist once the Terminals page has been
 // opened in this page load; until then there are no counts to show.
 
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import { getStats, subscribeStats } from './stats.ts'
 import { describeFiveHour, describeSevenDay, describeTokens, formatAge, formatTokens, formatUsd, isStale } from './stats-format.ts'
 import { ensureStyles } from './styles.ts'
-import { getVersion, runtimes, subscribe } from './terminal-store.ts'
+import { getVersion, noteSessionCwd, runtimes, subscribe } from './terminal-store.ts'
 
 const AGENT_KINDS = [
   { activity: 'working', label: 'working' },
@@ -40,10 +42,13 @@ function Out({ text }: { text: string | null }): ReactElement | null {
 
 /**
  * The compact one-line stats bar.
+ * @param props - `sessionCwd` is present only in the chat header (injected by the entry).
  * @returns the bar, or null when there is nothing to show.
  */
-export function StatsBar(): ReactElement | null {
+export function StatsBar({ sessionCwd }: { sessionCwd?: () => string | undefined } = {}): ReactElement | null {
   ensureStyles()
+  // Runs after every render of the header, so switching sessions records the new folder.
+  useEffect(() => noteSessionCwd(sessionCwd?.()))
   useSyncExternalStore(subscribe, getVersion, getVersion)
   // Subscribing is what mounts the shared poller.
   const snap = useSyncExternalStore(subscribeStats, getStats, getStats)
