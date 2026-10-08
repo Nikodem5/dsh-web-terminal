@@ -498,6 +498,73 @@ check(q('.wt-dialog input').value === 'C:\\work\\repo', 'the fallback chip fills
 click(byText('.wt-dialog button', 'Cancel'))
 await sleep(20)
 
+// ── send the selection to another terminal ──
+{
+  // jsdom has no layout: give every element a fixed box so xterm measures a cell and a drag can select.
+  const orig = window.Element.prototype.getBoundingClientRect
+  window.Element.prototype.getBoundingClientRect = () => ({ left: 0, top: 0, right: 640, bottom: 320, width: 640, height: 320, x: 0, y: 0 })
+  // xterm measures a cell from the offset size of a 32-character probe.
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetWidth', { get() { return 640 }, configurable: true })
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetHeight', { get() { return 320 }, configurable: true })
+  click(byText('.wt-bar button', 'New terminal'))
+  await sleep(20)
+  setValue(q('.wt-dialog input'), 'C:\\build')
+  click(byText('.wt-dialog button', 'Open'))
+  await sleep(60)
+  // Agent A (the first terminal) is a Claude with bracketed paste on, as its prompt would have it.
+  sock.push({ type: 'agent', provider: 'claude', state: 'finished', detail: '' })
+  sock.push({ type: 'data', data: '\x1b[?2004h' })
+  const bsock = sockets[sockets.length - 1]
+  bsock.push({ type: 'attached', created: false, replay: '', exited: false, exitCode: null })
+  bsock.push({ type: 'data', data: 'TS2304 no name x' })
+  await sleep(100)
+  const win = qa('.wt-win')[0]
+  const screen = win.querySelector('.xterm-screen')
+  const mouse = (target, type, x, y, extra = {}) => target.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, detail: 1, ...extra }))
+  const rightClick = () => {
+    const e = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 20, button: 2 })
+    win.querySelector('.wt-holder').dispatchEvent(e)
+    return e
+  }
+  check(!rightClick().defaultPrevented && q('.wt-send') === null, 'right-click without a selection keeps the default behaviour')
+  mouse(screen, 'mousedown', 1, 1)
+  mouse(screen, 'mousemove', 400, 1)
+  window.document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, clientX: 400, clientY: 1 }))
+  await sleep(30)
+  const prevented = rightClick().defaultPrevented
+  await sleep(30)
+  check(prevented && q('.wt-send') !== null, 'right-click on a selection opens the Send to menu')
+  window.Element.prototype.getBoundingClientRect = orig
+  const labels = qa('.wt-send .wt-send-item').map((el) => el.textContent)
+  check(labels[0] === 'Copy' && labels.some((l) => l.includes('Agent A')) && labels[labels.length - 1].includes('New Claude terminal'), `the menu lists Copy, the other terminals and a new Claude terminal (${labels.join(' | ')})`)
+  check(q('.wt-send .wt-send-item[data-active="true"]')?.textContent.includes('Agent A'), 'the agent terminal is preselected')
+  q('.wt-send').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await sleep(40)
+  const agentSock = sockets.find((x) => x.sent.some((f) => f.type === 'input' && f.data.includes('[200~')))
+  check(q('.wt-send') === null && agentSock !== undefined && agentSock !== bsock, 'Enter sends the selection to the chosen terminal only')
+  check(!bsock.sent.some((f) => f.type === 'input'), 'nothing is typed into the source terminal')
+  check(q('.wt-win[data-focused="true"] .wt-name')?.textContent === 'Agent A', 'the target window is focused')
+  check(agentSock !== undefined && agentSock.sent.filter((f) => f.type === 'input').pop().data.endsWith('~'), 'the text arrives as a bracketed paste in a code block, without Enter')
+  // Escape cancels the picker.
+  window.Element.prototype.getBoundingClientRect = () => ({ left: 0, top: 0, right: 640, bottom: 320, width: 640, height: 320, x: 0, y: 0 })
+  mouse(screen, 'mousedown', 1, 1)
+  mouse(screen, 'mousemove', 400, 1)
+  window.document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, clientX: 400, clientY: 1 }))
+  await sleep(30)
+  rightClick()
+  await sleep(30)
+  q('.wt-send')?.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await sleep(30)
+  check(q('.wt-send') === null, 'Escape closes the Send to menu')
+  window.Element.prototype.getBoundingClientRect = orig
+  sock.push({ type: 'data', data: '\x1b[?2004l' })
+  sock.push({ type: 'agent', provider: 'claude', state: 'ended', detail: '' })
+  // Remove the extra terminal so the checks below see the original two.
+  window.confirm = () => true
+  click(win.querySelector('.wt-hbtn[data-danger="true"]'))
+}
+
+  await sleep(40)
 // mission control: a pure view transform, never a resize or a layout change
 {
   const winShape = () => qa('.wt-win').map((w) => [w.style.left, w.style.top, w.style.width, w.style.height, w.style.zIndex, w.style.display].join(','))

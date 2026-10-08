@@ -116,6 +116,21 @@ Only paths that **exist** are linked (checked by the host, batched, cached per t
   arguments with shell metacharacters are refused. The browser already has a full shell over `/terminal/ws`, so a
   custom command adds no capability.
 
+### Send a selection to another terminal
+Select text (an error in a build terminal, say), **right-click** it and pick where it goes, or press **Ctrl+Shift+S**
+(arrows + Enter, Esc cancels). The menu offers **Copy**, every other connected terminal (agents first, with their
+status dot) and **New Claude terminal here** (same folder and shell; the text is sent once `claude` is typed, its screen
+is quiet and it has switched paste mode on, and is copied to the clipboard instead if that takes over a minute).
+
+- The text is **pasted, never submitted**: you add context and press Enter. It goes in as a bracketed paste when the
+  target enabled that mode (Claude Code does); otherwise it is typed with the last line left open, and a multi-line
+  send asks first because each line would run. Trailing spaces are trimmed and control characters removed; over 32 KB
+  asks first. The target window is focused and restored if minimized.
+- **Aa → Send selection**: "Wrap text sent to an agent in a code block" (default on) sends a fenced block so the agent
+  reads it as quoted output. Other terminals get the plain text.
+- **Mouse programs**: while a TUI tracks the mouse, right-click belongs to it and passes through; **Shift+right-click**
+  (xterm's usual "select instead" key) opens the menu there. Without a selection right-click is unchanged.
+
 ### Safety
 - Closing a terminal that is still **working or waiting** (single close, **Close all**, replacing a layout)
   asks first. Restarting a busy shell asks too.

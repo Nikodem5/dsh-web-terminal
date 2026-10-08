@@ -11,6 +11,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { requestClose, requestCloseAll } from './actions.ts'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
+import { SendMenu } from './send-menu.tsx'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
 import { MissionOverlay, missionPlan, useMissionControl } from './mission-view.tsx'
@@ -596,6 +597,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
       {prefs.agentsPanel ? <AgentsPanel wins={wins} /> : null}
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
       </div>
+      <SendMenu />
       {dialog !== null ? <NewTerminalDialog startup={dialog.startup} workspaces={workspaceChoices(workspaceItems)} onClose={() => setDialog(null)} /> : null}
     </div>
   )

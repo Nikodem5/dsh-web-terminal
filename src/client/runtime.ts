@@ -15,6 +15,7 @@ import { startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import { registerPathLinks } from './path-links.ts'
+import { openSendMenu, registerSendMenu } from './send-to.ts'
 import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
@@ -221,6 +222,11 @@ export function ensureRuntime(win: WinState): Runtime {
       navigator.clipboard?.writeText(term.getSelection()).catch(() => {})
       return false
     }
+    // Ctrl+Shift+S: send the selection to another terminal (without one it stays a plain key).
+    if (mod && event.shiftKey && !event.altKey && (event.key === 's' || event.key === 'S') && openSendMenu(rt)) {
+      event.preventDefault()
+      return false
+    }
     if (mod && event.shiftKey && (event.key === 'v' || event.key === 'V')) {
       navigator.clipboard?.readText().then((text) => term.paste(text)).catch(() => {})
       return false
@@ -312,6 +318,7 @@ export function ensureRuntime(win: WinState): Runtime {
                 const session = store.wins.find((w) => w.id === rt.id)?.agentSession
                 const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings, session)
                 socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
+                rt.startupSentAt = Date.now()
               }
               wakeStartup = check
               rt.stopStartup = stopStartup
@@ -397,6 +404,7 @@ export function openRuntime(rt: Runtime): void {
     }),
   )
   registerPathLinks(rt)
+  registerSendMenu(rt)
   syncUnread(rt)
   // The grid was never sent to the host (or only xterm's default); report the real one.
   rt.lastCols = 0
