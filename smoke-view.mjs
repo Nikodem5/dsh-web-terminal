@@ -158,9 +158,10 @@ check(qa('.wt-win').length === 1, 'a terminal window opens')
 const sock = sockets[sockets.length - 1]
 check(sock.url.startsWith('ws://127.0.0.1:19387/terminal/ws?') && sock.url.includes('cwd=C%3A%5Cwork%5Crepo'), 'socket targets the host origin with the chosen folder')
 
-// host attaches a fresh shell: startup command is typed
+// host attaches a fresh shell: startup command is typed once its prompt is up
 
 sock.push({ type: 'attached', created: true, replay: '', exited: false, exitCode: null })
+sock.push({ type: 'data', data: 'PS C:/work/repo> ' })
 await sleep(1700)
 check(
   sock.sent.some((f) => f.type === 'input' && f.data === 'claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json" --resume\r'),
