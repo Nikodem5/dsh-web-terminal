@@ -7,6 +7,7 @@
 import { emit, focusWin, persistSoon, prefs, runtimes, store } from './state.ts'
 import { displayName } from './names.ts'
 import { openTerminal } from './windows.ts'
+import { isOverview } from './mission.ts'
 import type { Activity, Runtime, WinState } from './types.ts'
 
 /** Selections bigger than this ask before they are sent. */
@@ -168,7 +169,8 @@ export const getSendRequest = (): SendRequest | null => request
 
 /** Open the picker for a terminal's current selection; false when there is nothing selected. */
 export function openSendMenu(rt: Runtime, at?: { x: number; y: number }): boolean {
-  if (!rt.term.hasSelection()) return false
+  // Not under the mission-control overview, whose windows are thumbnails.
+  if (isOverview() || !rt.term.hasSelection()) return false
   const box = rt.holder.getBoundingClientRect()
   request = { sourceId: rt.id, text: rt.term.getSelection(), x: at?.x ?? box.left + box.width / 2 - 100, y: at?.y ?? box.top + 40 }
   notify()

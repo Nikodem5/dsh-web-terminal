@@ -1,6 +1,7 @@
 // dsh-web-terminal — terminal runtimes: the xterm instance and WebSocket behind each
 // window, reconnecting, sizing, restart and log export.
 
+import { isMissionShortcut, isOverview } from './mission.ts'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -15,6 +16,7 @@ import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import { registerPathLinks } from './path-links.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
+import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
 /** Grid for a terminal that was never fitted (the host's own default, so a fresh PTY matches). */
@@ -82,7 +84,7 @@ function socketBase(): string {
 
 /** Key combinations the app handles itself, so the terminal must not swallow them. */
 function isAppShortcut(event: KeyboardEvent): boolean {
-  return event.ctrlKey && event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+  return (event.ctrlKey && event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) || isMissionShortcut(event)
 }
 
 /** Build (once) the xterm + socket for a window. */
@@ -153,6 +155,7 @@ export function ensureRuntime(win: WinState): Runtime {
     attentionReason: '',
   }
   runtimes.set(win.id, rt)
+  trackUnread(rt)
   ticker ??= setInterval(tick, 1000)
 
   // Bytes of the key press xterm is about to report through onData (onKey fires first, synchronously).
@@ -204,6 +207,11 @@ export function ensureRuntime(win: WinState): Runtime {
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true
     if (isAppShortcut(event)) return false
+    if (isUnreadJump(event)) {
+      event.preventDefault()
+      jumpToUnread(rt.id)
+      return false
+    }
     const mod = event.ctrlKey || event.metaKey
     if (mod && !event.shiftKey && !event.altKey && (event.key === 'f' || event.key === 'F')) {
       event.preventDefault()
@@ -282,7 +290,8 @@ export function ensureRuntime(win: WinState): Runtime {
         restoreAgent(rt, frame.agent)
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         term.reset()
-        if ((frame.replay ?? '').length > 0) term.write(frame.replay as string)
+        if ((frame.replay ?? '').length > 0) term.write(frame.replay as string, () => rebaseUnread(rt))
+        else rebaseUnread(rt)
         if (frame.exited === true) {
           setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
         } else {
@@ -321,7 +330,8 @@ export function ensureRuntime(win: WinState): Runtime {
         // The host dropped output on a congested socket; its replay is the screen as it really is.
         if (typeof frame.replay !== 'string') return
         term.reset()
-        if (frame.replay.length > 0) term.write(frame.replay)
+        if (frame.replay.length > 0) term.write(frame.replay, () => rebaseUnread(rt))
+        else rebaseUnread(rt)
       } else if (frame.type === 'data') {
         if (rt.hostLost || typeof frame.data !== 'string') return
         lastOutputAt = Date.now()
@@ -395,6 +405,7 @@ export function openRuntime(rt: Runtime): void {
   )
   registerPathLinks(rt)
   registerSendMenu(rt)
+  syncUnread(rt)
   // The grid was never sent to the host (or only xterm's default); report the real one.
   rt.lastCols = 0
 }
@@ -430,7 +441,8 @@ export function effectiveFontSize(widthPx: number): number {
 
 /** Refit a runtime to its container (adapting the font size to its width) and tell the host. */
 export function refit(rt: Runtime): void {
-  if (!rt.holder.isConnected) return
+  // Mission control scales the live terminals without resizing them; a refit would resize the PTY.
+  if (isOverview() || !rt.holder.isConnected) return
   openRuntime(rt)
   if (rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
   const size = effectiveFontSize(rt.holder.clientWidth)
@@ -487,6 +499,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
     if (kill && rt.socket?.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'kill' }))
     rt.socket?.close()
   } catch {}
+  untrackUnread(id)
   try {
     rt.term.dispose()
   } catch {}

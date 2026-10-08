@@ -101,7 +101,7 @@ let viewMounts = 0
 export function setViewMounted(mounted: boolean): void {
   viewMounts = Math.max(0, viewMounts + (mounted ? 1 : -1))
 }
-function unattended(id: string): boolean {
+export function unattended(id: string): boolean {
   if (typeof document === 'undefined') return true
   return !(document.hasFocus() && viewMounts > 0 && store.focusId === id)
 }

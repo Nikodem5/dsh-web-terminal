@@ -258,6 +258,20 @@ check(qa('.wt-li').length === 2, 'second terminal appears in the list')
   const z = wins.map((w) => Number(w.style.zIndex))
   check(z[0] > z[1], `new terminal has the highest z-index (${z.join(' vs ')})`)
 }
+
+// output to a terminal that is not in front leaves a subtle unread count in its list row
+{
+  window.document.hasFocus = () => true
+  const row = () => q('.wt-li[data-focused="false"]') // the first terminal: the new one has focus
+  check(row()?.querySelector('.wt-unread') === null, 'no unread indicator before any output')
+  sock.push({ type: 'data', data: 'a\r\nb\r\nc\r\n' })
+  await sleep(120)
+  const mark = row()?.querySelector('.wt-unread')
+  check(mark?.textContent === '3' && row()?.querySelector('.wt-badge') === null, `an unfocused terminal shows 3 unread lines, apart from attention badges (got "${mark?.textContent}")`)
+  click(row())
+  await sleep(60)
+  check(row()?.querySelector('.wt-unread') === null, 'looking at the terminal clears the list indicator')
+}
 const focusedBefore = q('.wt-li[data-focused="true"] .wt-li-name')?.textContent
 doc.defaultView.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))
 await sleep(40)
@@ -548,7 +562,66 @@ await sleep(20)
   // Remove the extra terminal so the checks below see the original two.
   window.confirm = () => true
   click(win.querySelector('.wt-hbtn[data-danger="true"]'))
+}
+
   await sleep(40)
+// mission control: a pure view transform, never a resize or a layout change
+{
+  const winShape = () => qa('.wt-win').map((w) => [w.style.left, w.style.top, w.style.width, w.style.height, w.style.zIndex, w.style.display].join(','))
+  const resizes = () => sockets.reduce((n, x) => n + x.sent.filter((f) => f.type === 'resize').length, 0)
+  const stored = () => window.localStorage.getItem('dsh.web-terminal.layout.v1')
+  const winNamed = (name) => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === name)
+  const key = (init) => window.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }))
+  const other = qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent !== 'Agent A')
+  const otherName = other.querySelector('.wt-name').textContent
+  click(other.querySelector('.wt-hbtn[title="Minimize"]'))
+  await sleep(30)
+  check(winNamed(otherName).style.display === 'none', 'overview setup: one window is minimized')
+  winNamed('Agent A').dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+  await sleep(400)
+  const saved = stored()
+  const resizeBefore = resizes()
+
+  click(byText('.wt-bar button', 'Overview'))
+  await sleep(30)
+  check(q('.wt-mission') !== null && qa('.wt-tile').length === 2, 'Overview shows a tile per terminal, minimized ones included')
+  check(qa('.wt-win').every((w) => w.style.display === 'flex' && /scale\(/.test(w.style.transform)), 'every window, minimized too, is CSS-scaled into its tile')
+  await sleep(400)
+  check(resizes() === resizeBefore && stored() === saved, 'overview sends no resize frame and persists no layout')
+
+  // typing filters the tiles; the non-matching window is hidden
+  key({ key: otherName[0].toLowerCase() })
+  key({ key: otherName[1].toLowerCase() })
+  await sleep(20)
+  check(qa('.wt-tile').length === 1 && q('.wt-mission-filter') !== null, 'typing filters the tiles by name')
+  check(winNamed('Agent A').style.visibility === 'hidden', 'a filtered-out window is hidden')
+  key({ key: 'Enter' })
+  await sleep(60)
+  check(q('.wt-mission') === null && winNamed(otherName).style.display === 'flex' && winNamed(otherName).dataset.focused === 'true', 'Enter on a filtered tile leaves overview, restores and focuses that terminal')
+  check(qa('.wt-win').every((w) => w.style.transform === ''), 'leaving overview clears the scaling')
+  await sleep(400)
+  check(resizes() === resizeBefore, 'leaving overview sends no resize frame either')
+
+  // minimize it again, refocus Agent A, then Esc must change nothing
+  click(winNamed(otherName).querySelector('.wt-hbtn[title="Minimize"]'))
+  await sleep(30)
+  winNamed('Agent A').dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+  await sleep(400)
+  const shape2 = winShape()
+  const saved2 = stored()
+  key({ key: ' ', code: 'Space', ctrlKey: true, shiftKey: true })
+  await sleep(20)
+  check(q('.wt-mission') !== null, 'Ctrl+Shift+Space opens overview')
+  key({ key: 'ArrowRight' })
+  await sleep(20)
+  check(qa('.wt-tile[data-sel="true"]').length === 1, 'arrow keys move one selected tile')
+  key({ key: 'Escape' })
+  await sleep(60)
+  check(q('.wt-mission') === null && winShape().join('|') === shape2.join('|') && stored() === saved2, 'Esc restores every window rect, z and minimized state exactly')
+  check(winNamed('Agent A').dataset.focused === 'true' && winNamed(otherName).style.display === 'none', 'Esc leaves focus and minimized state unchanged')
+  check(resizes() === resizeBefore, 'overview never resized a terminal')
+  click(byText('.wt-chip', otherName))
+  await sleep(30)
 }
 
 const busyWindow = () => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === 'Agent A')
