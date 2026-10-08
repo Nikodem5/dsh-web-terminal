@@ -1,18 +1,19 @@
 # dsh-web-terminal
 
-A **Terminals** screen for DeepSeek Harness: a third tab beside *Chat* and *Trajectory* holding a
+A **Terminals** page for DeepSeek Harness: a sidebar entry (right after *Plugins*) that opens a full page holding a
 free-form workspace of real PTY terminals — open as many as you like, drag and resize them like app
 windows, snap them to edges/halves/quarters, pin them in place, and watch what every agent is doing from a
 list on the right. Built for running several agents (e.g. Claude Code) side by side.
 
 ## Using it
 
-Open a session and click the **Terminals** tab.
+Click **Terminals** in the left sidebar. It is a page of its own, like Plugins and the Task manager, so it
+works with the sidebar expanded or collapsed and no chat session is involved.
 
 ### Opening terminals
 | Action | How |
 |---|---|
-| New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or *Use this session's workspace*), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell |
+| New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or one of the harness's **Workspaces** — shown as chips under the folder field, as listed in the left sidebar), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell |
 | Run Claude | **✦ Claude** is the same dialog preset to `claude` (chips for `claude --resume` / `--continue`) |
 | Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder and startup command |
 | Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins), then *Open* (replaces the open terminals) or *Add* |
@@ -54,13 +55,15 @@ Status comes from the agent itself, not from guessing at output.
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
 
-### Stats bar (chat header)
-A compact one-line bar in the chat header, visible on every tab: terminal counts by status (working, needs you,
+### Stats bar (chat header and Terminals page)
+A compact one-line bar in the chat header, and again in the Terminals page toolbar (next to *Close all*): terminal counts by status (working, needs you,
 finished; hidden at zero), the 5-hour and 7-day Claude limits (`5h 42% · resets 14:30 · out ~13:55`, where *out* is
 the forecast time of hitting 100%), the summed API-price-equivalent cost and the token total (hover for the split).
 Limits are read from the last Claude terminal that reported them; a sample older than 10 minutes is dimmed with its
 age. The host is polled every 5 s while the page is visible; if the host does not serve `/stats` (older install),
-only the terminal counts show. Counts appear once the Terminals tab has been opened in this page load.
+only the terminal counts show. Counts appear once the Terminals page has been opened in this page load.
+If the shell does not expose its Workspaces, the dialog instead offers *Use the last session's workspace*: the folder
+of the chat session last viewed (recorded by the header bar and kept in the preferences).
 
 ### The terminal list (right)
 Every terminal with status, name, folder and a pin marker. Click to focus, **double-click the name to rename**,
@@ -110,7 +113,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
 | `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
-| `src/client/index.ts` | Registers the `terminals` entry into `conversation.view`; injects the session's folder |
+| `src/client/index.ts` | Registers the sidebar entry (`sidebar.panellist`), the page (`main`) and the header stats bar; injects the session's folder into the bar |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
 | `src/client/sidebar.tsx` | Right-hand terminal list |
 | `src/client/new-dialog.tsx` | New-terminal dialog |
@@ -189,8 +192,7 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
   that is what a terminal is. It is human-driven only and not exposed to model tool calls. The route is
   reachable wherever the harness web server is (loopback by default).
 - Up to 24 concurrent shells. A second connection to the same id (e.g. another browser tab) supersedes the first.
-- The Trajectory tab is hidden unless developer tools are enabled; the Terminals tab is not gated.
-- The conversation's chat input (and its queue/todo docks) is hidden while the Terminals tab is showing, so the terminals use the full height; it returns on Chat and Trajectory. This is a CSS rule that matches the shell's composer by class substring (`composerSeat`), so a future app build that renames it would need the rule updated in `src/client/styles.ts`.
+- The page is registered under the `main` key and sidebar id `dsh-web-terminal`; the sidebar selects it by that id. On macOS the toolbar pads its top by the frame's `--dsh-frame-top-clearance`.
 - Not yet: clickable file paths, font zoom (Ctrl+wheel), per-terminal colour tags, quick-send snippets.
 
 ## Roadmap (planned ideas, not built yet)
