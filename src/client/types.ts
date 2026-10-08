@@ -152,6 +152,9 @@ export interface HostInfo {
   agent?: { claudeSettings?: string | null }
 }
 
+/** Where a Ctrl+clicked file path opens. */
+export type PathTarget = 'vscode' | 'cursor' | 'default' | 'custom'
+
 /** Persisted user preferences. */
 export interface Prefs {
   font: FontPrefs
@@ -177,6 +180,9 @@ export interface Prefs {
   sound: boolean
   /** Minutes without output or signals before a working agent is flagged as stuck; 0 turns it off. */
   hungMinutes: number
+  /** Editor for Ctrl+clicked file paths, and the command template when it is `custom`. */
+  pathTarget: PathTarget
+  pathTemplate: string
 }
 
 /** Everything the view reads; mutated in place, `version` bumps on change. */

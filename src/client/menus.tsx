@@ -4,6 +4,8 @@
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { requestCloseAll } from './actions.ts'
+import { setPathTarget, setPathTemplate } from './path-links.ts'
+import type { PathTarget } from './types.ts'
 import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setHungMinutes, setNotify, setSound, setTermTheme } from './terminal-store.ts'
 
 const FONT_CHOICES = [
@@ -145,6 +147,48 @@ export function SettingsMenu(): ReactElement {
         Flag a working agent as stuck after (minutes, 0 = never)
         <input className="wt-input" type="number" min={0} max={240} step={1} value={prefs.hungMinutes} onChange={(e) => setHungMinutes(Number(e.target.value))} />
       </label>
+      <PathLinksSettings />
     </div>
+  )
+}
+
+// ── clickable file paths (setting block) ──
+
+const PATH_TARGETS: Array<{ value: PathTarget; label: string }> = [
+  { value: 'vscode', label: 'VS Code' },
+  { value: 'cursor', label: 'Cursor' },
+  { value: 'default', label: 'OS default app' },
+  { value: 'custom', label: 'Custom command' },
+]
+
+/** Where a Ctrl+clicked file path in the terminal opens. */
+function PathLinksSettings(): ReactElement {
+  const prefs = getPrefs()
+  return (
+    <>
+      <div className="wt-pop-title">Clickable file paths</div>
+      <label className="wt-field" title="Ctrl+click (Cmd+click on macOS) a file path in the output to open it">
+        Open with
+        <select className="wt-input" value={prefs.pathTarget} onChange={(e) => setPathTarget(e.target.value as PathTarget)}>
+          {PATH_TARGETS.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+      </label>
+      {prefs.pathTarget === 'custom' ? (
+        <label className="wt-field" title="Placeholders: {file} {line} {col} {dir}. A missing {line}/{col} after a colon is dropped with the colon, elsewhere it becomes 1.">
+          Command ({'{file} {line} {col} {dir}'})
+          <input
+            className="wt-input"
+            defaultValue={prefs.pathTemplate}
+            placeholder="myeditor {file}:{line}:{col}"
+            onBlur={(e) => setPathTemplate(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+          />
+        </label>
+      ) : null}
+    </>
   )
 }

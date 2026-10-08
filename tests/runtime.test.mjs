@@ -546,3 +546,147 @@ test('the real grid is remembered on the window once the terminal reports it', a
   const win = s.getWins().find((w) => w.id === id)
   assert.deepEqual([win.cols, win.rows], [100, 30])
 })
+
+// ── clickable file paths ──
+
+/** Open a terminal and capture the link providers registered on it. */
+async function startLinks() {
+  const id = s.openTerminal({ cwd: '/work', startup: '' })
+  const rt = s.ensureRuntime(s.getWins().find((w) => w.id === id))
+  const providers = []
+  const register = rt.term.registerLinkProvider.bind(rt.term)
+  rt.term.registerLinkProvider = (p) => (providers.push(p), register(p))
+  s.openRuntime(rt)
+  const provide = (y) => new Promise((resolve) => providers[providers.length - 1].provideLinks(y, resolve))
+  return { id, rt, provide }
+}
+
+/** A fake host for /paths and /open; `existing` is the set of candidates that exist. */
+function fakeHost(existing, openReply = { ok: true }) {
+  const host = { pathCalls: [], opens: [], existing }
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    const body = init?.body === undefined ? undefined : JSON.parse(init.body)
+    if (String(url).endsWith('/paths')) {
+      host.pathCalls.push(body)
+      return { ok: true, json: async () => ({ ok: true, results: body.candidates.map((c) => ({ candidate: c, path: host.existing.has(c) ? `/work/${c}` : null, isDir: false })) }) }
+    }
+    if (String(url).endsWith('/open')) {
+      host.opens.push(body)
+      return { ok: true, json: async () => openReply }
+    }
+    return { ok: false }
+  }
+  host.restore = () => { globalThis.fetch = realFetch }
+  return host
+}
+
+test('path links: an existing path is a link with the position stripped from the lookup, a missing one is not', async () => {
+  const host = fakeHost(new Set(['src/a.ts']))
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('see src/a.ts:12:5 and missing/b.ts\r\n')
+    await flush(rt)
+    const links = await provide(1)
+    assert.equal(links.length, 1)
+    assert.equal(links[0].text, 'src/a.ts:12:5')
+    assert.deepEqual(links[0].range, { start: { x: 5, y: 1 }, end: { x: 17, y: 1 } })
+    assert.deepEqual(host.pathCalls[0].candidates.sort(), ['missing/b.ts', 'src/a.ts'])
+    assert.match(host.pathCalls[0].terminalId, /-0$/)
+    assert.equal(host.pathCalls[0].cwd, '/work')
+    // Same line again: answered from the cache (found and not-found alike).
+    await provide(1)
+    assert.equal(host.pathCalls.length, 1)
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: activation needs the modifier; a plain click opens nothing', async () => {
+  const host = fakeHost(new Set(['src/a.ts']))
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('src/a.ts:12:5\r\n')
+    await flush(rt)
+    const [link] = await provide(1)
+    link.activate({ ctrlKey: false, metaKey: false }, link.text)
+    await sleep(20)
+    assert.equal(host.opens.length, 0)
+    link.activate({ ctrlKey: true, metaKey: false }, link.text)
+    await until(() => host.opens.length === 1, 'the open request')
+    assert.deepEqual(host.opens[0], { path: '/work/src/a.ts', line: 12, col: 5, target: 'vscode', template: '' })
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: underline and pointer follow the modifier while hovering', async () => {
+  const host = fakeHost(new Set(['a.ts']))
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('a.ts\r\n')
+    await flush(rt)
+    const [link] = await provide(1)
+    assert.deepEqual(link.decorations, { pointerCursor: false, underline: false })
+    link.hover({ ctrlKey: false, metaKey: false, clientX: 0, clientY: 0 }, link.text)
+    assert.equal(link.decorations.underline, false)
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Control', ctrlKey: true }))
+    assert.deepEqual(link.decorations, { pointerCursor: true, underline: true })
+    assert.match(rt.term.element.querySelector('.xterm-hover').textContent, /Ctrl\+click to open/)
+    window.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'Control', ctrlKey: false }))
+    assert.equal(link.decorations.underline, false)
+    link.leave({}, link.text)
+    assert.equal(rt.term.element.querySelector('.xterm-hover'), null)
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: a path wrapped over two rows is one link on either row', async () => {
+  const host = fakeHost(new Set(['src/deep/file.ts']))
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.resize(12, 5)
+    rt.term.write('src/deep/file.ts\r\n')
+    await flush(rt)
+    const top = await provide(1)
+    const bottom = await provide(2)
+    assert.equal(top.length, 1)
+    assert.equal(bottom.length, 1)
+    assert.deepEqual(top[0].range, { start: { x: 1, y: 1 }, end: { x: 4, y: 2 } })
+    assert.deepEqual(host.pathCalls[0].candidates, ['src/deep/file.ts'])
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: a host error is shown inside the terminal', async () => {
+  const host = fakeHost(new Set(['a.ts']), { ok: false, error: 'VS Code not found on PATH' })
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('a.ts\r\n')
+    await flush(rt)
+    const [link] = await provide(1)
+    link.activate({ ctrlKey: true, metaKey: false }, link.text)
+    await until(() => rt.term.element.textContent.includes('VS Code not found on PATH'), 'the message')
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: URLs and a failing host produce no links', async () => {
+  const host = fakeHost(new Set())
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('https://example.com/a/b.ts\r\n')
+    await flush(rt)
+    assert.equal(await provide(1), undefined)
+    assert.equal(host.pathCalls.length, 0)
+    globalThis.fetch = async () => { throw new Error('down') }
+    rt.term.write('src/x.ts\r\n')
+    await flush(rt)
+    assert.equal(await provide(2), undefined)
+  } finally {
+    host.restore()
+  }
+})

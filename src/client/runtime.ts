@@ -13,6 +13,7 @@ import { applySubagents } from './subagent-state.ts'
 import { startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
+import { registerPathLinks } from './path-links.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
 /** Grid for a terminal that was never fitted (the host's own default, so a fresh PTY matches). */
@@ -382,6 +383,7 @@ export function openRuntime(rt: Runtime): void {
       window.open(uri, '_blank', 'noopener,noreferrer')
     }),
   )
+  registerPathLinks(rt)
   // The grid was never sent to the host (or only xterm's default); report the real one.
   rt.lastCols = 0
 }

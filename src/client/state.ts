@@ -38,6 +38,8 @@ export const prefs: Prefs = {
   notify: true,
   sound: true,
   hungMinutes: 10,
+  pathTarget: 'vscode',
+  pathTemplate: '',
 }
 
 export const store: Store = { wins: [], zTop: 1, focusId: null, searchId: null, version: 0, broadcast: { on: false, live: false, ids: new Set() } }
@@ -144,6 +146,8 @@ function applyPrefs(p: Record<string, unknown>): void {
   for (const key of ['fontCustom', 'autoFont', 'sidebar', 'agentsPanel', 'notify', 'sound'] as const) if (typeof p[key] === 'boolean') prefs[key] = p[key] as boolean
   if (isNum(p.fitCols)) prefs.fitCols = clamp(Math.round(p.fitCols), 40, 240)
   if (isNum(p.hungMinutes)) prefs.hungMinutes = clamp(Math.round(p.hungMinutes), 0, 240)
+  if (p.pathTarget === 'vscode' || p.pathTarget === 'cursor' || p.pathTarget === 'default' || p.pathTarget === 'custom') prefs.pathTarget = p.pathTarget
+  if (typeof p.pathTemplate === 'string') prefs.pathTemplate = p.pathTemplate.slice(0, 500)
   if (p.termTheme === 'dark' || p.termTheme === 'light' || p.termTheme === 'auto') prefs.termTheme = p.termTheme
   const font = isObj(p.font) ? p.font : {}
   prefs.font = prefs.fontCustom
