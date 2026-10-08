@@ -145,6 +145,15 @@ const VIEW_CSS = `
 .wt-folder span.wt-grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .wt-star { border: 0; background: transparent; cursor: pointer; font-size: 13px; color: var(--wt-dim); padding: 0 3px; }
 .wt-star[data-on="true"] { color: var(--wt-wait); }
+
+/* header stats bar: lives in the harness chat header, outside .wt-view, so it carries its own variables. */
+.wt-stats { --wt-work: #5b8cff; --wt-wait: #f0b429; --wt-idle: #22c55e; --wt-dead: #ef4444; --wt-urgent: #ff6b3d; --wt-dim: var(--dsw-alias-label-tertiary, #9aa0a6);
+  display: inline-flex; align-items: center; gap: 12px; height: 28px; flex: none; white-space: nowrap; overflow: hidden; font-size: 12px; line-height: 1; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--dsw-alias-label-secondary, var(--wt-dim)); }
+.wt-stats-group { display: inline-flex; align-items: center; gap: 10px; }
+.wt-stats-group[data-stale="true"] { opacity: 0.55; }
+.wt-stats-item { display: inline-flex; align-items: center; gap: 5px; }
+.wt-stats .wt-dot { width: 7px; height: 7px; display: inline-block; }
+.wt-stats-warn { color: var(--dsw-alias-state-warn-label, #f0b429); }
 `
 
 let injected = false

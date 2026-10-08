@@ -1,0 +1,123 @@
+// dsh-web-terminal — the stats bar in the chat header.
+//
+// Registered into the harness list seat `conversation.session.header.utilities` (see index.ts).
+// Neighbours there are 28px-high round icon buttons in a flex row (gap 8px) with the tertiary
+// label colour; the bar matches that height and colour. The component receives the standard
+// session props (sessionId, useSessions, ...), none of which it needs.
+//
+// Agent counts read the module-level runtimes, which outlive the Terminals tab, so they stay
+// live while another tab is showing. Runtimes only exist once the Terminals view has been
+// opened in this page load; until then there are no counts to show.
+
+import { useSyncExternalStore } from 'react'
+import type { ReactElement } from 'react'
+import { getStats, subscribeStats } from './stats.ts'
+import { describeFiveHour, describeSevenDay, describeTokens, formatAge, formatTokens, formatUsd, isStale } from './stats-format.ts'
+import { ensureStyles } from './styles.ts'
+import { getVersion, runtimes, subscribe } from './terminal-store.ts'
+
+const AGENT_KINDS = [
+  { activity: 'working', label: 'working' },
+  { activity: 'needs-you', label: 'needs you' },
+  { activity: 'finished', label: 'finished' },
+] as const
+
+/** Number of terminals per activity. */
+function countAgents(): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const rt of runtimes.values()) counts[rt.activity] = (counts[rt.activity] ?? 0) + 1
+  return counts
+}
+
+function Out({ text }: { text: string | null }): ReactElement | null {
+  return text === null ? null : (
+    <>
+      {' · '}
+      <span className="wt-stats-warn">{text}</span>
+    </>
+  )
+}
+
+/**
+ * The compact one-line stats bar.
+ * @returns the bar, or null when there is nothing to show.
+ */
+export function StatsBar(): ReactElement | null {
+  ensureStyles()
+  useSyncExternalStore(subscribe, getVersion, getVersion)
+  // Subscribing is what mounts the shared poller.
+  const snap = useSyncExternalStore(subscribeStats, getStats, getStats)
+
+  const counts = countAgents()
+  const agents = AGENT_KINDS.filter((k) => (counts[k.activity] ?? 0) > 0)
+  const stats = snap?.stats
+  const limits = stats?.limits
+  const sampledAt = limits?.sampledAt ?? null
+  const stale = isStale(sampledAt, Date.now())
+  const five = limits?.fiveHour ? describeFiveHour(limits.fiveHour) : null
+  const seven = limits?.sevenDay ? describeSevenDay(limits.sevenDay) : null
+  const lineOff = stats !== undefined && !stats.statusLine.enabled
+  const offTitle = `Limit tracking is off: ${stats?.statusLine.reason ?? 'unknown reason'}`
+  const cost = stats?.cost && (stats.cost.terminals > 0 || stats.cost.totalUsd > 0) ? stats.cost : null
+  const tokens = stats?.tokens && stats.tokens.total > 0 ? stats.tokens : null
+
+  const parts: ReactElement[] = []
+  if (agents.length > 0) {
+    parts.push(
+      <span key="agents" className="wt-stats-group" title="Terminals by agent status">
+        {agents.map((k) => (
+          <span key={k.activity} className="wt-stats-item">
+            <i className="wt-dot" data-a={k.activity} />
+            {counts[k.activity]} {k.label}
+          </span>
+        ))}
+      </span>,
+    )
+  }
+  if (five !== null || seven !== null) {
+    parts.push(
+      <span
+        key="limits"
+        className="wt-stats-group"
+        data-stale={stale}
+        title={stale ? 'Limits come from the last Claude terminal that reported them' : lineOff ? offTitle : undefined}
+      >
+        {five !== null && (
+          <span className="wt-stats-item">
+            {five.main}
+            <Out text={five.out} />
+          </span>
+        )}
+        {seven !== null && (
+          <span className="wt-stats-item" title={seven.title}>
+            {seven.main}
+            <Out text={seven.out} />
+          </span>
+        )}
+        {stale && sampledAt !== null && <span className="wt-stats-item">{`· ${formatAge(Date.now() - sampledAt)}`}</span>}
+      </span>,
+    )
+  } else if (lineOff) {
+    parts.push(
+      <span key="limits" className="wt-stats-group" data-stale="true" title={offTitle}>
+        <span className="wt-stats-item">limits n/a</span>
+      </span>,
+    )
+  }
+  if (cost !== null) {
+    parts.push(
+      <span key="cost" className="wt-stats-item" title={`API-price equivalent across ${cost.terminals} open terminals`}>
+        {formatUsd(cost.totalUsd)}
+      </span>,
+    )
+  }
+  if (tokens !== null) {
+    parts.push(
+      <span key="tokens" className="wt-stats-item" title={describeTokens(tokens)}>
+        {formatTokens(tokens.total)} tok
+      </span>,
+    )
+  }
+  if (parts.length === 0) return null
+  return <div className="wt-stats">{parts}</div>
+}
