@@ -538,6 +538,21 @@ test('with no saved size, an unopened terminal uses an explicit default in both 
   await sleep(300)
 })
 
+test('appearance options reach the Terminal and change live', async () => {
+  const { rt } = await start()
+  const o = rt.term.options
+  assert.equal(o.fontSize, 14)
+  assert.equal(o.lineHeight, 1.2)
+  assert.equal(o.letterSpacing, 0)
+  assert.equal(o.fontWeightBold, 600)
+  assert.equal(o.minimumContrastRatio, 4.5)
+  assert.ok(o.fontFamily.startsWith("'Cascadia Mono'"))
+  s.setFont({ lineHeight: 1.5, letterSpacing: 1, boldWeight: 700, minContrast: 7, size: 16 })
+  assert.deepEqual([o.lineHeight, o.letterSpacing, o.fontWeightBold, o.minimumContrastRatio], [1.5, 1, 700, 7])
+  s.setFont({ ...s.DEFAULT_FONT })
+  assert.deepEqual([o.lineHeight, o.letterSpacing, o.fontWeightBold, o.minimumContrastRatio], [1.2, 0, 600, 4.5])
+})
+
 test('the real grid is remembered on the window once the terminal reports it', async () => {
   const { id, rt } = await start()
   rt.term.resize(100, 30)

@@ -87,12 +87,18 @@ an older host without them simply shows an empty panel.
 - `⋯` → **Save log…** downloads the terminal's scrollback as a text file.
 
 ### Look
-VS Code Dark+/Light+ colours following the app theme, rounded windows with an accent-ringed focus state, thin
-scrollbars. **Aa** sets the **font** (presets or any installed font list; default
-`'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace` at 12 px), size and line height, for all
-terminals. **Shrink font to fit window** (on by default, in **Aa**): in narrow windows the font shrinks just enough
-to keep about 100 columns visible (adjustable; never below 9 px, never above your size), so tiled terminals stay
-readable without wrapping. Text colours in the dialogs and bars are chosen from the *measured* background, so they stay legible
+Dark/light palettes derived from VS Code Dark+/Light+ and brightened for readability: every text colour
+(black aside) is at least 4.5:1 against the background, default text 15.7:1 dark / 18.5:1 light. Rounded windows with an
+accent-ringed focus state, thin scrollbars, 8 px of padding inside each window. **Aa** sets the **font** (presets or
+any installed font list; default `'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas,
+'DejaVu Sans Mono', 'Liberation Mono', monospace` at 14 px; no ligatures, xterm draws none without an addon), size,
+line height (1.2), letter spacing (0-2 px), bold weight (600) and **Contrast** (Off 1:1 / Normal 4.5:1 / High 7:1:
+xterm lifts any text colour that is closer than this to its background, so grey hints stay legible; dim/faint text
+gets half the ratio, so pick High if it is still too faint) for all terminals, live. Stored fonts equal to the old
+12 px default move to the new defaults; a font you chose keeps its values. **Shrink font to fit window** (on by
+default, in **Aa**): in narrow windows the font shrinks just enough to keep about 100 columns visible (adjustable;
+never below 12 px, never above your size), so tiled terminals stay readable; a window narrower than that shows fewer
+columns instead of smaller text. Text colours in the dialogs and bars are chosen from the *measured* background, so they stay legible
 whatever the theme's tokens say. New terminals open first in the list and on top of the stack.
 
 Switching tabs or sessions does **not** touch the terminals. Window layout, names, folders, favourites and

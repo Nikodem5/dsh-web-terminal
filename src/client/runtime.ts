@@ -100,10 +100,13 @@ export function ensureRuntime(win: WinState): Runtime {
     fontFamily: prefs.font.family,
     fontSize: prefs.font.size,
     lineHeight: prefs.font.lineHeight,
+    letterSpacing: prefs.font.letterSpacing,
+    fontWeight: 'normal',
+    fontWeightBold: prefs.font.boldWeight,
     scrollback: 5000,
     allowProposedApi: true,
     // Keep text readable whatever colours a program prints (e.g. white text from a dark-themed TUI on a light background).
-    minimumContrastRatio: 4.5,
+    minimumContrastRatio: prefs.font.minContrast,
     theme: termTheme(),
   })
   const fit = new FitAddon()
@@ -400,15 +403,19 @@ export function sizeToHost(rt: Runtime): void {
   }
 }
 
+/** Smallest size auto-fit shrinks to: shrinking further would trade legibility for columns. */
+export const AUTO_FONT_FLOOR = 12
+
 /**
  * Font size for a window: the user's size, shrunk only as far as needed to keep about
- * `fitCols` columns visible (monospace glyphs are roughly 0.6 em wide), never below 9 px.
+ * `fitCols` columns visible (monospace glyphs are roughly 0.6 em wide plus the letter spacing),
+ * never below AUTO_FONT_FLOOR. A window too narrow for that shows fewer columns instead.
  */
-function effectiveFontSize(widthPx: number): number {
+export function effectiveFontSize(widthPx: number): number {
   const base = prefs.font.size
   if (!prefs.autoFont) return base
-  const fitting = Math.floor(widthPx / (prefs.fitCols * 0.6))
-  return Math.max(Math.min(9, base), Math.min(base, fitting))
+  const fitting = Math.floor((widthPx / prefs.fitCols - prefs.font.letterSpacing) / 0.6)
+  return Math.max(Math.min(AUTO_FONT_FLOOR, base), Math.min(base, fitting))
 }
 
 /** Refit a runtime to its container (adapting the font size to its width) and tell the host. */

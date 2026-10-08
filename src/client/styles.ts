@@ -122,7 +122,7 @@ const VIEW_CSS = `
 .wt-hbtn:hover { background: var(--wt-hover); color: var(--wt-text); }
 .wt-hbtn[data-on="true"] { color: var(--wt-accent); }
 .wt-hbtn[data-danger="true"]:hover { background: #ef444433; color: #ef4444; }
-.wt-body { flex: 1; min-height: 0; padding: 8px 2px 4px 10px; background: var(--wt-term-bg, var(--wt-deep)); }
+.wt-body { flex: 1; min-height: 0; padding: 8px; background: var(--wt-term-bg, var(--wt-deep)); }
 .wt-holder { width: 100%; height: 100%; }
 .wt-holder .xterm { height: 100%; }
 .wt-holder .xterm-viewport { background-color: transparent !important; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--wt-dim) 45%, transparent) transparent; }
