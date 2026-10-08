@@ -54,6 +54,7 @@ const typed = (sock, text) => sock.sent.some((f) => f.type === 'input' && f.data
 async function start(opts = {}) {
   const id = s.openTerminal({ cwd: 'C:\\work', startup: 'npm run dev', ...opts })
   const rt = s.ensureRuntime(s.getWins().find((w) => w.id === id))
+  s.openRuntime(rt) // the tests below drive xterm's textarea
   const sock = await until(() => FakeWebSocket.last, 'the first socket')
   return { id, rt, sock }
 }
@@ -381,6 +382,7 @@ async function broadcastPair() {
   a.sock.push(attached())
   const idB = s.openTerminal({ cwd: 'C:\\other' })
   const rtB = s.ensureRuntime(s.getWins().find((w) => w.id === idB))
+  s.openRuntime(rtB)
   const sockB = await until(() => FakeWebSocket.instances.find((x) => x.url.includes(idB)), 'the second socket')
   sockB.push(attached())
   s.setBroadcast({ on: true, live: true })
@@ -418,4 +420,77 @@ test('a key that looks like a report (Shift+F3 is CSI 1;2 R) is still mirrored',
   assert.deepEqual(inputs(a.sock), ['\x1b[1;2R'])
   assert.deepEqual(inputs(b.sock), ['\x1b[1;2R'])
   s.setBroadcast({ on: false, live: false })
+})
+
+// ── attaching saved terminals at plugin start ──
+
+const LAYOUT_KEY = 'dsh.web-terminal.layout.v1'
+const savedWin = (id, extra = {}) => ({ id, title: id, shell: 'default', cwd: '/work/x', x: 0, y: 0, w: 0.5, h: 0.5, z: 1, pinned: false, maximized: false, minimized: false, ...extra })
+
+/** A fresh store module whose saved layout is `wins`, started the way the plugin entry does. */
+async function startSaved(wins) {
+  const f = await s2()
+  window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({ wins, zTop: 2 }))
+  f.startTerminals()
+  return f
+}
+const s2 = async () => (await import('./helpers/load-store.mjs')).loadStore({ fresh: true })
+
+test('startTerminals connects every saved window before any view exists, and only those', async () => {
+  const f = await startSaved([savedWin('a'), savedWin('b', { startup: 'claude' })])
+  await until(() => FakeWebSocket.instances.length === 2, 'both sockets')
+  assert.deepEqual([...f.runtimes.keys()].sort(), ['a', 'b'])
+  assert.ok(FakeWebSocket.instances.every((x) => x.url.includes('/terminal/ws?')))
+  assert.ok([...f.runtimes.values()].every((rt) => !rt.opened), 'no DOM yet')
+  f.startTerminals()
+  await sleep(50)
+  assert.equal(FakeWebSocket.instances.length, 2, 'a second start adds nothing')
+  f.closeAll()
+  await sleep(300)
+})
+
+test('startTerminals with nothing saved connects nothing', async () => {
+  const f = await startSaved([])
+  await sleep(100)
+  assert.equal(FakeWebSocket.instances.length, 0)
+  f.closeAll()
+  await sleep(300)
+})
+
+test('an unopened terminal takes replay and agent signals: it raises attention with no page, and mounting reuses it', async () => {
+  const f = await startSaved([savedWin('a', { startup: 'claude' })])
+  const sock = await until(() => FakeWebSocket.last, 'the socket')
+  const rt = f.runtimes.get('a')
+  sock.push(attached({ created: false, replay: 'hello from before\r\n', agent: null }))
+  sock.push({ type: 'agent', provider: 'claude', state: 'needs-you', detail: 'Permission needed' })
+  assert.equal(rt.conn, 'live')
+  assert.equal(rt.activity, 'needs-you')
+  assert.equal(rt.attention, true)
+  assert.ok(!sock.sent.some((x) => x.type === 'input'), 'a reattached session gets no startup command')
+  await flush(rt)
+  assert.equal(rt.term.buffer.active.getLine(0).translateToString(true), 'hello from before')
+
+  // The page mounts: same runtime, same socket, buffered output now on screen.
+  const body = window.document.createElement('div')
+  window.document.body.appendChild(body)
+  body.appendChild(rt.holder)
+  f.refit(rt)
+  assert.equal(f.ensureRuntime(f.getWins()[0]), rt)
+  assert.equal(FakeWebSocket.instances.length, 1)
+  assert.equal(rt.opened, true)
+  assert.ok(rt.holder.querySelector('.xterm'))
+  assert.equal(rt.term.buffer.active.getLine(0).translateToString(true), 'hello from before')
+  body.remove()
+  f.closeAll()
+  await sleep(300)
+})
+
+test('a fresh session started before the page still types its startup command', async () => {
+  const f = await startSaved([savedWin('a', { startup: 'npm run dev' })])
+  const sock = await until(() => FakeWebSocket.last, 'the socket')
+  sock.push(attached({ created: true }))
+  sock.push({ type: 'data', data: 'PS> ' })
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 4000)
+  f.closeAll()
+  await sleep(300)
 })

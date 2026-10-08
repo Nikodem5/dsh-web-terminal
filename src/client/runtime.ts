@@ -100,19 +100,13 @@ export function ensureRuntime(win: WinState): Runtime {
   const search = new SearchAddon()
   term.loadAddon(fit)
   term.loadAddon(search)
-  // Links open with Ctrl/Cmd+click (like VS Code) so plain clicks still select text.
-  // The desktop app routes window.open of http(s) URLs to the system browser.
-  term.loadAddon(
-    new WebLinksAddon((event, uri) => {
-      if (!(event.ctrlKey || event.metaKey)) return
-      window.open(uri, '_blank', 'noopener,noreferrer')
-    }),
-  )
-  term.open(holder)
+  // Not opened here: a runtime is created at plugin start, before any page exists. xterm parses
+  // writes without a renderer; `openRuntime` gives it a DOM once its window first mounts.
 
   const rt: Runtime = {
     id: win.id,
     holder,
+    opened: false,
     term,
     fit,
     search,
@@ -358,8 +352,29 @@ export function ensureRuntime(win: WinState): Runtime {
   return rt
 }
 
+/**
+ * Give the xterm instance its DOM, once, when its holder is first in the document. Everything that
+ * needs a renderer (links, fitting, focus) waits for this; the output received so far is kept.
+ */
+export function openRuntime(rt: Runtime): void {
+  if (rt.opened) return
+  rt.opened = true
+  rt.term.open(rt.holder)
+  // Links open with Ctrl/Cmd+click (like VS Code) so plain clicks still select text.
+  // The desktop app routes window.open of http(s) URLs to the system browser.
+  rt.term.loadAddon(
+    new WebLinksAddon((event, uri) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      window.open(uri, '_blank', 'noopener,noreferrer')
+    }),
+  )
+  // The grid was never sent to the host (or only xterm's default); report the real one.
+  rt.lastCols = 0
+}
+
 /** Push the current xterm grid size to the PTY when it changed. */
 export function sizeToHost(rt: Runtime): void {
+  if (!rt.opened) return
   const { cols, rows } = rt.term
   if (cols === rt.lastCols && rows === rt.lastRows) return
   rt.lastCols = cols
@@ -382,7 +397,9 @@ function effectiveFontSize(widthPx: number): number {
 
 /** Refit a runtime to its container (adapting the font size to its width) and tell the host. */
 export function refit(rt: Runtime): void {
-  if (!rt.holder.isConnected || rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
+  if (!rt.holder.isConnected) return
+  openRuntime(rt)
+  if (rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
   const size = effectiveFontSize(rt.holder.clientWidth)
   if (rt.term.options.fontSize !== size) rt.term.options.fontSize = size
   try {
