@@ -705,3 +705,128 @@ test('path links: URLs and a failing host produce no links', async () => {
     host.restore()
   }
 })
+
+// ── "new since you last looked" ──
+
+test('newLinesSince / labels: counts from the blur-time cursor line, repaints add nothing', () => {
+  assert.equal(s.newLinesSince(11, 10), 0, 'cursor line unchanged = nothing new')
+  assert.equal(s.newLinesSince(11, 10 + 42), 42)
+  assert.equal(s.newLinesSince(11, 4), 0, 'never negative')
+  assert.equal(s.pillText(1), '↓ 1 new line')
+  assert.equal(s.pillText(42), '↓ 42 new lines')
+  const at = new Date(2026, 0, 5, 9, 7).getTime()
+  assert.equal(s.timeLabel(at), '09:07')
+  assert.equal(s.dividerText(at), '── new since 09:07 ──')
+  const key = (init) => ({ ctrlKey: true, shiftKey: true, altKey: false, metaKey: false, key: 'U', ...init })
+  assert.equal(s.isUnreadJump(key()), true)
+  assert.equal(s.isUnreadJump(key({ shiftKey: false })), false)
+  assert.equal(s.isUnreadJump(key({ altKey: true })), false)
+})
+
+/** Two terminals, the page showing; `a` is looked at until `away()` focuses `b`. */
+async function twoTerminals() {
+  window.document.hasFocus = () => true
+  s.setViewMounted(true)
+  const a = await start({ startup: undefined })
+  a.sock.push(attached())
+  const idB = s.openTerminal({ cwd: 'C:\other' })
+  const rtB = s.ensureRuntime(s.getWins().find((w) => w.id === idB))
+  s.openRuntime(rtB)
+  s.focusWin(a.id)
+  const lines = (n, tag = 'out') => Array.from({ length: n }, (_, i) => `${tag} ${i}\r\n`).join('')
+  const out = async (text) => {
+    a.sock.push({ type: 'data', data: text })
+    await flush(a.rt)
+  }
+  const away = () => s.focusWin(idB)
+  const back = () => s.focusWin(a.id)
+  return { ...a, idB, out, away, back, lines, done: () => s.setViewMounted(false) }
+}
+
+test('unread: blur, output, focus draws the divider on the first new line', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('prompt$ ')
+    const cursorAtBlur = t.rt.term.buffer.active.baseY + t.rt.term.buffer.active.cursorY
+    t.away()
+    assert.equal(s.unreadCount(t.id), 0)
+    await t.out(t.lines(7))
+    assert.equal(s.unreadCount(t.id), 7, 'the sidebar count follows the output')
+    assert.equal(s.dividerLine(t.id), -1, 'no divider while nobody looks')
+    t.back()
+    assert.equal(s.dividerLine(t.id), cursorAtBlur + 1)
+    assert.equal(s.unreadCount(t.id), 0, 'the sidebar indicator clears once looked at')
+    // The divider stays through more output, and is replaced the next time the user leaves.
+    await t.out(t.lines(2))
+    assert.equal(s.dividerLine(t.id), cursorAtBlur + 1)
+    t.away()
+    assert.equal(s.dividerLine(t.id), -1, 'the old divider goes when the terminal is left again')
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: in-place repaints are not new output', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('status: working')
+    t.away()
+    await t.out('\r\x1b[2Kstatus: working.')
+    await t.out('\r\x1b[2Kstatus: working..')
+    assert.equal(s.unreadCount(t.id), 0)
+    t.back()
+    assert.equal(s.dividerLine(t.id), -1, 'nothing new, no divider')
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: output while on the alternate screen is skipped', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('$ vim\r\n\x1b[?1049h')
+    t.away()
+    await t.out(t.lines(30, 'vim'))
+    assert.equal(s.unreadCount(t.id), 0)
+    t.back()
+    assert.equal(s.dividerLine(t.id), -1)
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: a marker that scrolled out of the scrollback leaves no divider', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('$ ')
+    t.away()
+    await t.out(t.lines(6000)) // scrollback is 5000 lines
+    assert.equal(s.unreadCount(t.id), 0)
+    t.back()
+    assert.equal(s.dividerLine(t.id), -1)
+    assert.equal(s.jumpToUnread(t.id), false)
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: the pill shows when the divider is above the viewport and jumping scrolls to it', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('$ ')
+    t.away()
+    await t.out(t.lines(80))
+    t.back()
+    const line = s.dividerLine(t.id)
+    assert.ok(line > 0)
+    assert.ok(t.rt.term.buffer.active.viewportY > line, 'the divider is above the visible rows')
+    assert.equal(s.unreadPill(t.id), 80)
+    // jsdom has no layout, so xterm's viewport cannot scroll here: check what the jump asks for.
+    const asked = []
+    t.rt.term.scrollToLine = (l) => asked.push(l)
+    assert.equal(s.jumpToUnread(t.id), true)
+    assert.deepEqual(asked, [line])
+  } finally {
+    t.done()
+  }
+})

@@ -30,6 +30,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Switch terminals | **Ctrl+Alt+←/→** cycles through the list order (works while a terminal has focus) |
 | Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste |
 | Find in terminal | **Ctrl+F** (or `⋯` → Find…) opens a find bar over the focused terminal: highlights every match in the scrollback, `n / total` counter, **Enter** / **Shift+Enter** next/previous, match-case / whole-word / regex toggles, **Esc** closes. Pre-fills from a one-line selection |
+| Jump to new output | **Ctrl+Shift+U** scrolls to the "new since" divider (see below) |
 | Links | URLs in terminal output are underlined on hover; **Ctrl+click** (Cmd+click) opens them in your system browser (plain clicks still select text) |
 
 ### Knowing what your agents are doing
@@ -54,6 +55,9 @@ Status comes from the agent itself, not from guessing at output.
 - **Broadcast**: **⇉ Broadcast** adds checkboxes to the list. Type a command in the bar and Enter sends it to
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
+
+### New since you last looked
+A terminal counts as looked at while its window is focused, the Terminals page is showing and the app is in front. When you stop looking, the plugin remembers where the output ended. Output that adds at least one new line while you are away shows as a small count on the terminal's list row (separate from attention badges; in-place repaints such as a status line do not count). When you come back, a thin divider `── new since 14:32 ──` marks the first new line and stays until you look away again. If it is above the visible rows, a `↓ 42 new lines` pill at the window's bottom right (or **Ctrl+Shift+U**) jumps to it. Full-screen programs (vim, htop) are skipped, and a divider whose line has scrolled out of the scrollback is not shown. Attention and alerts are unchanged.
 
 ### Stats bar (chat header and Terminals page)
 A compact one-line bar in the chat header, and again in the Terminals page toolbar (next to *Close all*): terminal counts by status (working, needs you,
