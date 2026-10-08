@@ -82,6 +82,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isRect = (v: unknown): v is Rect => isObj(v) && isNum(v.x) && isNum(v.y) && isNum(v.w) && isNum(v.h)
 
 /** A stored window, repaired or dropped: a bad geometry would break the layout, a bad z would make zTop NaN. */
+const isGrid = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 2 && v <= 1000
+
 function cleanWin(raw: unknown, index: number): WinState | undefined {
   if (!isObj(raw) || typeof raw.id !== 'string' || raw.id.length === 0 || !isRect(raw)) return undefined
   return {
@@ -104,6 +106,8 @@ function cleanWin(raw: unknown, index: number): WinState | undefined {
     restore: isRect(raw.restore) ? { x: raw.restore.x, y: raw.restore.y, w: raw.restore.w, h: raw.restore.h } : undefined,
     gen: isNum(raw.gen) ? raw.gen : undefined,
     agentSession: typeof raw.agentSession === 'string' ? raw.agentSession : undefined,
+    cols: isGrid(raw.cols) ? raw.cols : undefined,
+    rows: isGrid(raw.rows) ? raw.rows : undefined,
   }
 }
 

@@ -514,3 +514,35 @@ test('subagents frames replace the list, the attached frame seeds it, a missing 
   sock.push(attached())
   await until(() => rt.subagents.length === 0, 'an attach from an old host without the field')
 })
+
+test('an unopened terminal starts at its saved grid size and sends the same size to the host', async () => {
+  const f = await startSaved([savedWin('a', { cols: 132, rows: 41 })])
+  const sock = await until(() => FakeWebSocket.last, 'the socket')
+  const rt = f.runtimes.get('a')
+  assert.deepEqual([rt.term.cols, rt.term.rows], [132, 41])
+  const q = new URL(sock.url).searchParams
+  assert.deepEqual([q.get('cols'), q.get('rows')], ['132', '41'])
+  f.closeAll()
+  await sleep(300)
+})
+
+test('with no saved size, an unopened terminal uses an explicit default in both places; bad saved sizes are ignored', async () => {
+  const f = await startSaved([savedWin('a'), savedWin('b', { cols: 'wide', rows: -3 })])
+  await until(() => FakeWebSocket.instances.length === 2, 'both sockets')
+  for (const sock of FakeWebSocket.instances) {
+    const q = new URL(sock.url).searchParams
+    assert.deepEqual([q.get('cols'), q.get('rows')], [String(f.UNOPENED_COLS), String(f.UNOPENED_ROWS)])
+  }
+  for (const rt of f.runtimes.values()) assert.deepEqual([rt.term.cols, rt.term.rows], [f.UNOPENED_COLS, f.UNOPENED_ROWS])
+  f.closeAll()
+  await sleep(300)
+})
+
+test('the real grid is remembered on the window once the terminal reports it', async () => {
+  const { id, rt } = await start()
+  rt.term.resize(100, 30)
+  rt.lastCols = 0
+  s.sizeToHost(rt)
+  const win = s.getWins().find((w) => w.id === id)
+  assert.deepEqual([win.cols, win.rows], [100, 30])
+})

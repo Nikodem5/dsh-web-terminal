@@ -36,6 +36,9 @@ export interface WinState extends Rect {
   gen?: number
   /** Latest conversation id the agent in this window reported; a fresh shell resumes it. */
   agentSession?: string
+  /** Last real grid size (after a fit); a terminal created before its page opens starts at this size. */
+  cols?: number
+  rows?: number
 }
 
 /** Connection phase of one terminal runtime. */

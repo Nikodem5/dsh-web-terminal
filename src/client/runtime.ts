@@ -15,6 +15,10 @@ import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
+/** Grid for a terminal that was never fitted (the host's own default, so a fresh PTY matches). */
+export const UNOPENED_COLS = 200
+export const UNOPENED_ROWS = 50
+
 let ticker: ReturnType<typeof setInterval> | undefined
 
 /**
@@ -86,7 +90,12 @@ export function ensureRuntime(win: WinState): Runtime {
 
   const holder = document.createElement('div')
   holder.className = 'wt-holder'
+  // Unopened there is no fit: use the last real size and send the same one to the host, so both agree.
+  const cols = win.cols ?? UNOPENED_COLS
+  const rows = win.rows ?? UNOPENED_ROWS
   const term = new Terminal({
+    cols,
+    rows,
     cursorBlink: true,
     fontFamily: prefs.font.family,
     fontSize: prefs.font.size,
@@ -214,10 +223,10 @@ export function ensureRuntime(win: WinState): Runtime {
     const dims = rt.fit.proposeDimensions()
     const params = new URLSearchParams({ id: `${rt.id}-${current.gen ?? 0}`, shell: current.shell })
     if (current.cwd.length > 0) params.set('cwd', current.cwd)
-    if (dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)) {
-      params.set('cols', String(dims.cols))
-      params.set('rows', String(dims.rows))
-    }
+    // Always explicit: before the page opens there is no fit, and the xterm grid is what the host must match.
+    const fitted = rt.opened && dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)
+    params.set('cols', String(fitted ? dims.cols : term.cols))
+    params.set('rows', String(fitted ? dims.rows : term.rows))
     const socket = new WebSocket(`${socketBase()}/terminal/ws?${params.toString()}`)
     rt.socket = socket
     setConn(rt, 'connecting')
@@ -384,6 +393,8 @@ export function sizeToHost(rt: Runtime): void {
   if (cols === rt.lastCols && rows === rt.lastRows) return
   rt.lastCols = cols
   rt.lastRows = rows
+  const win = store.wins.find((w) => w.id === rt.id)
+  if (win !== undefined && (win.cols !== cols || win.rows !== rows)) updateWin(rt.id, { cols, rows })
   if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) {
     rt.socket.send(JSON.stringify({ type: 'resize', cols, rows }))
   }
