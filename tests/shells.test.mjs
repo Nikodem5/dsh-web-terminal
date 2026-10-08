@@ -7,6 +7,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -95,40 +96,60 @@ const spacedShellDir = (() => {
 })()
 after(() => rmSync(spacedRoot, { recursive: true, force: true }))
 
+const ENTER = String.fromCharCode(13)
+
+/** Kill the shell and everything it started (conpty children outlive p.kill() on Windows), then wait for it to be gone. */
+function killTree(p) {
+  return new Promise((done) => {
+    const gone = setTimeout(done, 5000)
+    p.onExit(() => { clearTimeout(gone); done() })
+    try {
+      if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(p.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+      else p.kill()
+    } catch {}
+    try { p.kill() } catch {}
+  })
+}
+
 /**
- * Type `lines` into a shell once its first prompt is out and return everything it wrote, up to the second
- * time the sentinel text appears (once as the typed command, once as its output).
+ * Type `lines` into a shell, one at a time: the next line goes in only once the shell has drawn the next
+ * prompt (a new OSC 133;B), so nothing depends on how fast the machine is. Resolves with everything the shell
+ * wrote, up to the second time the sentinel text appears (once as the typed command, once as its output).
+ * The deadline is generous: a cold PowerShell under parallel test load can take many seconds to start.
+ * The shell tree is always killed before this settles.
  * @returns the raw output.
  */
-function runShell(file, args, env, lines, cwd) {
-  return new Promise((resolve, reject) => {
-    const p = nodePty.spawn(file, args, { cols: 200, rows: 40, cwd, env: { ...process.env, ...env } })
-    let out = ''
-    const timer = setTimeout(() => {
-      p.kill()
-      reject(new Error(`shell timed out; saw ${JSON.stringify(out.slice(-300))}`))
-    }, 30000)
-    let sent = false
-    const sendAll = () => {
-      sent = true
-      let i = 0
-      const next = () => {
-        if (i >= lines.length) return
-        p.write(`${lines[i++]}\r`)
-        setTimeout(next, 700)
-      }
-      next()
-    }
-    p.onData((d) => {
-      out += d
-      if (!sent && out.includes(']133;B')) setTimeout(sendAll, 300)
-      if (out.split('DSH_DONE_MARK').length > 2) {
-        clearTimeout(timer)
-        p.kill()
-        resolve(out)
-      }
+async function runShell(file, args, env, lines, cwd) {
+  const p = nodePty.spawn(file, args, { cols: 200, rows: 40, cwd, env: { ...process.env, ...env } })
+  let out = ''
+  let finished = false
+  let sent = 0
+  let timer
+  try {
+    await new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`shell timed out; saw ${JSON.stringify(out.slice(-300))}`)), 40000)
+      p.onExit(() => { if (!finished) reject(new Error(`shell exited early; saw ${JSON.stringify(out.slice(-300))}`)) })
+      p.onData((d) => {
+        if (finished) return
+        out += d
+        if (out.split('DSH_DONE_MARK').length > 2) {
+          finished = true
+          resolve()
+          return
+        }
+        const prompts = out.split(']133;B').length - 1
+        // Line k is typed once prompt k+1 is out (prompt 1 is the first one).
+        while (sent < lines.length && prompts >= sent + 1) {
+          try { p.write(lines[sent++] + ENTER) } catch (e) { finished = true; reject(e); return }
+        }
+      })
     })
-  })
+  } finally {
+    finished = true
+    clearTimeout(timer)
+    await killTree(p)
+  }
+  return out
 }
 
 /** The 133/633 payloads in the order the shell wrote them: `A`, `B`, `C`, `D;3`, `E;cmd`, `P;Cwd=...`. */

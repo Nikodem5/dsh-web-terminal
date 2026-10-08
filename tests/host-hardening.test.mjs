@@ -216,7 +216,7 @@ test('heartbeat: a socket that stops answering pings is terminated, the shell su
   const id = freshId()
   const mute = await host.connect(`id=${id}`, { autoPong: false })
   assert.ok(await until(() => mute.frames.length > 0))
-  const code = await Promise.race([mute.closed, sleep(1500).then(() => 'timeout')])
+  const code = await Promise.race([mute.closed, sleep(5000).then(() => 'timeout')])
   assert.equal(code, 1006)
   assert.equal(host.spawned[0].handle.terminated, false)
   // The session is detached and can be reattached.
@@ -227,10 +227,16 @@ test('heartbeat: a socket that stops answering pings is terminated, the shell su
 })
 
 test('heartbeat: a responsive socket stays open across many intervals', async () => {
-  const host = await startHost({ DSH_WT_HEARTBEAT_MS: '30' })
+  // Server and client share this event loop, so a stall longer than one interval makes the server's next
+  // tick run before the client has read the pong. Keep the interval large next to any plausible stall
+  // (parallel test files), and span several ticks so a heartbeat that terminated would be seen.
+  const host = await startHost({ DSH_WT_HEARTBEAT_MS: '300' })
   const { ws, frames } = await host.connect(`id=${freshId()}`)
   await until(() => frames.length > 0)
-  await sleep(300)
+  let pings = 0
+  ws.on('ping', () => { pings++ })
+  await sleep(1300)
+  assert.ok(pings >= 2, `pings seen: ${pings}`)
   assert.equal(ws.readyState, WebSocket.OPEN)
   ws.close()
 })
