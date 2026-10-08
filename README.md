@@ -54,6 +54,14 @@ Status comes from the agent itself, not from guessing at output.
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
 
+### Stats bar (chat header)
+A compact one-line bar in the chat header, visible on every tab: terminal counts by status (working, needs you,
+finished; hidden at zero), the 5-hour and 7-day Claude limits (`5h 42% · resets 14:30 · out ~13:55`, where *out* is
+the forecast time of hitting 100%), the summed API-price-equivalent cost and the token total (hover for the split).
+Limits are read from the last Claude terminal that reported them; a sample older than 10 minutes is dimmed with its
+age. The host is polled every 5 s while the page is visible; if the host does not serve `/stats` (older install),
+only the terminal counts show. Counts appear once the Terminals tab has been opened in this page load.
+
 ### The terminal list (right)
 Every terminal with status, name, folder and a pin marker. Click to focus, **double-click the name to rename**,
 drag rows to reorder (that is also the Ctrl+Alt+←/→ order), ⧉ duplicate, ✕ close. `☰` in the toolbar hides it.

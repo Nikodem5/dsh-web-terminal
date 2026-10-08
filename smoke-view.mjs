@@ -51,7 +51,9 @@ window.WebSocket = class {
 window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
 window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
 // The host probe is slow on a cold start (it looks shells up on PATH): answer after the terminal attaches.
-window.fetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
+const statsPayload = { ok: true, limits: { fiveHour: { usedPct: 42, resetsAt: Date.now() + 3600e3, outAt: Date.now() + 1800e3 }, sevenDay: { usedPct: 63, resetsAt: Date.now() + 86400e3, outAt: null }, sampledAt: Date.now() }, cost: { totalUsd: 12.34, terminals: 2 }, tokens: { total: 2_500_000_000, input: 1, output: 2, cacheRead: 3, cacheCreation: 4, asOf: Date.now() }, statusLine: { enabled: true, reason: null } }
+const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
+window.fetch = (url) => (String(url).endsWith('/stats') ? Promise.resolve({ ok: true, json: async () => statsPayload }) : infoFetch())
 window.confirm = () => true
 window.__DSH_TRANSPORT__ = { streamBaseUrl: 'http://127.0.0.1:19387' }
 window.HTMLCanvasElement.prototype.getContext = () => null
@@ -86,10 +88,15 @@ const mods = { react: React, 'react/jsx-runtime': jsxRuntime }
 const exportsObject = entry.factory((id) => mods[id])
 let component
 let injectFn
+let statsBar
+let statsOptions
 exportsObject.apply({
   slots: {
     inject: (_key, cb) => { cb(); return () => {} },
-    register: (options, comp) => { component = comp; injectFn = options.inject; return () => {} },
+    register: (options, comp) => {
+      if (options.name === 'conversation.session.header.utilities') { statsBar = comp; statsOptions = options; return () => {} }
+      component = comp; injectFn = options.inject; return () => {}
+    },
   },
   sessions: { list: { getSnapshot: () => ({ byId: { s1: { cwd: 'C:\\work\\repo' } } }) } },
 })
@@ -361,6 +368,28 @@ await sleep(30)
 click(byText('.wt-pop button', 'Save'))
 await sleep(20)
 check(byText('.wt-pop .wt-item', 'duo') !== undefined, 'layout saved and listed')
+
+// stats bar: a second root, as another session header would mount it
+check(statsOptions?.id === 'terminal-stats' && statsOptions.order === 10, 'the stats bar registers into the header utilities seat')
+const barHost = doc.createElement('div')
+doc.body.appendChild(barHost)
+const barRoot = ReactDOMClient.createRoot(barHost)
+sock.push({ type: 'agent', provider: 'claude', state: 'working', detail: '' })
+await sleep(40)
+ReactDOM.flushSync(() => barRoot.render(React.createElement(statsBar, {})))
+await sleep(60)
+const barText = barHost.textContent
+check(barText.includes('5h 42%') && barText.includes('7d 63%') && barText.includes('out ~'), `stats bar shows limits (${barText})`)
+check(barText.includes('$12.34') && barText.includes('2.5B tok'), 'stats bar shows cost and tokens')
+check(barText.includes('1 working'), 'stats bar counts a working agent')
+sock.push({ type: 'agent', provider: 'claude', state: 'needs-you', detail: 'Permission: Bash: ls' })
+await sleep(60)
+check(barHost.textContent.includes('1 needs you') && !barHost.textContent.includes('working'), 'agent counts update live without a re-render')
+sock.push({ type: 'agent', provider: 'claude', state: 'ended', detail: '' })
+await sleep(60)
+check(barHost.querySelector('.wt-stats-warn') !== null, 'out time is highlighted')
+ReactDOM.flushSync(() => barRoot.unmount())
+barHost.remove()
 
 const busyWindow = () => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === 'Agent A')
 // safe close: a busy terminal asks first; Cancel keeps it, OK ends it
