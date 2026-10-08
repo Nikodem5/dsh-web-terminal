@@ -15,6 +15,7 @@ import { startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import { registerPathLinks } from './path-links.ts'
+import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
 /** Grid for a terminal that was never fitted (the host's own default, so a fresh PTY matches). */
@@ -153,6 +154,7 @@ export function ensureRuntime(win: WinState): Runtime {
     attentionReason: '',
   }
   runtimes.set(win.id, rt)
+  trackUnread(rt)
   ticker ??= setInterval(tick, 1000)
 
   // Bytes of the key press xterm is about to report through onData (onKey fires first, synchronously).
@@ -204,6 +206,11 @@ export function ensureRuntime(win: WinState): Runtime {
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true
     if (isAppShortcut(event)) return false
+    if (isUnreadJump(event)) {
+      event.preventDefault()
+      jumpToUnread(rt.id)
+      return false
+    }
     const mod = event.ctrlKey || event.metaKey
     if (mod && !event.shiftKey && !event.altKey && (event.key === 'f' || event.key === 'F')) {
       event.preventDefault()
@@ -277,7 +284,8 @@ export function ensureRuntime(win: WinState): Runtime {
         restoreAgent(rt, frame.agent)
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         term.reset()
-        if ((frame.replay ?? '').length > 0) term.write(frame.replay as string)
+        if ((frame.replay ?? '').length > 0) term.write(frame.replay as string, () => rebaseUnread(rt))
+        else rebaseUnread(rt)
         if (frame.exited === true) {
           setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
         } else {
@@ -315,7 +323,8 @@ export function ensureRuntime(win: WinState): Runtime {
         // The host dropped output on a congested socket; its replay is the screen as it really is.
         if (typeof frame.replay !== 'string') return
         term.reset()
-        if (frame.replay.length > 0) term.write(frame.replay)
+        if (frame.replay.length > 0) term.write(frame.replay, () => rebaseUnread(rt))
+        else rebaseUnread(rt)
       } else if (frame.type === 'data') {
         if (rt.hostLost || typeof frame.data !== 'string') return
         lastOutputAt = Date.now()
@@ -388,6 +397,7 @@ export function openRuntime(rt: Runtime): void {
     }),
   )
   registerPathLinks(rt)
+  syncUnread(rt)
   // The grid was never sent to the host (or only xterm's default); report the real one.
   rt.lastCols = 0
 }
@@ -481,6 +491,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
     if (kill && rt.socket?.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'kill' }))
     rt.socket?.close()
   } catch {}
+  untrackUnread(id)
   try {
     rt.term.dispose()
   } catch {}

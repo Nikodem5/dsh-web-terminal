@@ -258,6 +258,20 @@ check(qa('.wt-li').length === 2, 'second terminal appears in the list')
   const z = wins.map((w) => Number(w.style.zIndex))
   check(z[0] > z[1], `new terminal has the highest z-index (${z.join(' vs ')})`)
 }
+
+// output to a terminal that is not in front leaves a subtle unread count in its list row
+{
+  window.document.hasFocus = () => true
+  const row = () => q('.wt-li[data-focused="false"]') // the first terminal: the new one has focus
+  check(row()?.querySelector('.wt-unread') === null, 'no unread indicator before any output')
+  sock.push({ type: 'data', data: 'a\r\nb\r\nc\r\n' })
+  await sleep(120)
+  const mark = row()?.querySelector('.wt-unread')
+  check(mark?.textContent === '3' && row()?.querySelector('.wt-badge') === null, `an unfocused terminal shows 3 unread lines, apart from attention badges (got "${mark?.textContent}")`)
+  click(row())
+  await sleep(60)
+  check(row()?.querySelector('.wt-unread') === null, 'looking at the terminal clears the list indicator')
+}
 const focusedBefore = q('.wt-li[data-focused="true"] .wt-li-name')?.textContent
 doc.defaultView.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))
 await sleep(40)

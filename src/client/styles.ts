@@ -164,6 +164,11 @@ const VIEW_CSS = `
 .wt-li-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .wt-li-name { font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wt-li-sub { font-size: 11px; color: var(--wt-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-unread { flex: none; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 8px; color: var(--wt-accent); background: color-mix(in srgb, var(--wt-accent) 14%, transparent); font-variant-numeric: tabular-nums; }
+.wt-unread::before { content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+.wt-unread-line { box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 10.5px; line-height: 1; letter-spacing: 0.02em; color: var(--wt-dim); background: color-mix(in srgb, var(--wt-accent) 10%, var(--wt-term-bg, var(--wt-deep))); border-top: 1px solid color-mix(in srgb, var(--wt-accent) 40%, transparent); pointer-events: none; overflow: hidden; white-space: nowrap; }
+.wt-unread-pill { position: absolute; right: 18px; bottom: 14px; z-index: 5; height: 24px; padding: 0 10px; border: 0.5px solid color-mix(in srgb, var(--wt-accent) 55%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--wt-accent) 18%, var(--wt-surface)); color: var(--wt-text); font: inherit; font-size: 11.5px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+.wt-unread-pill:hover { background: color-mix(in srgb, var(--wt-accent) 32%, var(--wt-surface)); }
 .wt-li-acts { display: none; gap: 2px; }
 .wt-li:hover .wt-li-acts { display: inline-flex; }
 .wt-side-empty { padding: 14px 12px; font-size: 12px; color: var(--wt-dim); }

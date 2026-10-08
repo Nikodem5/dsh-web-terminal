@@ -38,6 +38,7 @@ import {
   hostInfo,
   hydrate,
   isDarkSurface,
+  jumpToUnread,
   loadHostInfo,
   openSearch,
   refit,
@@ -54,6 +55,8 @@ import {
   toggleOverview,
   termBackground,
   toggleMaximize,
+  unreadPill,
+  pillText,
   updateWin,
   workspaceChoices,
 } from './terminal-store.ts'
@@ -407,6 +410,9 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
       ) : null}
       {searching ? <FindBar id={win.id} /> : null}
       <div className="wt-body" ref={bodyRef} onClick={() => rt.term.focus()} />
+      {unreadPill(win.id) > 0 ? (
+        <button type="button" className="wt-unread-pill" title="Jump to where you left off (Ctrl+Shift+U)" onClick={() => { jumpToUnread(win.id); rt.term.focus() }}>{pillText(unreadPill(win.id))}</button>
+      ) : null}
       {win.pinned || win.maximized ? null : DIRS.map((d) => <div key={d} className="wt-grip" data-d={d} onPointerDown={onGripDown(d)} />)}
     </div>
   )
