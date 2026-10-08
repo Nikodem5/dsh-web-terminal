@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { userStatusLine } from '../lib/statusline.js'
+import { userStatusLine, userSubagentStatusLine } from '../lib/statusline.js'
 
 const script = join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'statusline.js')
 const root = mkdtempSync(join(tmpdir(), 'dsh-wt-statusline-'))
@@ -114,4 +114,53 @@ test('userStatusLine reads the command and refresh interval, ignoring anything e
   assert.deepEqual(userStatusLine({ CLAUDE_CONFIG_DIR: configDir({ type: 'command', command: 'x', refreshInterval: 'a' }) }), { command: 'x', refreshInterval: undefined })
   assert.equal(userStatusLine({ CLAUDE_CONFIG_DIR: configDir({ type: 'command', command: '  ' }) }), undefined)
   assert.equal(userStatusLine({ CLAUDE_CONFIG_DIR: join(root, 'missing') }), undefined)
+})
+
+// ── sub-agent mode ──
+
+/** A fake Claude config dir whose settings carry `subagentStatusLine`. */
+function subagentConfigDir(subagentStatusLine) {
+  const dir = join(root, `cfg${++n}`)
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ subagentStatusLine, statusLine: { type: 'command', command: 'echo not-me' } }))
+  return dir
+}
+
+const subPayload = JSON.stringify({ model: 'opus', tasks: [{ id: 'a1', status: 'running', tokenCount: 5 }] })
+
+test('--subagents posts the payload and prints nothing without a user command', async () => {
+  const host = await fakeHost()
+  const { out, code } = await run({ args: ['--subagents', host.url], env: { DSH_WT_TOKEN: 'tok', CLAUDE_CONFIG_DIR: configDir({ type: 'command', command: 'echo main-line' }) }, input: subPayload })
+  host.close()
+  assert.equal(code, 0)
+  assert.equal(out, '', 'Claude keeps its default rows')
+  assert.equal(host.posts.length, 1)
+  assert.equal(host.posts[0].token, 'tok')
+  assert.equal(host.posts[0].body, subPayload)
+})
+
+test("--subagents relays the user's own subagentStatusLine, not their main status line", async () => {
+  const host = await fakeHost()
+  const cfg = subagentConfigDir({ type: 'command', command: `node "${userScript()}"` })
+  const { out } = await run({ args: ['--subagents', host.url], env: { DSH_WT_TOKEN: 'tok', CLAUDE_CONFIG_DIR: cfg }, input: subPayload })
+  host.close()
+  assert.equal(out.trim(), 'USER:opus')
+  assert.equal(host.posts.length, 1)
+})
+
+test('--subagents recursion guard: a user command that is this wrapper, or already runs under one, is skipped', async () => {
+  const host = await fakeHost()
+  const self = subagentConfigDir({ type: 'command', command: `node "${script.replaceAll('\\', '/')}" --subagents ${host.url}` })
+  const a = await run({ args: ['--subagents', host.url], env: { DSH_WT_TOKEN: 't', CLAUDE_CONFIG_DIR: self }, input: subPayload })
+  assert.equal(a.out, '')
+  assert.equal(host.posts.length, 1)
+  const cfg = subagentConfigDir({ type: 'command', command: `node "${userScript()}"` })
+  const b = await run({ args: ['--subagents', host.url], env: { DSH_WT_TOKEN: 't', CLAUDE_CONFIG_DIR: cfg, DSH_WT_SUBAGENTLINE: '1' }, input: subPayload })
+  host.close()
+  assert.equal(b.out, '')
+})
+
+test('userSubagentStatusLine reads only the subagentStatusLine command', () => {
+  assert.deepEqual(userSubagentStatusLine({ CLAUDE_CONFIG_DIR: subagentConfigDir({ type: 'command', command: 'x' }) }), { command: 'x', refreshInterval: undefined })
+  assert.equal(userSubagentStatusLine({ CLAUDE_CONFIG_DIR: configDir({ type: 'command', command: 'x' }) }), undefined)
 })

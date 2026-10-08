@@ -4,7 +4,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AGENT_STATES, CLAUDE_HOOK_EVENTS, SESSION_ID, TOKEN_ENV, TOKEN_HEADER, buildClaudeSettings, claudeAdapter, normalizeSignal } from '../lib/agent-signals.js'
+import { AGENT_STATES, CLAUDE_HOOK_EVENTS, CLAUDE_SUBAGENT_EVENTS, SESSION_ID, TOKEN_ENV, TOKEN_HEADER, buildClaudeSettings, claudeAdapter, normalizeSignal } from '../lib/agent-signals.js'
 
 const claude = (body) => normalizeSignal('claude', body)
 
@@ -85,7 +85,7 @@ test('every state the adapter can emit is a known state', () => {
 
 test('the Claude settings file subscribes HTTP hooks and keeps the secret out of the file', () => {
   const settings = buildClaudeSettings('http://127.0.0.1:5555/signal/claude')
-  assert.deepEqual(Object.keys(settings.hooks).sort(), [...CLAUDE_HOOK_EVENTS].sort())
+  assert.deepEqual(Object.keys(settings.hooks).sort(), [...CLAUDE_HOOK_EVENTS, ...CLAUDE_SUBAGENT_EVENTS].filter((e) => e !== 'SessionStart').sort())
   for (const groups of Object.values(settings.hooks)) {
     const [hook] = groups[0].hooks
     assert.equal(hook.type, 'http')
@@ -131,5 +131,30 @@ test('the Claude settings file adds the status-line wrapper only when asked, wit
     command: 'node "C:/plug ins/lib/statusline.js" http://127.0.0.1:1/signal/usage',
     refreshInterval: 4,
   })
-  assert.deepEqual(Object.keys(settings.hooks).sort(), [...CLAUDE_HOOK_EVENTS].sort())
+  assert.deepEqual(Object.keys(settings.hooks).sort(), [...CLAUDE_HOOK_EVENTS, ...CLAUDE_SUBAGENT_EVENTS].filter((e) => e !== 'SessionStart').sort(), 'SessionStart needs node, so it is absent without it')
+})
+
+test('SessionStart is a command hook (HTTP is ignored there); every other event stays HTTP', () => {
+  const url = 'http://127.0.0.1:1/signal/claude'
+  const { hooks } = buildClaudeSettings(url, { hookScript: String.raw`C:\plug ins\lib\hook-post.js` })
+  assert.deepEqual(hooks.SessionStart, [{ hooks: [{ type: 'command', command: `node "C:/plug ins/lib/hook-post.js" ${url}`, timeout: 5 }] }])
+  assert.ok(!('matcher' in hooks.SessionStart[0]), 'no matcher: startup, resume, clear and compact all fire')
+  assert.deepEqual(Object.keys(hooks).sort(), [...CLAUDE_HOOK_EVENTS, ...CLAUDE_SUBAGENT_EVENTS].sort())
+  for (const event of [...CLAUDE_HOOK_EVENTS, ...CLAUDE_SUBAGENT_EVENTS]) if (event !== 'SessionStart') assert.equal(hooks[event][0].hooks[0].type, 'http', event)
+})
+
+test('the sub-agent status line is installed only when asked', () => {
+  assert.equal(buildClaudeSettings('http://127.0.0.1:1/signal/claude').subagentStatusLine, undefined)
+  const settings = buildClaudeSettings('http://127.0.0.1:1/signal/claude', {
+    subagentLine: { script: String.raw`C:\plug ins\lib\statusline.js`, url: 'http://127.0.0.1:1/signal/subagents' },
+  })
+  assert.deepEqual(settings.subagentStatusLine, {
+    type: 'command',
+    command: 'node "C:/plug ins/lib/statusline.js" --subagents http://127.0.0.1:1/signal/subagents',
+  })
+})
+
+test('sub-agent hook events carry no agent state', () => {
+  assert.equal(claude({ hook_event_name: 'SubagentStart', agent_id: 'a1' }), undefined)
+  assert.equal(claude({ hook_event_name: 'SubagentStop', agent_id: 'a1' }), undefined)
 })
