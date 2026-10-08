@@ -73,6 +73,8 @@ export type AttentionLevel = 'urgent' | 'quiet'
 export interface Runtime {
   id: string
   holder: HTMLDivElement
+  /** xterm has been opened into the holder (it is created unopened so terminals connect before the page exists). */
+  opened: boolean
   term: Terminal
   fit: FitAddon
   search: SearchAddon

@@ -10,6 +10,7 @@
 // part tolerates any load order.
 
 import type { Context } from '@deepseek-ai/cordis'
+import { startTerminals } from './start.ts'
 import { StatsBar } from './stats-bar.tsx'
 import { TerminalsIcon } from './panel-icon.tsx'
 import { TerminalsView } from './terminals-view.tsx'
@@ -28,6 +29,8 @@ const PANEL_ID = 'dsh-web-terminal'
  * @param ctx - the client plugin context carrying the slot registry and sessions.
  */
 export function apply(ctx: Context): void {
+  // Saved terminals reconnect now, not when the page is first opened (alerts and agent counts need the sockets).
+  startTerminals()
   const slots = ctx.slots as {
     inject(key: string, callback: () => () => void): () => void
     register(options: Record<string, unknown>, component: unknown): () => void

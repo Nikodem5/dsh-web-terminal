@@ -61,7 +61,7 @@ finished; hidden at zero), the 5-hour and 7-day Claude limits (`5h 42% · resets
 the forecast time of hitting 100%), the summed API-price-equivalent cost and the token total (hover for the split).
 Limits are read from the last Claude terminal that reported them; a sample older than 10 minutes is dimmed with its
 age. The host is polled every 5 s while the page is visible; if the host does not serve `/stats` (older install),
-only the terminal counts show. Counts appear once the Terminals page has been opened in this page load.
+only the terminal counts show. Counts do not need the Terminals page to be opened.
 If the shell does not expose its Workspaces, the dialog instead offers *Use the last session's workspace*: the folder
 of the chat session last viewed (recorded by the header bar and kept in the preferences).
 
@@ -89,7 +89,7 @@ whatever the theme's tokens say. New terminals open first in the list and on top
 
 Switching tabs or sessions does **not** touch the terminals. Window layout, names, folders, favourites and
 preferences are saved in `localStorage`. **Shells also outlive a page reload**: the host keeps each PTY (and
-400 KB of scrollback) and the reloaded page reattaches. Only close, the process exiting, or restarting the
+400 KB of scrollback) and the reloaded page reattaches. Saved terminals reconnect when the app starts, so counts and alerts (needs you, chime) work without opening the Terminals page. Only close, the process exiting, or restarting the
 harness ends a shell.
 
 ## Install
@@ -115,6 +115,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
 | `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
 | `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
+| `src/client/start.ts` | Plugin start: reconnects every saved terminal before the page is opened |
 | `src/client/index.ts` | Registers the sidebar entry (`sidebar.panellist`), the page (`main`) and the header stats bar; injects the session's folder into the bar |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
 | `src/client/sidebar.tsx` | Right-hand terminal list |

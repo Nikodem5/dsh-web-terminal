@@ -8,8 +8,8 @@
 // to remember which folder the chat session being viewed lives in (the dialog's fallback default).
 //
 // Agent counts read the module-level runtimes, which outlive the Terminals page, so they stay
-// live while the chat is showing. Runtimes only exist once the Terminals page has been
-// opened in this page load; until then there are no counts to show.
+// live while the chat is showing. They are created at plugin start (see start.ts), so the counts
+// do not wait for the Terminals page to be opened.
 
 import { useEffect, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
