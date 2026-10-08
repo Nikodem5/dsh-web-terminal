@@ -129,6 +129,12 @@ export interface FontPrefs {
   family: string
   size: number
   lineHeight: number
+  /** Extra pixels between cells; xterm rounds it to whole pixels. */
+  letterSpacing: number
+  /** CSS weight of bold text (the regular weight stays 400). */
+  boldWeight: number
+  /** xterm minimumContrastRatio: text below this contrast against its background is lifted (1 = off). */
+  minContrast: number
 }
 
 /** One window inside a saved layout. */

@@ -7,12 +7,16 @@ import { requestCloseAll } from './actions.ts'
 import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setHungMinutes, setNotify, setSound, setTermTheme } from './terminal-store.ts'
 
 const FONT_CHOICES = [
-  { label: 'Cascadia Code (VS Code default)', value: DEFAULT_FONT.family },
+  { label: 'Recommended (Cascadia Mono, Consolas…)', value: DEFAULT_FONT.family },
+  { label: 'Cascadia Code', value: "'Cascadia Code', 'Cascadia Mono', Consolas, monospace" },
   { label: 'Consolas', value: "Consolas, 'Courier New', monospace" },
   { label: 'JetBrains Mono', value: "'JetBrains Mono', Consolas, monospace" },
   { label: 'Fira Code', value: "'Fira Code', Consolas, monospace" },
   { label: 'Courier New', value: "'Courier New', monospace" },
 ]
+
+const BOLD_LABELS: Record<number, string> = { 400: 'Regular (400)', 500: 'Medium (500)', 600: 'Semi-bold (600)', 700: 'Bold (700)', 800: 'Extra bold (800)' }
+const CONTRAST_LABELS: Record<number, string> = { 1: 'Off (1:1)', 4.5: 'Normal (4.5:1)', 7: 'High (7:1)' }
 
 /** Saved layouts: save the current windows, open (replace) or add a layout, delete. */
 export function LayoutsMenu(): ReactElement {
@@ -123,6 +127,31 @@ export function SettingsMenu(): ReactElement {
           <input className="wt-input" type="number" min={1} max={2} step={0.05} value={font.lineHeight} onChange={(e) => setFont({ lineHeight: Number(e.target.value) })} />
         </label>
       </div>
+      {/* ── readability: spacing, bold weight, contrast ── */}
+      <div className="wt-row">
+        <label className="wt-field wt-grow">
+          Letter spacing (px)
+          <input className="wt-input" type="number" min={0} max={2} step={1} value={font.letterSpacing} onChange={(e) => setFont({ letterSpacing: Number(e.target.value) })} />
+        </label>
+        <label className="wt-field wt-grow">
+          Bold weight
+          <select className="wt-input" value={font.boldWeight} onChange={(e) => setFont({ boldWeight: Number(e.target.value) })}>
+            {[400, 500, 600, 700, 800].map((w) => (
+              <option key={w} value={w}>{BOLD_LABELS[w]}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="wt-field" title="Text whose colour is too close to the background is lifted to at least this contrast ratio. Dim (faint) text gets half of it.">
+        Contrast
+        <select className="wt-input" value={font.minContrast} onChange={(e) => setFont({ minContrast: Number(e.target.value) })}>
+          {[1, 4.5, 7].map((c) => (
+            <option key={c} value={c}>{CONTRAST_LABELS[c]}</option>
+          ))}
+          {CONTRAST_LABELS[font.minContrast] === undefined ? <option value={font.minContrast}>{`Custom (${font.minContrast}:1)`}</option> : null}
+        </select>
+      </label>
+      {/* ── end readability ── */}
       <label className="wt-item" style={{ cursor: 'pointer' }} title="In narrow windows the font shrinks just enough to keep this many columns visible; it never grows past the size above.">
         <input type="checkbox" checked={prefs.autoFont} onChange={(e) => setAutoFont(e.target.checked)} />
         <span className="wt-grow">Shrink font to fit window</span>

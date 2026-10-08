@@ -296,14 +296,14 @@ check(focusedBefore !== focusedAfter, `Ctrl+Alt+Right moves focus (${focusedBefo
   check(q('.wt-find') === null, 'Esc closes the find bar')
 }
 
-// smaller default font, and the settings menu shows it
+// bigger default font, and the settings menu shows it
 {
   click(byText('.wt-bar button', 'Aa'))
   await sleep(30)
   const numbers = qa('.wt-pop input[type="number"]').map((i) => i.value)
   check(q('.wt-pop select')?.value === 'dark', 'terminal colours default to dark')
   check(q('.wt-view').style.getPropertyValue('--wt-term-bg') === '#14161b', 'window chrome matches the terminal background')
-  check(numbers[0] === '12', `default terminal font size is 12 (got ${numbers[0]})`)
+  check(numbers[0] === '14', `default terminal font size is 14 (got ${numbers[0]})`)
   check(byText('.wt-pop .wt-item', 'Shrink font to fit window') !== undefined && numbers.includes('100'), 'settings offer auto-fit font with a 100-column default')
   click(byText('.wt-bar button', 'Aa'))
   await sleep(20)

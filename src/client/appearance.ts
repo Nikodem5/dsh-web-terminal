@@ -10,12 +10,18 @@ export function setFont(patch: Partial<FontPrefs>): void {
   const next = { ...prefs.font, ...patch }
   next.size = Math.min(32, Math.max(8, Number(next.size) || DEFAULT_FONT.size))
   next.lineHeight = Math.min(2, Math.max(1, Number(next.lineHeight) || DEFAULT_FONT.lineHeight))
+  next.letterSpacing = Math.min(2, Math.max(0, Math.round(Number(next.letterSpacing)) || 0))
+  next.boldWeight = Math.min(900, Math.max(100, Number.isFinite(Number(next.boldWeight)) ? Math.round(Number(next.boldWeight) / 100) * 100 : DEFAULT_FONT.boldWeight))
+  next.minContrast = Math.min(21, Math.max(1, Number(next.minContrast) || DEFAULT_FONT.minContrast))
   if (next.family.trim().length === 0) next.family = DEFAULT_FONT.family
   prefs.font = next
   prefs.fontCustom = true
   for (const rt of runtimes.values()) {
     rt.term.options.fontFamily = next.family
     rt.term.options.lineHeight = next.lineHeight
+    rt.term.options.letterSpacing = next.letterSpacing
+    rt.term.options.fontWeightBold = next.boldWeight
+    rt.term.options.minimumContrastRatio = next.minContrast
     refit(rt)
   }
   emit()
