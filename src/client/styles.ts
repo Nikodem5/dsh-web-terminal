@@ -150,6 +150,8 @@ const VIEW_CSS = `
 .wt-li-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .wt-li-name { font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wt-li-sub { font-size: 11px; color: var(--wt-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-send-item { width: 100%; text-align: left; border: 0; background: transparent; font: inherit; cursor: pointer; }
+.wt-send-item[data-active="true"] { background: var(--wt-hover); }
 .wt-li-acts { display: none; gap: 2px; }
 .wt-li:hover .wt-li-acts { display: inline-flex; }
 .wt-side-empty { padding: 14px 12px; font-size: 12px; color: var(--wt-dim); }

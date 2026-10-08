@@ -110,6 +110,8 @@ export interface Runtime {
   hostBusy: boolean | undefined
   lastOutputAt: number
   lastInputAt: number
+  /** When the startup command was typed into the shell (undefined until it is). */
+  startupSentAt?: number
   /** What the agent in this terminal last reported; undefined for a plain shell. */
   agent: AgentInfo | undefined
   /** Claude sub-agents the host reports for this terminal (running, plus recently completed). */
@@ -189,6 +191,8 @@ export interface Prefs {
   /** Editor for Ctrl+clicked file paths, and the command template when it is `custom`. */
   pathTarget: PathTarget
   pathTemplate: string
+  /** Frame text sent to an agent terminal as a fenced code block. */
+  sendCodeBlock: boolean
 }
 
 /** Everything the view reads; mutated in place, `version` bumps on change. */
