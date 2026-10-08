@@ -8,7 +8,7 @@
 // only re-parents their DOM node. Geometry is stored as fractions of the canvas so
 // a layout follows window resizes and sidebar toggles.
 
-import type { FontPrefs, HostInfo, Prefs, Runtime, Store, WinState } from './types.ts'
+import type { FontPrefs, HostInfo, LayoutWin, Prefs, Rect, Runtime, SavedLayout, Store, WinState } from './types.ts'
 
 // ── persistence ────────────────────────────────────────────────────────────
 
@@ -73,53 +73,170 @@ export const getRuntime = (id: string): Runtime | undefined => runtimes.get(id)
 export const getPrefs = (): Readonly<Prefs> => prefs
 export const getBroadcast = (): Readonly<Store['broadcast']> => store.broadcast
 
-/** Restore saved windows and preferences once per page load. */
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback)
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isRect = (v: unknown): v is Rect => isObj(v) && isNum(v.x) && isNum(v.y) && isNum(v.w) && isNum(v.h)
+
+/** A stored window, repaired or dropped: a bad geometry would break the layout, a bad z would make zTop NaN. */
+function cleanWin(raw: unknown, index: number): WinState | undefined {
+  if (!isObj(raw) || typeof raw.id !== 'string' || raw.id.length === 0 || !isRect(raw)) return undefined
+  return {
+    id: raw.id,
+    title: str(raw.title, 'Terminal'),
+    nameManual: raw.nameManual === true,
+    autoName: typeof raw.autoName === 'string' ? raw.autoName : undefined,
+    shell: str(raw.shell, 'default'),
+    cwd: str(raw.cwd, ''),
+    startup: typeof raw.startup === 'string' ? raw.startup : undefined,
+    x: raw.x,
+    y: raw.y,
+    w: raw.w,
+    h: raw.h,
+    // z only orders windows, so a missing one is replaced by the list position instead of dropping the window.
+    z: isNum(raw.z) ? raw.z : index + 1,
+    pinned: raw.pinned === true,
+    maximized: raw.maximized === true,
+    minimized: raw.minimized === true,
+    restore: isRect(raw.restore) ? { x: raw.restore.x, y: raw.restore.y, w: raw.restore.w, h: raw.restore.h } : undefined,
+    gen: isNum(raw.gen) ? raw.gen : undefined,
+    agentSession: typeof raw.agentSession === 'string' ? raw.agentSession : undefined,
+  }
+}
+
+function cleanLayout(raw: unknown): SavedLayout | undefined {
+  if (!isObj(raw) || typeof raw.name !== 'string' || raw.name.length === 0 || !Array.isArray(raw.wins)) return undefined
+  const wins: LayoutWin[] = []
+  for (const w of raw.wins) {
+    if (!isObj(w) || !isRect(w)) continue
+    wins.push({
+      title: str(w.title, 'Terminal'),
+      nameManual: w.nameManual === true,
+      shell: str(w.shell, 'default'),
+      cwd: str(w.cwd, ''),
+      startup: typeof w.startup === 'string' ? w.startup : undefined,
+      x: w.x,
+      y: w.y,
+      w: w.w,
+      h: w.h,
+      pinned: w.pinned === true,
+      minimized: w.minimized === true,
+    })
+  }
+  return { name: raw.name, savedAt: isNum(raw.savedAt) ? raw.savedAt : 0, wins }
+}
+
+/** Copy the valid fields of stored preferences over the defaults; anything malformed keeps its default. */
+function applyPrefs(p: Record<string, unknown>): void {
+  if (Array.isArray(p.recents)) prefs.recents = p.recents.filter((v): v is string => typeof v === 'string').slice(0, 12)
+  if (Array.isArray(p.favourites)) prefs.favourites = p.favourites.filter((v): v is string => typeof v === 'string')
+  if (Array.isArray(p.layouts)) prefs.layouts = p.layouts.map(cleanLayout).filter((l): l is SavedLayout => l !== undefined)
+  if (typeof p.lastShell === 'string') prefs.lastShell = p.lastShell
+  if (typeof p.lastCwd === 'string') prefs.lastCwd = p.lastCwd
+  for (const key of ['fontCustom', 'autoFont', 'sidebar', 'notify', 'sound'] as const) if (typeof p[key] === 'boolean') prefs[key] = p[key] as boolean
+  if (isNum(p.fitCols)) prefs.fitCols = clamp(Math.round(p.fitCols), 40, 240)
+  if (isNum(p.hungMinutes)) prefs.hungMinutes = clamp(Math.round(p.hungMinutes), 0, 240)
+  if (p.termTheme === 'dark' || p.termTheme === 'light' || p.termTheme === 'auto') prefs.termTheme = p.termTheme
+  const font = isObj(p.font) ? p.font : {}
+  prefs.font = prefs.fontCustom
+    ? {
+        family: typeof font.family === 'string' && font.family.trim().length > 0 ? font.family : DEFAULT_FONT.family,
+        size: isNum(font.size) ? clamp(font.size, 8, 32) : DEFAULT_FONT.size,
+        lineHeight: isNum(font.lineHeight) ? clamp(font.lineHeight, 1, 2) : DEFAULT_FONT.lineHeight,
+      }
+    : { ...DEFAULT_FONT }
+}
+
+/**
+ * Read one stored JSON object. An unreadable value is copied to `<key>.corrupt` before anything can
+ * overwrite it, so a hand-editable record is never silently destroyed by the next save.
+ */
+function readStored(key: string): Record<string, unknown> | undefined {
+  let raw: string | null = null
+  try {
+    raw = localStorage.getItem(key)
+    if (raw === null) return undefined
+    const parsed: unknown = JSON.parse(raw)
+    if (isObj(parsed)) return parsed
+  } catch {}
+  try {
+    if (raw !== null) localStorage.setItem(`${key}.corrupt`, raw)
+  } catch {}
+  return undefined
+}
+
+/** Restore saved windows and preferences once per page load. Layout and preferences fail independently. */
 let hydrated = false
 export function hydrate(): void {
   if (hydrated) return
   hydrated = true
-  try {
-    const raw = localStorage.getItem(K_LAYOUT)
-    if (raw !== null) {
-      const parsed = JSON.parse(raw) as { wins?: WinState[]; zTop?: number }
-      if (Array.isArray(parsed.wins)) {
-        store.wins = parsed.wins.filter((w) => typeof w?.id === 'string')
-        store.zTop = Math.max(1, parsed.zTop ?? 1, ...store.wins.map((w) => w.z))
-      }
-    }
-    const p = localStorage.getItem(K_PREFS)
-    if (p !== null) {
-      const parsed = JSON.parse(p) as Partial<Prefs>
-      Object.assign(prefs, parsed)
-      prefs.font = parsed.fontCustom === true ? { ...DEFAULT_FONT, ...(parsed.font ?? {}) } : { ...DEFAULT_FONT }
-    }
-  } catch {}
+  const layout = readStored(K_LAYOUT)
+  if (layout !== undefined && Array.isArray(layout.wins)) {
+    const seen = new Set<string>()
+    store.wins = layout.wins
+      .map(cleanWin)
+      .filter((w): w is WinState => w !== undefined && !seen.has(w.id) && seen.add(w.id) !== undefined)
+    store.zTop = Math.max(1, isNum(layout.zTop) ? layout.zTop : 1, ...store.wins.map((w) => w.z))
+  }
+  const stored = readStored(K_PREFS)
+  if (stored !== undefined) applyPrefs(stored)
 }
 
-/** Fetch the host probe once; harmless to call repeatedly. */
+/**
+ * Fetch the host probe once; harmless to call repeatedly. A failed probe is forgotten so the next
+ * call retries, and `refreshHostInfo` forces a new one (the host's per-process settings file changes
+ * on every restart).
+ */
 let infoRequested = false
 let infoDone: Promise<void> | undefined
+let infoSeq = 0
+let infoPending = false
 export function loadHostInfo(): void {
   if (infoRequested) return
   infoRequested = true
+  const seq = ++infoSeq
+  infoPending = true
   infoDone = fetch('/api/dsh-web-terminal/info', { headers: { accept: 'application/json' } })
     .then((response) => (response.ok ? response.json() : undefined))
     .then((info: HostInfo | undefined) => {
-      if (info === undefined) return
+      if (seq !== infoSeq) return // superseded by a refresh
+      infoPending = false
+      if (!isObj(info)) {
+        infoRequested = false
+        return
+      }
       hostInfo = info
       emit()
     })
-    .catch(() => {})
+    .catch(() => {
+      if (seq !== infoSeq) return
+      infoPending = false
+      infoRequested = false
+    })
+}
+
+/** Drop what the host told us and probe again; the old settings file path may belong to a dead host. */
+export function refreshHostInfo(): void {
+  hostInfo = { ...hostInfo, agent: undefined }
+  infoRequested = false
+  loadHostInfo()
 }
 
 /**
  * Resolves once the host probe has answered (or failed, or `timeoutMs` passed).
  * The probe is slow on a cold start (it looks shells up on PATH), and a startup command typed
- * before it arrives would miss the host's agent-hook settings file.
+ * before it arrives would miss the host's agent-hook settings file. An answered probe that named no
+ * settings file is asked again, since the host may only have been starting up.
  */
 export function hostInfoReady(timeoutMs = 10_000): Promise<void> {
-  loadHostInfo()
-  return Promise.race([infoDone ?? Promise.resolve(), new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))])
+  if (infoRequested && !infoPending && typeof hostInfo.agent?.claudeSettings !== 'string') refreshHostInfo()
+  else loadHostInfo()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs)
+  })
+  return Promise.race([infoDone ?? Promise.resolve(), timeout]).finally(() => clearTimeout(timer))
 }
 
 // ── shared window mutations ────────────────────────────────────────────────

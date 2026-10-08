@@ -197,6 +197,8 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [dragging, setDragging] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  // Escape blurs the input to close it, and blur commits; this tells the blur handler to discard instead.
+  const cancelRename = useRef(false)
   const [more, setMore] = useState(false)
   const rt = ensureRuntime(win)
   const name = displayName(win)
@@ -242,6 +244,9 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
     const bounds = stageEl.getBoundingClientRect()
     const start = { px: event.clientX, py: event.clientY, rect: toPx(win, stage) }
     const wasMax = win.maximized
+    // Where "restore" should go back to, fixed now: a maximized window's own rect is the full canvas, and
+    // `restore` is cleared while dragging.
+    const restoreTo: Rect = wasMax ? (win.restore ?? { x: 0.1, y: 0.1, w: 0.5, h: 0.5 }) : { x: win.x, y: win.y, w: win.w, h: win.h }
     const targets = targetsFor(win.id, stage)
     let moved = false
     let zone: Rect | null = null
@@ -255,7 +260,7 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
       let r = { ...start.rect }
       if (wasMax) {
         // Grab a maximized window: restore its previous size under the cursor.
-        const back = win.restore ?? { x: 0.1, y: 0.1, w: 0.5, h: 0.5 }
+        const back = restoreTo
         const bw = back.w * stage.w
         r = { x: e.clientX - bounds.left - bw * ((start.px - bounds.left) / stage.w), y: 0, w: bw, h: back.h * stage.h }
       } else {
@@ -281,7 +286,7 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
         updateWin(win.id, {
           ...zone,
           maximized: full,
-          restore: full ? { x: win.x, y: win.y, w: win.w, h: win.h } : undefined,
+          restore: full ? restoreTo : undefined,
         })
       }
     }
@@ -351,10 +356,12 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
             autoFocus
             defaultValue={name}
             onBlur={(e) => {
-              renameWin(win.id, e.target.value)
+              if (!cancelRename.current) renameWin(win.id, e.target.value)
+              cancelRename.current = false
               setRenaming(false)
             }}
             onKeyDown={(e) => {
+              if (e.key === 'Escape') cancelRename.current = true
               if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur()
             }}
           />

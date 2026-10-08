@@ -39,8 +39,11 @@ export function NewTerminalDialog({ startup: presetStartup, sessionCwd, onClose 
     onClose()
   }
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') open()
-    else if (e.key === 'Escape') onClose()
+    // Enter on a button must press that button (Cancel, Browse, star...), not open the terminal.
+    if (e.key === 'Enter') {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT') open()
+    } else if (e.key === 'Escape') onClose()
   }
   const folders = [...prefs.favourites, ...prefs.recents.filter((p) => !prefs.favourites.includes(p))]
   const shells = hostInfo.shells ?? []

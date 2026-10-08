@@ -750,3 +750,180 @@ test('moving the mouse over a terminal that needs you does not answer it; a key 
   assert.equal(rt.agent.state, 'working')
   assert.equal(rt.attention, false)
 })
+
+// ── broadcast selection ──
+
+// A fresh store module saves to the shared localStorage 250 ms after a change; let that land before the next test.
+const settle = () => new Promise((r) => setTimeout(r, 300))
+
+test('turning broadcast back on keeps a selection the user cleared with None', async () => {
+  const f = await loadStore({ fresh: true })
+  f.openTerminal({ cwd: 'C:\\a' })
+  f.openTerminal({ cwd: 'C:\\b' })
+  f.setBroadcast({ on: true })
+  assert.equal(f.getBroadcast().ids.size, 2, 'the first time, everything is selected')
+  f.setBroadcastTargets([]) // the sidebar's "None"
+  f.setBroadcast({ on: false, live: false }) // "Done"
+  f.setBroadcast({ on: true })
+  assert.equal(f.getBroadcast().ids.size, 0, 'a deliberate empty selection survives')
+  f.closeAll()
+  await settle()
+})
+
+test('a broadcast selection nobody touched is still filled with every window', async () => {
+  const f = await loadStore({ fresh: true })
+  f.setBroadcast({ on: true }) // no windows yet
+  f.setBroadcast({ on: false })
+  const a = f.openTerminal({ cwd: 'C:\\a' })
+  f.setBroadcast({ on: true })
+  assert.deepEqual([...f.getBroadcast().ids], [a])
+  f.closeAll()
+  await settle()
+})
+
+// ── hydrating stored state ──
+
+const LAYOUT_KEY = 'dsh.web-terminal.layout.v1'
+const PREFS_KEY = 'dsh.web-terminal.prefs.v1'
+const goodWin = (id, extra = {}) => ({ id, title: id, shell: 'default', cwd: 'C:\\x', x: 0, y: 0, w: 0.5, h: 0.5, z: 1, pinned: false, maximized: false, minimized: false, ...extra })
+
+test('corrupt layout JSON still restores the preferences and keeps a copy of the bad value', async () => {
+  window.localStorage.setItem(LAYOUT_KEY, 'not json{')
+  window.localStorage.setItem(PREFS_KEY, JSON.stringify({ favourites: ['C:\\fav'], recents: ['C:\\r'], sound: false }))
+  const f = await loadStore({ fresh: true })
+  f.hydrate()
+  assert.deepEqual(f.getPrefs().favourites, ['C:\\fav'])
+  assert.deepEqual(f.getPrefs().recents, ['C:\\r'])
+  assert.equal(f.getPrefs().sound, false)
+  assert.equal(f.getWins().length, 0)
+  assert.equal(window.localStorage.getItem(`${LAYOUT_KEY}.corrupt`), 'not json{')
+  f.closeAll()
+  await settle()
+})
+
+test('corrupt preferences keep the layout, are backed up before the next save, and do not crash', async () => {
+  window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({ wins: [goodWin('w1')], zTop: 3 }))
+  window.localStorage.setItem(PREFS_KEY, '{broken')
+  const f = await loadStore({ fresh: true })
+  f.hydrate()
+  assert.deepEqual(f.getWins().map((w) => w.id), ['w1'])
+  assert.equal(f.getPrefs().lastShell, 'default')
+  assert.equal(window.localStorage.getItem(`${PREFS_KEY}.corrupt`), '{broken', 'the raw value survives the overwrite below')
+  f.toggleFavourite('C:\\new')
+  await new Promise((r) => setTimeout(r, 400))
+  assert.deepEqual(JSON.parse(window.localStorage.getItem(PREFS_KEY)).favourites, ['C:\\new'])
+  f.closeAll()
+  await settle()
+})
+
+test('malformed preference shapes are repaired field by field instead of crashing the view', async () => {
+  window.localStorage.setItem(PREFS_KEY, JSON.stringify({
+    recents: 'C:\\x',
+    favourites: ['C:\\ok', 5, null],
+    layouts: [
+      { name: 'nowins' },
+      { name: 'badwins', wins: 'x' },
+      7,
+      { name: 'good', savedAt: 5, wins: [{ title: 'A', shell: 'cmd', cwd: 'C:\\a', x: 0, y: 0, w: 1, h: 1 }, { title: 'no rect' }, null] },
+    ],
+    fitCols: 'wide',
+    hungMinutes: 9999,
+    termTheme: 'neon',
+    sound: 'yes',
+  }))
+  const f = await loadStore({ fresh: true })
+  f.hydrate()
+  const p = f.getPrefs()
+  assert.deepEqual(p.recents, [])
+  assert.deepEqual(p.favourites, ['C:\\ok'])
+  assert.deepEqual(p.layouts.map((l) => l.name), ['good'])
+  assert.equal(p.layouts[0].wins.length, 1)
+  assert.equal(p.layouts[0].wins[0].shell, 'cmd')
+  assert.equal(p.fitCols, 100)
+  assert.equal(p.hungMinutes, 240)
+  assert.equal(p.termTheme, 'dark')
+  assert.equal(p.sound, true)
+  f.closeAll()
+  await settle()
+})
+
+test('stored windows are validated: bad ids and geometry are dropped, a missing z is repaired', async () => {
+  window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({
+    wins: [goodWin('ok', { z: 4 }), goodWin('noz', { z: undefined }), goodWin('nan', { x: 'left' }), { title: 'no id', x: 0, y: 0, w: 1, h: 1, z: 1 }, goodWin('ok', { z: 9 }), null],
+    zTop: 'high',
+  }))
+  const f = await loadStore({ fresh: true })
+  f.hydrate()
+  assert.deepEqual(f.getWins().map((w) => w.id), ['ok', 'noz'])
+  assert.ok(f.getWins().every((w) => Number.isFinite(w.z)))
+  const id = f.openTerminal({ cwd: 'C:\\n' })
+  assert.ok(Number.isFinite(f.getWins().find((w) => w.id === id).z), 'zTop is not NaN')
+  f.closeAll()
+  await settle()
+})
+
+// ── host probe ──
+
+test('a failed host probe is retried, and a refresh drops the stale settings file', async () => {
+  const f = await loadStore({ fresh: true })
+  const calls = []
+  const info = (file) => () => Promise.resolve({ ok: true, json: async () => ({ agent: { claudeSettings: file } }) })
+  const answers = [() => Promise.reject(new Error('offline')), () => Promise.resolve({ ok: false }), info('C:\\h\\settings-1.json'), info('C:\\h\\settings-2.json')]
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (...args) => (calls.push(args), answers[calls.length - 1]())
+  try {
+    await f.hostInfoReady(1000)
+    assert.equal(f.hostInfo.agent, undefined, 'first probe failed')
+    await f.hostInfoReady(1000)
+    assert.equal(f.hostInfo.agent, undefined, 'second probe answered with an error status')
+    await f.hostInfoReady(1000)
+    assert.equal(f.hostInfo.agent.claudeSettings, 'C:\\h\\settings-1.json', 'a later call retries and succeeds')
+    await f.hostInfoReady(1000)
+    assert.equal(calls.length, 3, 'a good answer is not asked for again')
+    f.refreshHostInfo() // the host restarted
+    assert.equal(f.hostInfo.agent, undefined, 'the dead host file is not used while the new probe is in flight')
+    await f.hostInfoReady(1000)
+    assert.equal(f.hostInfo.agent.claudeSettings, 'C:\\h\\settings-2.json')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+// ── saved layouts keep auto names automatic ──
+
+test('a saved layout freezes only the names the user chose', () => {
+  s.openTerminal({ cwd: 'C:\\a', title: 'Mine' })
+  const auto = s.openTerminal({ cwd: 'C:\\b' })
+  s.updateWin(auto, { autoName: 'Fix login bug' })
+  s.saveLayout('names')
+  const saved = s.getPrefs().layouts.find((l) => l.name === 'names').wins
+  assert.equal(saved.find((w) => w.cwd === 'C:\\a').nameManual, true)
+  assert.equal(saved.find((w) => w.cwd === 'C:\\b').nameManual, false)
+  s.closeAll()
+  s.loadLayout('names')
+  assert.equal(wins().find((w) => w.cwd === 'C:\\a').nameManual, true)
+  assert.equal(wins().find((w) => w.cwd === 'C:\\b').nameManual, false, 'the reopened window names itself from its program again')
+})
+
+// ── typing acknowledges quiet alerts ──
+
+test('typing into a terminal clears a quiet flag (finished, bell) but not an urgent one', () => {
+  const done = terminalWithRuntime()
+  s.applyAgentSignal(done, signal('working'))
+  s.applyAgentSignal(done, signal('finished'))
+  assert.equal(done.attentionLevel, 'quiet')
+  s.noteUserInput(done)
+  assert.equal(done.attention, false)
+  assert.equal(done.agent.state, 'finished', 'only the flag goes; the agent state is unchanged')
+
+  const bell = terminalWithRuntime()
+  s.raiseAttention(bell, { level: 'quiet', label: 'bell', reason: 'Rang the terminal bell' })
+  assert.equal(bell.attention, true)
+  s.noteUserInput(bell)
+  assert.equal(bell.attention, false)
+
+  const failed = terminalWithRuntime()
+  s.applyAgentSignal(failed, signal('failed', 'rate_limit'))
+  s.noteUserInput(failed)
+  assert.equal(failed.attentionLevel, 'urgent', 'a failure stays until the window is focused')
+})

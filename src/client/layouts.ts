@@ -9,8 +9,9 @@ function snapshotWins(): LayoutWin[] {
   return store.wins.map((w) => {
     const g = w.maximized && w.restore !== undefined ? w.restore : w
     return {
+      // Only a manual name is pinned; an auto-named window keeps its current name as a placeholder until the program sets one.
       title: displayName(w),
-      nameManual: true,
+      nameManual: w.nameManual === true,
       shell: w.shell,
       cwd: w.cwd,
       startup: w.startup,

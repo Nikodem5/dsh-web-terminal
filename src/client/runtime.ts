@@ -5,7 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { emit, hostInfo, hostInfoReady, prefs, runtimes, store, updateWin } from './state.ts'
+import { emit, hostInfo, hostInfoReady, prefs, refreshHostInfo, runtimes, store, updateWin } from './state.ts'
 import { cleanTitle, displayName } from './names.ts'
 import { noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
@@ -36,6 +36,20 @@ export function admitOutput(pending: number, incoming: number, limit = MAX_PENDI
  */
 export function isHostRestart(attachedBefore: boolean, created: boolean): boolean {
   return attachedBefore && created
+}
+
+/**
+ * Whether `data` is one of the replies xterm generates itself for a program: cursor position (CSI r;c R),
+ * device attributes / status / mode reports (CSI ... c, n, $y), window reports (CSI ... t), focus (CSI I/O),
+ * mouse in SGR, urxvt or X10 form, and OSC/DCS answers. Real key presses are recognised separately (via
+ * onKey) so a key that happens to look like a report, such as Shift+F3 (CSI 1;2 R), is still mirrored.
+ */
+export function isTerminalReport(data: string): boolean {
+  return (
+    /^\x1b\[(?:[IO]|[?>=]?[\d;]*[cn]|\??[\d;]*\$y|\d+(?:;\d+)*t|\??\d+;\d+(?:;\d+)?R|<\d+;\d+;\d+[Mm]|\d+;\d+;\d+M)$/.test(data) ||
+    /^\x1b\[M[\s\S]{3}$/.test(data) ||
+    /^\x1b[\]P][\s\S]*(?:\x07|\x1b\x5c)$/.test(data)
+  )
 }
 
 function setConn(rt: Runtime, conn: Conn, detail = ''): void {
@@ -130,10 +144,17 @@ export function ensureRuntime(win: WinState): Runtime {
   runtimes.set(win.id, rt)
   ticker ??= setInterval(tick, 1000)
 
+  // Bytes of the key press xterm is about to report through onData (onKey fires first, synchronously).
+  let keyData: string | undefined
   term.onData((data) => {
     rt.lastInputAt = Date.now()
     if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'input', data }))
-    // Live mirror: keystrokes typed here also go to the other selected terminals.
+    const fromKey = keyData === data
+    keyData = undefined
+    // Live mirror: only what the user typed or pasted. onData also carries xterm's automatic answers to
+    // program queries (cursor position, device attributes, focus and mouse reports), which belong to this
+    // terminal's program alone and would be typed into the other shells.
+    if (!fromKey && isTerminalReport(data)) return
     if (store.broadcast.on && store.broadcast.live && store.broadcast.ids.has(rt.id)) {
       for (const id of store.broadcast.ids) {
         if (id === rt.id) continue
@@ -147,7 +168,10 @@ export function ensureRuntime(win: WinState): Runtime {
   })
   // Only real key presses count as the user answering a prompt. `onData` also carries the mouse and
   // focus reports xterm sends once a TUI turns on mouse tracking, so hovering would otherwise "answer".
-  term.onKey(() => noteUserInput(rt))
+  term.onKey(({ key }) => {
+    keyData = key
+    noteUserInput(rt)
+  })
   term.onTitleChange((title) => {
     rt.title = title
     const w = store.wins.find((x) => x.id === rt.id)
@@ -219,6 +243,8 @@ export function ensureRuntime(win: WinState): Runtime {
           } catch {}
           setConn(rt, 'exited', 'host restarted')
           noteHostRestart(rt)
+          // The new host writes its own per-process settings file; the path we know belongs to the dead one.
+          refreshHostInfo()
           term.write('\r\n\x1b[2m[host restarted: this shell is gone, restart this window]\x1b[0m\r\n')
           return
         }

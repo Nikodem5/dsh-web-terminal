@@ -249,3 +249,104 @@ test('a malformed data frame is ignored', async () => {
   assert.match(s.bufferText(id), /fine/)
   assert.equal(rt.pendingBytes, 0)
 })
+
+// ── host probe across a host restart ──
+
+test('a host restart refreshes the probe, so the next Restart uses the new host settings file, not the dead one', async () => {
+  const files = ['C:\\h\\claude-settings-1.json', 'C:\\h\\claude-settings-2.json']
+  let calls = 0
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ agent: { claudeSettings: files[Math.min(calls++, 1)] } }) })
+  try {
+    const { id, rt, sock } = await start({ startup: 'claude' })
+    sock.push(attached({ created: true }))
+    await until(() => sock.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-1.json')), 'the first command', 4000)
+    assert.equal(calls, 1)
+
+    const next = await reconnect(sock)
+    next.push(attached({ created: true })) // the host restarted
+    await flush(rt)
+    await until(() => calls === 2, 'a second probe after the restart')
+
+    s.restartWin(id)
+    s.ensureRuntime(s.getWins().find((w) => w.id === id))
+    const fresh = await until(() => (FakeWebSocket.last !== next ? FakeWebSocket.last : undefined), 'the new shell socket')
+    fresh.push(attached({ created: true }))
+    await until(() => fresh.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-2.json')), 'the command with the new settings file', 4000)
+    assert.ok(!fresh.sent.some((f) => f.data?.includes('claude-settings-1.json')), 'the dead host file is never used')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('a startup command typed after a probe that named no settings file asks the host again', async () => {
+  let calls = 0
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ agent: { claudeSettings: ++calls === 1 ? null : 'C:\\h\\claude-settings-9.json' } }) })
+  try {
+    s.refreshHostInfo() // forget what earlier tests learned
+    await s.hostInfoReady(1000) // settles with no settings file
+    assert.equal(calls, 1)
+    const { sock } = await start({ startup: 'claude' })
+    sock.push(attached({ created: true }))
+    await until(() => sock.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-9.json')), 'the command with the settings file', 4000)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+// ── live broadcast mirror ──
+
+test('isTerminalReport recognises what xterm answers to program queries, and nothing a user types', () => {
+  for (const report of ['\x1b[12;40R', '\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b[0n', '\x1b[?62;4c', '\x1b[I', '\x1b[O', '\x1b[<35;10;10M', '\x1b[<0;11;10m', '\x1b[M !!', '\x1b[?2004;2$y', '\x1b[8;24;80t', '\x1b]11;rgb:0000/0000/0000\x07', '\x1bP1$r0m\x1b\\']) {
+    assert.equal(s.isTerminalReport(report), true, JSON.stringify(report))
+  }
+  for (const typedText of ['a', 'ls -la\r', '\x1b', '\x1b[A', '\x1b[5~', '\x1bOP', '\x7f', '\x03', 'héllo wörld', '\x1b[200~pasted\x1b[201~', '[I', '12;40R']) {
+    assert.equal(s.isTerminalReport(typedText), false, JSON.stringify(typedText))
+  }
+})
+
+/** Two live terminals with live broadcast on. */
+async function broadcastPair() {
+  const a = await start()
+  a.sock.push(attached())
+  const idB = s.openTerminal({ cwd: 'C:\\other' })
+  const rtB = s.ensureRuntime(s.getWins().find((w) => w.id === idB))
+  const sockB = await until(() => FakeWebSocket.instances.find((x) => x.url.includes(idB)), 'the second socket')
+  sockB.push(attached())
+  s.setBroadcast({ on: true, live: true })
+  s.setBroadcastTargets([a.id, idB])
+  return { a, b: { id: idB, rt: rtB, sock: sockB } }
+}
+const inputs = (sock) => sock.sent.filter((f) => f.type === 'input').map((f) => f.data)
+
+test('live broadcast mirrors typed keys and pasted text to the other terminals', async () => {
+  const { a, b } = await broadcastPair()
+  a.rt.term.textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'x', code: 'KeyX', keyCode: 88, bubbles: true }))
+  a.rt.term.paste('pasted')
+  assert.deepEqual(inputs(a.sock), ['x', 'pasted'], 'the terminal itself gets everything')
+  assert.deepEqual(inputs(b.sock), ['x', 'pasted'])
+  s.setBroadcast({ on: false, live: false })
+})
+
+test('live broadcast does not mirror xterm replies to program queries into the other shells', async () => {
+  const { a, b } = await broadcastPair()
+  // A program in terminal A asks for device attributes, cursor position and turns on focus + mouse reporting.
+  a.rt.term.write('\x1b[c\x1b[6n\x1b[?1004h\x1b[?1000h\x1b[?1006h')
+  await flush(a.rt)
+  a.rt.term.input('\x1b[<35;10;10M')
+  a.rt.term.input('\x1b[I')
+  const own = inputs(a.sock)
+  assert.ok(own.some((d) => /^\x1b\[\?[\d;]*c$/.test(d)), 'the reply still reaches the terminal that asked')
+  assert.ok(own.some((d) => /^\x1b\[\d+;\d+R$/.test(d)), 'including the cursor position report')
+  assert.deepEqual(inputs(b.sock), [], 'nothing the terminal said to its own program leaks to the other shell')
+  s.setBroadcast({ on: false, live: false })
+})
+
+test('a key that looks like a report (Shift+F3 is CSI 1;2 R) is still mirrored', async () => {
+  const { a, b } = await broadcastPair()
+  a.rt.term.textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F3', code: 'F3', keyCode: 114, shiftKey: true, bubbles: true }))
+  assert.deepEqual(inputs(a.sock), ['\x1b[1;2R'])
+  assert.deepEqual(inputs(b.sock), ['\x1b[1;2R'])
+  s.setBroadcast({ on: false, live: false })
+})
