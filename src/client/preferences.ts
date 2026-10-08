@@ -47,3 +47,10 @@ export function setHungMinutes(minutes: number): void {
   emit()
   persistSoon()
 }
+
+/** Remember the folder of the chat session being viewed, so the dialog can offer "the last session's workspace". */
+export function noteSessionCwd(cwd: string | undefined): void {
+  if (cwd === undefined || cwd.length === 0 || cwd === prefs.sessionCwd) return
+  prefs.sessionCwd = cwd
+  persistSoon()
+}

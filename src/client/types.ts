@@ -157,6 +157,8 @@ export interface Prefs {
   layouts: SavedLayout[]
   lastShell: string
   lastCwd: string
+  /** Folder of the chat session viewed last (recorded by the header bar); fallback when the harness lists no Workspaces. */
+  sessionCwd: string
   sidebar: boolean
   notify: boolean
   /** Play a chime for urgent alerts. */

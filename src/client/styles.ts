@@ -16,9 +16,8 @@ const VIEW_CSS = `
 .wt-view input, .wt-view select, .wt-view button { font-family: inherit; }
 .wt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* The chat input belongs to Chat and Trajectory; hide it while the Terminals tab is showing.
-   Matches the shell's composer seat by class substring (the hash prefix changes between builds). */
-:has(> .wt-view) ~ [class*="composerSeat"], :has(.wt-view) > [class*="composerSeat"], [class*="composerSeat"]:has(~ * .wt-view) { display: none !important; }
+/* The page is a main-panel entry: it fills the main area. On macOS the window chrome overlaps the top strip, and entry pages pad their top by the frame's clearance (Windows reserves its caption outside the page). */
+[data-platform="darwin"] .wt-page > .wt-main > .wt-bar:first-child { padding-top: calc(8px + var(--dsh-frame-top-clearance, 0px)); }
 
 /* toolbar */
 .wt-bar { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 0.5px solid var(--wt-line); flex-wrap: wrap; position: relative; z-index: 30; background: var(--wt-surface); }
@@ -59,6 +58,7 @@ const VIEW_CSS = `
 .wt-input option { background: var(--wt-field); color: var(--wt-text); }
 .wt-input:focus { outline: none; border-color: var(--wt-accent); }
 .wt-row { display: flex; gap: 6px; align-items: center; }
+.wt-dim { font-size: 12px; color: var(--wt-dim); }
 .wt-note { font-size: 12px; color: var(--dsw-alias-state-warn-label, #f0b429); }
 .wt-chip { height: 24px; padding: 0 10px; border: 0.5px solid var(--wt-line); border-radius: 12px; background: var(--wt-field); color: var(--wt-text); font: inherit; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 
@@ -153,6 +153,8 @@ const VIEW_CSS = `
 .wt-stats-group[data-stale="true"] { opacity: 0.55; }
 .wt-stats-item { display: inline-flex; align-items: center; gap: 5px; }
 .wt-stats .wt-dot { width: 7px; height: 7px; display: inline-block; }
+/* In the page toolbar the bar sits on the plugin's measured surface, not the harness tokens. */
+.wt-view .wt-stats { color: color-mix(in srgb, var(--wt-text) 75%, transparent); }
 .wt-stats-warn { color: var(--dsw-alias-state-warn-label, #f0b429); }
 `
 

@@ -87,21 +87,31 @@ window.eval(bundle)
 const mods = { react: React, 'react/jsx-runtime': jsxRuntime }
 const exportsObject = entry.factory((id) => mods[id])
 let component
-let injectFn
 let statsBar
 let statsOptions
+let panelEntry
+let mainKey
 exportsObject.apply({
   slots: {
     inject: (_key, cb) => { cb(); return () => {} },
     register: (options, comp) => {
       if (options.name === 'conversation.session.header.utilities') { statsBar = comp; statsOptions = options; return () => {} }
-      component = comp; injectFn = options.inject; return () => {}
+      if (options.name === 'sidebar.panellist') { panelEntry = options; return () => {} }
+      if (options.name === 'main') { component = comp; mainKey = options.key }
+      return () => {}
     },
   },
   sessions: { list: { getSnapshot: () => ({ byId: { s1: { cwd: 'C:\\work\\repo' } } }) } },
 })
-const props = injectFn('s1')
-check(props.sessionCwd() === 'C:\\work\\repo', 'inject exposes the session workspace folder')
+check(panelEntry?.label() === 'Terminals' && panelEntry.id === mainKey, 'the sidebar entry is labelled Terminals and shares the main key')
+const barProps = statsOptions.inject('s1')
+check(barProps.sessionCwd() === 'C:\\work\\repo', 'the header bar is injected with the session workspace folder')
+// The shell hands every main entry its standard hooks; this is the workspaces one.
+let workspaceItems = [
+  { workspaceId: 'w1', title: 'deepseek-harness-1', path: '/w/deepseek-harness-1', sessionIds: [] },
+  { workspaceId: 'w2', title: 'notes', path: '/w/notes', sessionIds: [] },
+]
+const props = { useWorkspaces: (select) => select({ items: workspaceItems, phase: 'ready' }) }
 
 // ── render ──
 const root = ReactDOMClient.createRoot(window.document.getElementById('root'))
@@ -128,6 +138,12 @@ click(byText('.wt-bar button', 'New terminal'))
 await sleep(20)
 check(q('.wt-dialog') !== null, 'New terminal dialog opens')
 check(q('.wt-dialog input').value === 'C:\\Users\\me' || q('.wt-dialog input').value.length > 0, 'dialog has a default folder')
+const wsChips = qa('.wt-dialog .wt-chip').filter((el) => workspaceItems.some((w) => w.title === el.textContent))
+check(wsChips.length === 2 && q('.wt-dialog').textContent.includes('Workspaces:'), 'the dialog offers the harness Workspaces as chips')
+check(!q('.wt-dialog').textContent.includes('last session'), 'no last-session fallback while Workspaces are listed')
+click(wsChips[1])
+await sleep(20)
+check(q('.wt-dialog input').value === '/w/notes', 'clicking a Workspace chip fills the folder')
 setValue(q('.wt-dialog input'), 'C:\\work\\repo')
 await sleep(40)
 // Enter on a button presses that button; it must not also open the terminal.
@@ -312,7 +328,7 @@ check(focusedBefore !== focusedAfter, `Ctrl+Alt+Right moves focus (${focusedBefo
 {
   const css = [...doc.querySelectorAll('style')].map((t) => t.textContent).join('\n')
   check(/data-scheme="light"\][^}]*--wt-surface: #f6f7f9[^}]*--wt-deep: #ffffff/.test(css) && /data-scheme="dark"\][^}]*--wt-surface: #1b1d23/.test(css), 'each scheme sets surface AND text together, so buttons cannot pair text with a mismatched background')
-  check(/:has\(\.wt-view\) > \[class\*="composerSeat"\][^}]*display: none/.test(css) && !/dsh-composer-height/.test(css), 'chat input is hidden while this tab shows, and no space is reserved for it')
+  check(!/composerSeat/.test(css) && /\[data-platform="darwin"\] \.wt-page[^}]*--dsh-frame-top-clearance/.test(css), 'no chat-composer hack any more; the page pads its top by the frame clearance on macOS')
   check(/\.wt-stage \{[^}]*isolation: isolate/.test(css), 'window stack is isolated, so window z-indexes cannot outrank the dialog or menus')
   const dialogZ = Number(/\.wt-scrim \{[^}]*z-index: (\d+)/.exec(css)?.[1])
   const popZ = Number(/\.wt-pop \{[^}]*z-index: (\d+)/.exec(css)?.[1])
@@ -376,8 +392,11 @@ doc.body.appendChild(barHost)
 const barRoot = ReactDOMClient.createRoot(barHost)
 sock.push({ type: 'agent', provider: 'claude', state: 'working', detail: '' })
 await sleep(40)
-ReactDOM.flushSync(() => barRoot.render(React.createElement(statsBar, {})))
+ReactDOM.flushSync(() => barRoot.render(React.createElement(statsBar, barProps)))
 await sleep(60)
+const pageBar = q('.wt-view .wt-bar .wt-stats')
+check(pageBar !== null && pageBar.textContent.includes('5h 42%') && pageBar.textContent.includes('$12.34'), 'the stats bar also renders in the page toolbar')
+check(pageBar?.textContent.includes('1 working') === true, 'the page bar counts agents live too (two bars share the poller)')
 const barText = barHost.textContent
 check(barText.includes('5h 42%') && barText.includes('7d 63%') && barText.includes('out ~'), `stats bar shows limits (${barText})`)
 check(barText.includes('$12.34') && barText.includes('2.5B tok'), 'stats bar shows cost and tokens')
@@ -390,6 +409,24 @@ await sleep(60)
 check(barHost.querySelector('.wt-stats-warn') !== null, 'out time is highlighted')
 ReactDOM.flushSync(() => barRoot.unmount())
 barHost.remove()
+check(q('.wt-view .wt-bar .wt-stats') !== null, 'unmounting the header bar leaves the page bar running')
+
+// No Workspaces from the shell: the dialog falls back to the folder of the session last viewed in the chat header.
+workspaceItems = []
+render()
+await sleep(30)
+click(byText('.wt-bar button', 'New terminal'))
+await sleep(20)
+setValue(q('.wt-dialog input'), '/elsewhere')
+await sleep(20)
+check(!q('.wt-dialog').textContent.includes('Workspaces:'), 'no Workspaces row when the shell lists none')
+const lastSession = byText('.wt-dialog .wt-chip', 'last session')
+check(lastSession !== undefined, 'the dialog offers the last session workspace instead')
+click(lastSession)
+await sleep(20)
+check(q('.wt-dialog input').value === 'C:\\work\\repo', 'the fallback chip fills the recorded session folder')
+click(byText('.wt-dialog button', 'Cancel'))
+await sleep(20)
 
 const busyWindow = () => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === 'Agent A')
 // safe close: a busy terminal asks first; Cancel keeps it, OK ends it

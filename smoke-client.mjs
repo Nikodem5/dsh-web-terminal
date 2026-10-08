@@ -132,19 +132,30 @@ const ctx = {
 
 exportsObject.apply(ctx)
 
-const registered = registrations2.find((r) => r.options !== undefined)
-const injected = registrations2.find((r) => r.inject !== undefined)
-console.log(`slots.inject: ${injected?.inject}`)
-console.log(`slots.register: ${registered === undefined ? '(none)' : JSON.stringify(registered.options)}`)
+const injects = registrations2.filter((r) => r.inject !== undefined).map((r) => r.inject)
+const regs = registrations2.filter((r) => r.options !== undefined)
+const reg = (seat) => regs.find((r) => r.options.name === seat)
+console.log(`slots.inject: ${injects.join(', ')}`)
+console.log(`slots.register: ${regs.map((r) => JSON.stringify(r.options)).join(' ')}`)
 
+const main = reg('main')
+const sidebarEntry = reg('sidebar.panellist')
+const bar = reg('conversation.session.header.utilities')
 const ok =
-  injected?.inject === 'conversation.view' &&
-  registered?.options?.name === 'conversation.view' &&
-  registered?.options?.id === 'terminals' &&
-  typeof registered?.component === 'function'
+  ['main', 'sidebar.panellist', 'conversation.session.header.utilities'].every((k) => injects.includes(k)) &&
+  !injects.includes('conversation.view') &&
+  typeof main?.options.key === 'string' &&
+  // the sidebar entry id must equal the main key, or selectPanel has nothing to show
+  sidebarEntry?.options.id === main?.options.key &&
+  typeof sidebarEntry?.options.label === 'function' &&
+  sidebarEntry.options.label() === 'Terminals' &&
+  typeof main?.component === 'function' &&
+  typeof sidebarEntry?.component === 'function' &&
+  bar?.options.id === 'terminal-stats' &&
+  typeof bar?.component === 'function'
 
 if (ok) {
-  console.log('PASS: client half registers the Terminals view into conversation.view')
+  console.log('PASS: client half registers the sidebar entry, the main page and the header stats bar')
   process.exit(0)
 }
 console.error('FAIL: unexpected registration shape')

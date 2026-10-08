@@ -32,6 +32,7 @@ export const prefs: Prefs = {
   layouts: [],
   lastShell: 'default',
   lastCwd: '',
+  sessionCwd: '',
   sidebar: true,
   notify: true,
   sound: true,
@@ -134,6 +135,7 @@ function applyPrefs(p: Record<string, unknown>): void {
   if (Array.isArray(p.layouts)) prefs.layouts = p.layouts.map(cleanLayout).filter((l): l is SavedLayout => l !== undefined)
   if (typeof p.lastShell === 'string') prefs.lastShell = p.lastShell
   if (typeof p.lastCwd === 'string') prefs.lastCwd = p.lastCwd
+  if (typeof p.sessionCwd === 'string') prefs.sessionCwd = p.sessionCwd
   for (const key of ['fontCustom', 'autoFont', 'sidebar', 'notify', 'sound'] as const) if (typeof p[key] === 'boolean') prefs[key] = p[key] as boolean
   if (isNum(p.fitCols)) prefs.fitCols = clamp(Math.round(p.fitCols), 40, 240)
   if (isNum(p.hungMinutes)) prefs.hungMinutes = clamp(Math.round(p.hungMinutes), 0, 240)

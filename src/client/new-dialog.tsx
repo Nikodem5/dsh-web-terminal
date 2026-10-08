@@ -1,16 +1,17 @@
 // dsh-web-terminal — the "New terminal" dialog: folder (with recents, favourites,
-// native browse and the session's workspace), shell, startup command and name.
+// native browse and the harness's Workspaces), shell, startup command and name.
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { browseFolder, canBrowse } from './actions.ts'
+import type { WorkspaceChoice } from './workspaces.ts'
 import { forgetRecent, getPrefs, hostInfo, openTerminal, toggleFavourite } from './terminal-store.ts'
 
 interface Props {
   /** Preset startup command (e.g. `claude`). */
   startup?: string
-  /** Folder of the DSH session this view belongs to, when known. */
-  sessionCwd?: string
+  /** The harness's Workspaces (sidebar folders); empty when the shell does not expose them. */
+  workspaces?: WorkspaceChoice[]
   onClose: () => void
 }
 
@@ -21,9 +22,9 @@ const STARTUPS = [
   { label: 'claude --continue', value: 'claude --continue' },
 ]
 
-export function NewTerminalDialog({ startup: presetStartup, sessionCwd, onClose }: Props): ReactElement {
+export function NewTerminalDialog({ startup: presetStartup, workspaces = [], onClose }: Props): ReactElement {
   const prefs = getPrefs()
-  const [cwd, setCwd] = useState(prefs.lastCwd || sessionCwd || hostInfo.cwd || '')
+  const [cwd, setCwd] = useState(prefs.lastCwd || prefs.sessionCwd || workspaces[0]?.path || hostInfo.cwd || '')
   const [shell, setShell] = useState(prefs.lastShell || 'default')
   const [startup, setStartup] = useState(presetStartup ?? '')
   const [name, setName] = useState('')
@@ -62,9 +63,17 @@ export function NewTerminalDialog({ startup: presetStartup, sessionCwd, onClose 
             <button type="button" className="wt-star" data-on={prefs.favourites.includes(cwd)} title="Favourite this folder" onClick={() => { toggleFavourite(cwd.trim()); force((n) => n + 1) }}>★</button>
           </span>
         </label>
-        {sessionCwd !== undefined && sessionCwd !== cwd ? (
+        {workspaces.length > 0 ? (
+          <span className="wt-row" style={{ flexWrap: 'wrap' }}>
+            <span className="wt-dim">Workspaces:</span>
+            {workspaces.map((w) => (
+              <button key={w.path} type="button" className="wt-chip" data-on={w.path === cwd} style={w.path === cwd ? { borderColor: 'var(--wt-accent)' } : undefined} onClick={() => setCwd(w.path)} title={w.path}>{w.label}</button>
+            ))}
+          </span>
+        ) : prefs.sessionCwd.length > 0 && prefs.sessionCwd !== cwd ? (
+          // Fallback when the shell lists no Workspaces: the folder of the chat session viewed last.
           <span className="wt-row">
-            <button type="button" className="wt-chip" onClick={() => setCwd(sessionCwd)} title={sessionCwd}>Use this session’s workspace</button>
+            <button type="button" className="wt-chip" onClick={() => setCwd(prefs.sessionCwd)} title={prefs.sessionCwd}>Use the last session’s workspace</button>
           </span>
         ) : null}
         {folders.length > 0 ? (
