@@ -12,6 +12,7 @@ import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { requestClose, requestCloseAll } from './actions.ts'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { NewTerminalDialog } from './new-dialog.tsx'
+import { AgentsPanel } from './agents-panel.tsx'
 import { Sidebar } from './sidebar.tsx'
 import { StatsBar } from './stats-bar.tsx'
 import { ensureStyles } from './styles.ts'
@@ -40,6 +41,8 @@ import {
   refit,
   renameWin,
   restartWin,
+  runningSubagents,
+  setAgentsPanel,
   runSearch,
   saveLog,
   setBroadcast,
@@ -493,6 +496,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     broadcastLine(text)
     setBcText('')
   }
+  const runningAgents = runningSubagents()
   const needsYou = wins.filter((w) => w.id !== focusId && getRuntimeAttention(w.id)).length
 
   return (
@@ -528,6 +532,9 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
             <button type="button" className="wt-btn" data-on={menu === 'settings'} title="Font and notification settings" onClick={() => setMenu(menu === 'settings' ? null : 'settings')}>Aa</button>
             {menu === 'settings' ? <SettingsMenu /> : null}
           </div>
+          <button type="button" className="wt-btn" data-on={prefs.agentsPanel} title={prefs.agentsPanel ? 'Hide the sub-agents panel' : 'Show the sub-agents panel'} onClick={() => setAgentsPanel(!prefs.agentsPanel)}>
+            Agents{runningAgents > 0 ? <span className="wt-btn-count">{runningAgents}</span> : null}
+          </button>
           <button type="button" className="wt-btn" data-on={prefs.sidebar} title={prefs.sidebar ? 'Hide the terminal list' : 'Show the terminal list'} onClick={() => setSidebar(!prefs.sidebar)}>☰</button>
         </div>
         {broadcast.on ? (
@@ -558,6 +565,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           </div>
         </div>
       </div>
+      {prefs.agentsPanel ? <AgentsPanel wins={wins} /> : null}
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
       {dialog !== null ? <NewTerminalDialog startup={dialog.startup} workspaces={workspaceChoices(workspaceItems)} onClose={() => setDialog(null)} /> : null}
     </div>

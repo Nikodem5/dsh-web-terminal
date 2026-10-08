@@ -158,9 +158,10 @@ check(qa('.wt-win').length === 1, 'a terminal window opens')
 const sock = sockets[sockets.length - 1]
 check(sock.url.startsWith('ws://127.0.0.1:19387/terminal/ws?') && sock.url.includes('cwd=C%3A%5Cwork%5Crepo'), 'socket targets the host origin with the chosen folder')
 
-// host attaches a fresh shell: startup command is typed
+// host attaches a fresh shell: startup command is typed once its prompt is up
 
 sock.push({ type: 'attached', created: true, replay: '', exited: false, exitCode: null })
+sock.push({ type: 'data', data: 'PS C:/work/repo> ' })
 await sleep(1700)
 check(
   sock.sent.some((f) => f.type === 'input' && f.data === 'claude --settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json" --resume\r'),
@@ -410,6 +411,33 @@ check(barHost.querySelector('.wt-stats-warn') !== null, 'out time is highlighted
 ReactDOM.flushSync(() => barRoot.unmount())
 barHost.remove()
 check(q('.wt-view .wt-bar .wt-stats') !== null, 'unmounting the header bar leaves the page bar running')
+
+// sub-agents: panel toggle, grouped rows from a frame, count in the stats bar
+check(q('.wt-agents') === null, 'the sub-agents panel starts closed')
+sock.push({ type: 'subagents', tasks: [
+  { id: 'a1', agentType: 'Explore', label: 'Find callers', description: 'd', status: 'running', model: 'claude-haiku-5-5', startTime: Date.now() - 65_000, endedAt: null, tokenCount: 12_300, contextWindowSize: 200000 },
+  { id: 'a2', agentType: 'Plan', label: '', description: 'Old plan', status: 'completed', model: null, startTime: Date.now() - 90_000, endedAt: Date.now() - 30_000, tokenCount: null, contextWindowSize: null },
+] })
+await sleep(60)
+const agentsBtn = byText('.wt-bar button', 'Agents')
+check(agentsBtn.textContent.includes('1'), 'the Agents button badges the running count')
+click(agentsBtn)
+await sleep(40)
+const rows = qa('.wt-agents-row')
+check(q('.wt-agents') !== null && rows.length === 2, `the panel lists both sub-agents (${rows.length})`)
+check(qa('.wt-agents-head').length === 1, 'one group per terminal')
+check(rows[0].textContent.includes('Find callers') && rows[0].textContent.includes('haiku-5-5') && rows[0].textContent.includes('12.3k tok') && rows[0].textContent.includes('Explore'), `running row shows label, model, tokens, type (${rows[0].textContent})`)
+check(/1m 0\ds/.test(rows[0].textContent), 'running row shows elapsed time')
+check(rows[1].textContent.includes('Old plan') && rows[1].dataset.running === 'false' && rows[1].textContent.includes('1m 00s'), 'completed row is dimmed with its total time')
+sock.push({ type: 'subagents', tasks: [{ id: 'a1', agentType: 'Explore', label: 'Find callers', status: 'running' }, { id: 'a3', agentType: 'Plan', label: 'Second', status: 'running' }] })
+await sleep(60)
+check(q('.wt-view .wt-bar .wt-stats')?.textContent.includes('2 agents') === true, 'the stats bar shows 2 agents')
+sock.push({ type: 'subagents', tasks: [] })
+await sleep(60)
+check(q('.wt-agents').textContent.includes('No sub-agents running') && !q('.wt-view .wt-bar .wt-stats').textContent.includes('agents'), 'empty state, and the count is hidden at 0')
+click(byText('.wt-bar button', 'Agents'))
+await sleep(40)
+check(q('.wt-agents') === null, 'the Agents button closes the panel')
 
 // No Workspaces from the shell: the dialog falls back to the folder of the session last viewed in the chat header.
 workspaceItems = []

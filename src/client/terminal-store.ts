@@ -7,6 +7,7 @@
 //   names.ts        folder labels and program-derived window names
 //   windows.ts      open / close / focus / maximize / presets
 //   runtime.ts      xterm + WebSocket behind each window
+//   start.ts        reattach saved terminals at plugin start
 //   attention.ts    activity and "needs you" detection, notifications
 //   search.ts       find-in-terminal
 //   layouts.ts      saved layouts
@@ -21,12 +22,16 @@ export * from './state.ts'
 export * from './names.ts'
 export * from './windows.ts'
 export * from './runtime.ts'
+export * from './start.ts'
 export * from './attention.ts'
 export * from './search.ts'
 export * from './layouts.ts'
 export * from './broadcast.ts'
 export * from './launch.ts'
+export * from './prompt-ready.ts'
 export * from './preferences.ts'
+export * from './subagents.ts'
+export * from './subagent-state.ts'
 export * from './workspaces.ts'
 export * from './appearance.ts'
 export * from './theme.ts'

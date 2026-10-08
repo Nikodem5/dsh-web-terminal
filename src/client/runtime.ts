@@ -9,9 +9,15 @@ import { emit, hostInfo, hostInfoReady, prefs, refreshHostInfo, runtimes, store,
 import { cleanTitle, displayName } from './names.ts'
 import { noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
+import { applySubagents } from './subagent-state.ts'
+import { startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
+
+/** Grid for a terminal that was never fitted (the host's own default, so a fresh PTY matches). */
+export const UNOPENED_COLS = 200
+export const UNOPENED_ROWS = 50
 
 let ticker: ReturnType<typeof setInterval> | undefined
 
@@ -84,7 +90,12 @@ export function ensureRuntime(win: WinState): Runtime {
 
   const holder = document.createElement('div')
   holder.className = 'wt-holder'
+  // Unopened there is no fit: use the last real size and send the same one to the host, so both agree.
+  const cols = win.cols ?? UNOPENED_COLS
+  const rows = win.rows ?? UNOPENED_ROWS
   const term = new Terminal({
+    cols,
+    rows,
     cursorBlink: true,
     fontFamily: prefs.font.family,
     fontSize: prefs.font.size,
@@ -99,19 +110,13 @@ export function ensureRuntime(win: WinState): Runtime {
   const search = new SearchAddon()
   term.loadAddon(fit)
   term.loadAddon(search)
-  // Links open with Ctrl/Cmd+click (like VS Code) so plain clicks still select text.
-  // The desktop app routes window.open of http(s) URLs to the system browser.
-  term.loadAddon(
-    new WebLinksAddon((event, uri) => {
-      if (!(event.ctrlKey || event.metaKey)) return
-      window.open(uri, '_blank', 'noopener,noreferrer')
-    }),
-  )
-  term.open(holder)
+  // Not opened here: a runtime is created at plugin start, before any page exists. xterm parses
+  // writes without a renderer; `openRuntime` gives it a DOM once its window first mounts.
 
   const rt: Runtime = {
     id: win.id,
     holder,
+    opened: false,
     term,
     fit,
     search,
@@ -135,6 +140,7 @@ export function ensureRuntime(win: WinState): Runtime {
     lastOutputAt: 0,
     lastInputAt: 0,
     agent: undefined,
+    subagents: [],
     hungRaised: false,
     attentionLevel: null,
     attentionLabel: '',
@@ -217,13 +223,22 @@ export function ensureRuntime(win: WinState): Runtime {
     const dims = rt.fit.proposeDimensions()
     const params = new URLSearchParams({ id: `${rt.id}-${current.gen ?? 0}`, shell: current.shell })
     if (current.cwd.length > 0) params.set('cwd', current.cwd)
-    if (dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)) {
-      params.set('cols', String(dims.cols))
-      params.set('rows', String(dims.rows))
-    }
+    // Always explicit: before the page opens there is no fit, and the xterm grid is what the host must match.
+    const fitted = rt.opened && dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)
+    params.set('cols', String(fitted ? dims.cols : term.cols))
+    params.set('rows', String(fitted ? dims.rows : term.rows))
     const socket = new WebSocket(`${socketBase()}/terminal/ws?${params.toString()}`)
     rt.socket = socket
     setConn(rt, 'connecting')
+    // Startup typing waits for the shell's first output and then a quiet spell (see startupWait).
+    let attachedAt = 0
+    let lastOutputAt: number | undefined
+    let startupTimer: ReturnType<typeof setTimeout> | undefined
+    let wakeStartup: (() => void) | undefined
+    const stopStartup = () => {
+      clearTimeout(startupTimer)
+      wakeStartup = undefined
+    }
 
     socket.onmessage = (event) => {
       let frame: { type: string; data?: string; replay?: string; created?: boolean; exited?: boolean; exitCode?: number | null; message?: string; busy?: boolean; agent?: AgentSignal | null } & Partial<AgentSignal>
@@ -249,9 +264,13 @@ export function ensureRuntime(win: WinState): Runtime {
           return
         }
         rt.attachedOnce = true
+        stopStartup()
+        attachedAt = Date.now()
+        lastOutputAt = undefined
         // A fresh shell has no agent yet; a reattached one reports what its agent was last doing.
         rt.agent = undefined
         restoreAgent(rt, frame.agent)
+        applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         term.reset()
         if ((frame.replay ?? '').length > 0) term.write(frame.replay as string)
         if (frame.exited === true) {
@@ -265,12 +284,25 @@ export function ensureRuntime(win: WinState): Runtime {
             // Wait for the host probe first: it names the agent-hook settings file, and on a cold app
             // start it can answer after the shell is already up.
             void hostInfoReady().then(() => {
-              // Read the session when typing, not at attach: a slow probe may have delayed us.
-              const session = store.wins.find((w) => w.id === rt.id)?.agentSession
-              const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings, session)
-              setTimeout(() => {
-                if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
-              }, 500)
+              // Type once the shell has printed and gone quiet (its prompt is up), not after a fixed delay:
+              // a slow profile would eat the command, a fast one waits for nothing.
+              const check = () => {
+                clearTimeout(startupTimer)
+                if (rt.killed || rt.socket !== socket || socket.readyState !== WebSocket.OPEN) return stopStartup()
+                const wait = startupWait(Date.now(), attachedAt, lastOutputAt)
+                if (wait > 0) {
+                  startupTimer = setTimeout(check, wait)
+                  return
+                }
+                stopStartup()
+                // Read the session when typing, not at attach: a slow probe may have delayed us.
+                const session = store.wins.find((w) => w.id === rt.id)?.agentSession
+                const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings, session)
+                socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
+              }
+              wakeStartup = check
+              rt.stopStartup = stopStartup
+              check()
             })
           }
         }
@@ -281,6 +313,8 @@ export function ensureRuntime(win: WinState): Runtime {
         if (frame.replay.length > 0) term.write(frame.replay)
       } else if (frame.type === 'data') {
         if (rt.hostLost || typeof frame.data !== 'string') return
+        lastOutputAt = Date.now()
+        wakeStartup?.()
         rt.lastOutputAt = Date.now()
         if (!admitOutput(rt.pendingBytes, frame.data.length)) {
           rt.droppedOutput = true
@@ -299,6 +333,8 @@ export function ensureRuntime(win: WinState): Runtime {
         noteHostBusy(rt, frame.busy === true)
       } else if (frame.type === 'agent') {
         if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at, session: frame.session })
+      } else if (frame.type === 'subagents') {
+        applySubagents(rt, (frame as { tasks?: unknown }).tasks)
       } else if (frame.type === 'exit') {
         if (rt.hostLost) return
         setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
@@ -310,6 +346,7 @@ export function ensureRuntime(win: WinState): Runtime {
       }
     }
     socket.onclose = (event) => {
+      stopStartup()
       if (rt.socket !== socket || rt.killed) return
       if (rt.conn === 'exited' || rt.conn === 'failed') return
       if (event.code === 4000) return setConn(rt, 'lost', 'opened in another tab')
@@ -329,12 +366,35 @@ export function ensureRuntime(win: WinState): Runtime {
   return rt
 }
 
+/**
+ * Give the xterm instance its DOM, once, when its holder is first in the document. Everything that
+ * needs a renderer (links, fitting, focus) waits for this; the output received so far is kept.
+ */
+export function openRuntime(rt: Runtime): void {
+  if (rt.opened) return
+  rt.opened = true
+  rt.term.open(rt.holder)
+  // Links open with Ctrl/Cmd+click (like VS Code) so plain clicks still select text.
+  // The desktop app routes window.open of http(s) URLs to the system browser.
+  rt.term.loadAddon(
+    new WebLinksAddon((event, uri) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      window.open(uri, '_blank', 'noopener,noreferrer')
+    }),
+  )
+  // The grid was never sent to the host (or only xterm's default); report the real one.
+  rt.lastCols = 0
+}
+
 /** Push the current xterm grid size to the PTY when it changed. */
 export function sizeToHost(rt: Runtime): void {
+  if (!rt.opened) return
   const { cols, rows } = rt.term
   if (cols === rt.lastCols && rows === rt.lastRows) return
   rt.lastCols = cols
   rt.lastRows = rows
+  const win = store.wins.find((w) => w.id === rt.id)
+  if (win !== undefined && (win.cols !== cols || win.rows !== rows)) updateWin(rt.id, { cols, rows })
   if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) {
     rt.socket.send(JSON.stringify({ type: 'resize', cols, rows }))
   }
@@ -353,7 +413,9 @@ function effectiveFontSize(widthPx: number): number {
 
 /** Refit a runtime to its container (adapting the font size to its width) and tell the host. */
 export function refit(rt: Runtime): void {
-  if (!rt.holder.isConnected || rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
+  if (!rt.holder.isConnected) return
+  openRuntime(rt)
+  if (rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
   const size = effectiveFontSize(rt.holder.clientWidth)
   if (rt.term.options.fontSize !== size) rt.term.options.fontSize = size
   try {
@@ -403,6 +465,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
   if (rt === undefined) return
   rt.killed = true
   if (rt.timer !== undefined) clearTimeout(rt.timer)
+  rt.stopStartup?.()
   try {
     if (kill && rt.socket?.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'kill' }))
     rt.socket?.close()

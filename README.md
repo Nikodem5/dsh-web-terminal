@@ -13,7 +13,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 ### Opening terminals
 | Action | How |
 |---|---|
-| New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or one of the harness's **Workspaces** — shown as chips under the folder field, as listed in the left sidebar), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell |
+| New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or one of the harness's **Workspaces** — shown as chips under the folder field, as listed in the left sidebar), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell, as soon as its prompt is up (it has printed and gone quiet for a moment; at most 5 s) |
 | Run Claude | **✦ Claude** is the same dialog preset to `claude` (chips for `claude --resume` / `--continue`) |
 | Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder and startup command |
 | Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins), then *Open* (replaces the open terminals) or *Add* |
@@ -61,7 +61,7 @@ finished; hidden at zero), the 5-hour and 7-day Claude limits (`5h 42% · resets
 the forecast time of hitting 100%), the summed API-price-equivalent cost and the token total (hover for the split).
 Limits are read from the last Claude terminal that reported them; a sample older than 10 minutes is dimmed with its
 age. The host is polled every 5 s while the page is visible; if the host does not serve `/stats` (older install),
-only the terminal counts show. Counts appear once the Terminals page has been opened in this page load.
+only the terminal counts show. Counts do not need the Terminals page to be opened.
 If the shell does not expose its Workspaces, the dialog instead offers *Use the last session's workspace*: the folder
 of the chat session last viewed (recorded by the header bar and kept in the preferences).
 
@@ -72,6 +72,14 @@ drag rows to reorder (that is also the Ctrl+Alt+←/→ order), ⧉ duplicate, �
 **Names**: by default a terminal is named after the program's own title — for Claude Code that is the session
 title (`Fix login bug`; bare "Claude Code" becomes `Claude · <folder>`). Renaming pins your name; renaming to an
 empty string returns to the automatic name.
+
+### Sub-agents panel (right)
+`Agents` in the toolbar (with a badge of running sub-agents) opens a panel beside the terminal list, remembered in the
+preferences. Sub-agents Claude spawned are grouped by terminal (click a group header to focus its window); each row shows
+status, label, type, short model name (`haiku-5-5`), elapsed time (ticking while running) and tokens. Running ones come
+first; completed ones are dimmed and drop off about five minutes after they end. The stats bar adds `N agents` while any
+run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;
+an older host without them simply shows an empty panel.
 
 ### Safety
 - Closing a terminal that is still **working or waiting** (single close, **Close all**, replacing a layout)
@@ -89,7 +97,7 @@ whatever the theme's tokens say. New terminals open first in the list and on top
 
 Switching tabs or sessions does **not** touch the terminals. Window layout, names, folders, favourites and
 preferences are saved in `localStorage`. **Shells also outlive a page reload**: the host keeps each PTY (and
-400 KB of scrollback) and the reloaded page reattaches. Only close, the process exiting, or restarting the
+400 KB of scrollback) and the reloaded page reattaches. Saved terminals reconnect when the app starts, so counts and alerts (needs you, chime) work without opening the Terminals page. Only close, the process exiting, or restarting the
 harness ends a shell.
 
 ## Install
@@ -112,7 +120,14 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | Path | Role |
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
+| `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
+| `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
 | `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
+| `lib/hook-post.js` | Command-hook forwarder Claude runs for `SessionStart` (HTTP hooks are ignored there) |
+| `lib/statusline.js` | Status-line wrapper Claude runs: posts usage / sub-agent tasks to the host, relays the user's own line |
+| `lib/subagents.js` | Pure per-terminal sub-agent store (status-line tasks + Start/Stop hooks, retention, cap) |
+| `lib/post.js` | Shared loopback POST and stdin helpers of the two scripts above |
+| `src/client/start.ts` | Plugin start: reconnects every saved terminal before the page is opened |
 | `src/client/index.ts` | Registers the sidebar entry (`sidebar.panellist`), the page (`main`) and the header stats bar; injects the session's folder into the bar |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
 | `src/client/sidebar.tsx` | Right-hand terminal list |
@@ -125,6 +140,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
 | `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, stuck detection |
 | `src/client/launch.ts` | Adds `--settings` to a `claude` startup command |
+| `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet) |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
 | `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs` | Tests |
@@ -137,11 +153,13 @@ exists the socket reattaches to it, otherwise a shell is spawned.
 Browser → host: `{"type":"input","data"}`, `{"type":"resize","cols","rows"}`, `{"type":"signal","signal"}`,
 `{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only).
 
-Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent"}` (always first; `created` is true only
-for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`),
+Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent","subagents"}` (always first; `created` is true only
+for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`;
+`subagents` is the current `SubagentInfo[]`, `[]` when none),
+`{"type":"subagents","tasks":SubagentInfo[]}` (the terminal's whole sub-agent list, sent when it changes, at most about twice a second),
 `{"type":"data","data"}`, `{"type":"activity","busy"}` (a program runs under the shell),
 `{"type":"agent","provider","state","detail","at"}` (an agent signal; `state` is one of `idle`, `working`,
-`needs-you`, `finished`, `failed`, `ended`), `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
+`needs-you`, `finished`, `failed`, `ended`), `{"type":"subagents","tasks"}` (full sub-agent list; `attached` also carries `subagents`), `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
 
 ### Agent signals
 
@@ -152,6 +170,29 @@ the `x-dsh-wt-token` header (interpolated from the environment). The body is Cla
 (`lib/agent-signals.js`) maps events to a state. Any other tool can report by POSTing
 `{"state":"needs-you","detail":"..."}` to `/signal/<provider>` with the same header. Requests with an unknown secret
 get 401; bodies over 64 KB get 413.
+
+Claude Code runs only `command` hooks for `SessionStart` (an HTTP hook there is silently ignored), so the settings file
+registers `node "<plugin>/lib/hook-post.js" <url of /signal/claude>` for it (no matcher: startup, resume, clear and
+compact all fire). `hook-post.js` POSTs its stdin with the same header to `127.0.0.1` only, prints nothing (its stdout
+would go into Claude's context) and always exits 0; this is what turns a fresh Claude terminal from "Running" to "Idle".
+Without `node` on PATH the hook is left out. Every other event stays an HTTP hook.
+
+### Sub-agents
+
+Three sources are merged per terminal (`lib/subagents.js`), keyed by agent id:
+
+- `POST /signal/subagents`: the payload of the `subagentStatusLine` setting the settings file installs as
+  `node "<plugin>/lib/statusline.js" --subagents <url>`. It posts Claude's `tasks` (live `tokenCount`, `model`, `status`,
+  `label`/`description`, `startTime`) and then relays the user's own `subagentStatusLine` command from
+  `~/.claude/settings.json` (`CLAUDE_CONFIG_DIR` respected), or prints nothing so Claude's default rows stay.
+- `SubagentStart` / `SubagentStop` HTTP hooks to `/signal/claude`: the agent appears (running) and completes
+  (`status: "completed"`, `endedAt`, `agentType` kept). They carry no agent state.
+- `SessionEnd`, or the shell exiting, completes every running sub-agent.
+
+Finished sub-agents stay listed for 5 minutes (then vanish from the next frame); at most 50 per terminal. Strings are
+trimmed to 200 characters, numbers must be finite. The browser gets
+`SubagentInfo = {id, agentType, label, description, status, model|null, startTime|null (ms), endedAt|null (ms),
+tokenCount|null, contextWindowSize|null}` in the `attached` frame and in `subagents` frames.
 
 ### Usage and the stats endpoint
 
@@ -184,9 +225,14 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
 - **Desktop WebSocket address**: the page is served from `dsh-app://app`, so the client connects to
   `__DSH_TRANSPORT__.streamBaseUrl` (the loopback host origin); the app adds the auth cookie.
 - **Agent state** is reported, not inferred (see *Agent signals*). The only inferred fact is "does the shell have a
-  live child process" (one OS process-table query every 3 s while any terminal is attached), shown as Running and
+  live child process" (one OS process-table query every 3 s while any terminal is attached; on Windows one long-lived PowerShell helper answers it and exits after 30 s without terminals), shown as Running and
   used to notice an agent that died without saying so. If your Claude settings restrict hooks with
   `allowedHttpHookUrls`, add `http://127.0.0.1:*/signal/claude`.
+- **Git Bash location**: found once and cached, in this order: `DSH_WT_GIT_BASH` (full path of a `bash.exe`, for an
+  unusual install), the `InstallPath` of the `HKLM`/`HKCU` `SOFTWARE\GitForWindows` registry key, `git.exe` on PATH
+  (mapped back to its install root), then common folders (`%LOCALAPPDATA%\Programs\Git`, `Program Files`,
+  `Program Files (x86)`, Scoop). `System32\bash.exe` (the WSL launcher) is never used. If none exists the Git Bash
+  entry is hidden; a missing install is re-checked every 30 s.
 - **Resize** needs the 0.2.x subprocess provider (the desktop app's); older hosts skip it.
 - **Security**: the PTY runs as you, unsandboxed, with the harness's full environment (credentials included) —
   that is what a terminal is. It is human-driven only and not exposed to model tool calls. The route is

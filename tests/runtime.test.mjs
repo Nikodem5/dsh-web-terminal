@@ -26,6 +26,8 @@ beforeEach(() => {
   s.runtimes.clear()
   window.localStorage.clear()
   FakeWebSocket.reset()
+  // Shrunk bounds so the quiet-period tests stay fast; the real ones are unit-tested below.
+  Object.assign(s.startupTiming, { minMs: 40, settleMs: 120, maxMs: 700 })
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -44,6 +46,8 @@ async function until(check, what, timeout = 3000) {
 /** Resolves once xterm has parsed everything written so far. */
 const flush = (rt) => new Promise((resolve) => rt.term.write('', resolve))
 
+const sub = (id, status = 'running') => ({ id, agentType: 'Explore', label: id, description: '', status, model: 'claude-haiku-5-5', startTime: 1000, endedAt: null, tokenCount: 5, contextWindowSize: null })
+
 const signal = (state) => ({ provider: 'claude', state, detail: '' })
 const attached = (extra = {}) => ({ type: 'attached', created: false, replay: '', exited: false, exitCode: null, agent: null, ...extra })
 const typed = (sock, text) => sock.sent.some((f) => f.type === 'input' && f.data === text)
@@ -52,6 +56,7 @@ const typed = (sock, text) => sock.sent.some((f) => f.type === 'input' && f.data
 async function start(opts = {}) {
   const id = s.openTerminal({ cwd: 'C:\\work', startup: 'npm run dev', ...opts })
   const rt = s.ensureRuntime(s.getWins().find((w) => w.id === id))
+  s.openRuntime(rt) // the tests below drive xterm's textarea
   const sock = await until(() => FakeWebSocket.last, 'the first socket')
   return { id, rt, sock }
 }
@@ -84,6 +89,20 @@ test('admitOutput: stays within the limit, exactly at it is fine', () => {
   assert.equal(s.admitOutput(0, s.MAX_PENDING_BYTES + 1), false)
 })
 
+test('startupWait: nothing until the shell prints, then min and quiet period, capped at the max', () => {
+  const t = { minMs: 150, settleMs: 250, maxMs: 5000 }
+  assert.equal(s.startupWait(1000, 1000, undefined, t), 5000, 'no output: wait for the max bound')
+  assert.equal(s.startupWait(5900, 1000, undefined, t), 100)
+  assert.equal(s.startupWait(6000, 1000, undefined, t), 0, 'max bound reached')
+  assert.equal(s.startupWait(1010, 1000, 1005, t), 245, 'output just now: a full quiet period')
+  assert.equal(s.startupWait(1100, 1000, 1000, t), 150, 'quiet period (250) counts from the output, not the attach')
+  assert.equal(s.startupWait(1250, 1000, 1000, t), 0)
+  assert.equal(s.startupWait(1100, 1000, 1050, t), 200, 'a later chunk restarts the quiet period')
+  assert.equal(s.startupWait(1010, 1000, 800, t), 140, 'output before the attach still honours the minimum')
+  assert.equal(s.startupWait(5990, 1000, 5980, t), 10, 'a chatty shell is cut off at the max bound')
+  assert.equal(s.startupWait(7000, 1000, 6990, t), 0)
+})
+
 // ── attaching ──
 
 test('the first attach of a new shell types the startup command', async () => {
@@ -103,6 +122,59 @@ test('a page reload (first attach, created: true) still types the startup comman
 test('a shell with no startup command types nothing', async () => {
   const { sock } = await start({ startup: '' })
   sock.push(attached({ created: true }))
+  await sleep(900)
+  assert.ok(!sock.sent.some((f) => f.type === 'input'))
+})
+
+// ── prompt readiness ──
+
+test('the startup command waits for the first output and then a quiet period', async () => {
+  const { sock } = await start()
+  sock.push(attached({ created: true }))
+  await sleep(300)
+  assert.ok(!typed(sock, 'npm run dev\r'), 'a silent shell is not typed into before the max bound')
+  const outAt = Date.now()
+  sock.push({ type: 'data', data: 'PS C:\work> ' })
+  await sleep(50)
+  assert.ok(!typed(sock, 'npm run dev\r'), 'not while output is fresh')
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
+  assert.ok(Date.now() - outAt >= 110, 'after the quiet period')
+})
+
+test('output in many small chunks keeps pushing the startup command back', async () => {
+  const { sock } = await start()
+  sock.push(attached({ created: true }))
+  for (let i = 0; i < 6; i++) {
+    sock.push({ type: 'data', data: `profile step ${i}\r\n` })
+    await sleep(70)
+    assert.ok(!typed(sock, 'npm run dev\r'), `still loading after chunk ${i}`)
+  }
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
+})
+
+test('a shell that prints nothing gets the startup command at the max bound', async () => {
+  const { sock } = await start()
+  const t0 = Date.now()
+  sock.push(attached({ created: true }))
+  await sleep(500)
+  assert.ok(!typed(sock, 'npm run dev\r'))
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
+  assert.ok(Date.now() - t0 >= 650, 'not before the max bound')
+})
+
+test('the startup command is not typed if the socket closes while waiting', async () => {
+  const { sock } = await start()
+  sock.push(attached({ created: true }))
+  sock.push({ type: 'data', data: 'loading\r\n' })
+  sock.drop()
+  await sleep(900)
+  assert.ok(!sock.sent.some((f) => f.type === 'input'))
+})
+
+test('the startup command is not typed if the terminal is closed while waiting', async () => {
+  const { id, sock } = await start()
+  sock.push(attached({ created: true }))
+  s.disposeRuntime(id, false)
   await sleep(900)
   assert.ok(!sock.sent.some((f) => f.type === 'input'))
 })
@@ -312,6 +384,7 @@ async function broadcastPair() {
   a.sock.push(attached())
   const idB = s.openTerminal({ cwd: 'C:\\other' })
   const rtB = s.ensureRuntime(s.getWins().find((w) => w.id === idB))
+  s.openRuntime(rtB)
   const sockB = await until(() => FakeWebSocket.instances.find((x) => x.url.includes(idB)), 'the second socket')
   sockB.push(attached())
   s.setBroadcast({ on: true, live: true })
@@ -349,4 +422,127 @@ test('a key that looks like a report (Shift+F3 is CSI 1;2 R) is still mirrored',
   assert.deepEqual(inputs(a.sock), ['\x1b[1;2R'])
   assert.deepEqual(inputs(b.sock), ['\x1b[1;2R'])
   s.setBroadcast({ on: false, live: false })
+})
+
+// ── attaching saved terminals at plugin start ──
+
+const LAYOUT_KEY = 'dsh.web-terminal.layout.v1'
+const savedWin = (id, extra = {}) => ({ id, title: id, shell: 'default', cwd: '/work/x', x: 0, y: 0, w: 0.5, h: 0.5, z: 1, pinned: false, maximized: false, minimized: false, ...extra })
+
+/** A fresh store module whose saved layout is `wins`, started the way the plugin entry does. */
+async function startSaved(wins) {
+  const f = await s2()
+  window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({ wins, zTop: 2 }))
+  f.startTerminals()
+  return f
+}
+const s2 = async () => (await import('./helpers/load-store.mjs')).loadStore({ fresh: true })
+
+test('startTerminals connects every saved window before any view exists, and only those', async () => {
+  const f = await startSaved([savedWin('a'), savedWin('b', { startup: 'claude' })])
+  await until(() => FakeWebSocket.instances.length === 2, 'both sockets')
+  assert.deepEqual([...f.runtimes.keys()].sort(), ['a', 'b'])
+  assert.ok(FakeWebSocket.instances.every((x) => x.url.includes('/terminal/ws?')))
+  assert.ok([...f.runtimes.values()].every((rt) => !rt.opened), 'no DOM yet')
+  f.startTerminals()
+  await sleep(50)
+  assert.equal(FakeWebSocket.instances.length, 2, 'a second start adds nothing')
+  f.closeAll()
+  await sleep(300)
+})
+
+test('startTerminals with nothing saved connects nothing', async () => {
+  const f = await startSaved([])
+  await sleep(100)
+  assert.equal(FakeWebSocket.instances.length, 0)
+  f.closeAll()
+  await sleep(300)
+})
+
+test('an unopened terminal takes replay and agent signals: it raises attention with no page, and mounting reuses it', async () => {
+  const f = await startSaved([savedWin('a', { startup: 'claude' })])
+  const sock = await until(() => FakeWebSocket.last, 'the socket')
+  const rt = f.runtimes.get('a')
+  sock.push(attached({ created: false, replay: 'hello from before\r\n', agent: null }))
+  sock.push({ type: 'agent', provider: 'claude', state: 'needs-you', detail: 'Permission needed' })
+  assert.equal(rt.conn, 'live')
+  assert.equal(rt.activity, 'needs-you')
+  assert.equal(rt.attention, true)
+  assert.ok(!sock.sent.some((x) => x.type === 'input'), 'a reattached session gets no startup command')
+  await flush(rt)
+  assert.equal(rt.term.buffer.active.getLine(0).translateToString(true), 'hello from before')
+
+  // The page mounts: same runtime, same socket, buffered output now on screen.
+  const body = window.document.createElement('div')
+  window.document.body.appendChild(body)
+  body.appendChild(rt.holder)
+  f.refit(rt)
+  assert.equal(f.ensureRuntime(f.getWins()[0]), rt)
+  assert.equal(FakeWebSocket.instances.length, 1)
+  assert.equal(rt.opened, true)
+  assert.ok(rt.holder.querySelector('.xterm'))
+  assert.equal(rt.term.buffer.active.getLine(0).translateToString(true), 'hello from before')
+  body.remove()
+  f.closeAll()
+  await sleep(300)
+})
+
+test('a fresh session started before the page still types its startup command', async () => {
+  const f = await startSaved([savedWin('a', { startup: 'npm run dev' })])
+  const sock = await until(() => FakeWebSocket.last, 'the socket')
+  sock.push(attached({ created: true }))
+  sock.push({ type: 'data', data: 'PS> ' })
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 4000)
+  f.closeAll()
+  await sleep(300)
+})
+
+test('subagents frames replace the list, the attached frame seeds it, a missing list means none', async () => {
+  const { rt, sock } = await start()
+  sock.push(attached({ subagents: [sub('a1')] }))
+  await until(() => rt.subagents.length === 1, 'the attached list')
+  const before = s.getVersion()
+  sock.push({ type: 'subagents', tasks: [sub('a1', 'completed'), sub('a2'), { nope: true }, 'junk'] })
+  await until(() => rt.subagents.length === 2, 'the frame list')
+  assert.deepEqual(rt.subagents.map((t) => [t.id, t.status]), [['a1', 'completed'], ['a2', 'running']])
+  assert.ok(s.getVersion() > before, 'a change emits')
+  sock.push({ type: 'subagents', tasks: 'bad' })
+  await until(() => rt.subagents.length === 0, 'an invalid list clears')
+  assert.equal(s.runningSubagents(), 0)
+  sock.push({ type: 'subagents', tasks: [sub('b1')] })
+  await until(() => s.runningSubagents() === 1, 'running count')
+  sock.push(attached())
+  await until(() => rt.subagents.length === 0, 'an attach from an old host without the field')
+})
+
+test('an unopened terminal starts at its saved grid size and sends the same size to the host', async () => {
+  const f = await startSaved([savedWin('a', { cols: 132, rows: 41 })])
+  const sock = await until(() => FakeWebSocket.last, 'the socket')
+  const rt = f.runtimes.get('a')
+  assert.deepEqual([rt.term.cols, rt.term.rows], [132, 41])
+  const q = new URL(sock.url).searchParams
+  assert.deepEqual([q.get('cols'), q.get('rows')], ['132', '41'])
+  f.closeAll()
+  await sleep(300)
+})
+
+test('with no saved size, an unopened terminal uses an explicit default in both places; bad saved sizes are ignored', async () => {
+  const f = await startSaved([savedWin('a'), savedWin('b', { cols: 'wide', rows: -3 })])
+  await until(() => FakeWebSocket.instances.length === 2, 'both sockets')
+  for (const sock of FakeWebSocket.instances) {
+    const q = new URL(sock.url).searchParams
+    assert.deepEqual([q.get('cols'), q.get('rows')], [String(f.UNOPENED_COLS), String(f.UNOPENED_ROWS)])
+  }
+  for (const rt of f.runtimes.values()) assert.deepEqual([rt.term.cols, rt.term.rows], [f.UNOPENED_COLS, f.UNOPENED_ROWS])
+  f.closeAll()
+  await sleep(300)
+})
+
+test('the real grid is remembered on the window once the terminal reports it', async () => {
+  const { id, rt } = await start()
+  rt.term.resize(100, 30)
+  rt.lastCols = 0
+  s.sizeToHost(rt)
+  const win = s.getWins().find((w) => w.id === id)
+  assert.deepEqual([win.cols, win.rows], [100, 30])
 })

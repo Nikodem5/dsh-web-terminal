@@ -8,15 +8,15 @@
 // to remember which folder the chat session being viewed lives in (the dialog's fallback default).
 //
 // Agent counts read the module-level runtimes, which outlive the Terminals page, so they stay
-// live while the chat is showing. Runtimes only exist once the Terminals page has been
-// opened in this page load; until then there are no counts to show.
+// live while the chat is showing. They are created at plugin start (see start.ts), so the counts
+// do not wait for the Terminals page to be opened.
 
 import { useEffect, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import { getStats, subscribeStats } from './stats.ts'
 import { describeFiveHour, describeSevenDay, describeTokens, formatAge, formatTokens, formatUsd, isStale } from './stats-format.ts'
 import { ensureStyles } from './styles.ts'
-import { getVersion, noteSessionCwd, runtimes, subscribe } from './terminal-store.ts'
+import { getVersion, noteSessionCwd, runningSubagents, runtimes, subscribe } from './terminal-store.ts'
 
 const AGENT_KINDS = [
   { activity: 'working', label: 'working' },
@@ -76,6 +76,14 @@ export function StatsBar({ sessionCwd }: { sessionCwd?: () => string | undefined
             {counts[k.activity]} {k.label}
           </span>
         ))}
+      </span>,
+    )
+  }
+  const subagents = runningSubagents()
+  if (subagents > 0) {
+    parts.push(
+      <span key="subagents" className="wt-stats-item" title="Running Claude sub-agents across all terminals">
+        {subagents} {subagents === 1 ? 'agent' : 'agents'}
       </span>,
     )
   }

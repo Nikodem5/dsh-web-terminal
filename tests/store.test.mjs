@@ -734,6 +734,7 @@ test('setHungMinutes clamps to 0..240; sound and notify toggle', () => {
 test('moving the mouse over a terminal that needs you does not answer it; a key press does', () => {
   const id = s.openTerminal({ cwd: 'C:\a' })
   const rt = s.ensureRuntime(byId(id))
+  s.openRuntime(rt) // the key press below goes through xterm's textarea
   s.applyAgentSignal(rt, signal('needs-you', 'Permission: Bash: ls'))
   assert.equal(rt.attention, true)
 
@@ -754,7 +755,8 @@ test('moving the mouse over a terminal that needs you does not answer it; a key 
 // ── broadcast selection ──
 
 // A fresh store module saves to the shared localStorage 250 ms after a change; let that land before the next test.
-const settle = () => new Promise((r) => setTimeout(r, 300))
+// Longer than the store's 250 ms save delay, so a slow machine cannot let a stray save land in the next test.
+const settle = () => new Promise((r) => setTimeout(r, 600))
 
 test('turning broadcast back on keeps a selection the user cleared with None', async () => {
   const f = await loadStore({ fresh: true })
@@ -788,9 +790,10 @@ const PREFS_KEY = 'dsh.web-terminal.prefs.v1'
 const goodWin = (id, extra = {}) => ({ id, title: id, shell: 'default', cwd: 'C:\\x', x: 0, y: 0, w: 0.5, h: 0.5, z: 1, pinned: false, maximized: false, minimized: false, ...extra })
 
 test('corrupt layout JSON still restores the preferences and keeps a copy of the bad value', async () => {
+  const f = await loadStore({ fresh: true })
+  // Seed after the (slow) load and hydrate in the same tick: a save timer left by an earlier test cannot overwrite the seed in between.
   window.localStorage.setItem(LAYOUT_KEY, 'not json{')
   window.localStorage.setItem(PREFS_KEY, JSON.stringify({ favourites: ['C:\\fav'], recents: ['C:\\r'], sound: false }))
-  const f = await loadStore({ fresh: true })
   f.hydrate()
   assert.deepEqual(f.getPrefs().favourites, ['C:\\fav'])
   assert.deepEqual(f.getPrefs().recents, ['C:\\r'])
@@ -802,9 +805,9 @@ test('corrupt layout JSON still restores the preferences and keeps a copy of the
 })
 
 test('corrupt preferences keep the layout, are backed up before the next save, and do not crash', async () => {
+  const f = await loadStore({ fresh: true })
   window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({ wins: [goodWin('w1')], zTop: 3 }))
   window.localStorage.setItem(PREFS_KEY, '{broken')
-  const f = await loadStore({ fresh: true })
   f.hydrate()
   assert.deepEqual(f.getWins().map((w) => w.id), ['w1'])
   assert.equal(f.getPrefs().lastShell, 'default')
