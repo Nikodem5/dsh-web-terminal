@@ -26,6 +26,8 @@ beforeEach(() => {
   s.runtimes.clear()
   window.localStorage.clear()
   FakeWebSocket.reset()
+  // Shrunk bounds so the quiet-period tests stay fast; the real ones are unit-tested below.
+  Object.assign(s.startupTiming, { minMs: 40, settleMs: 120, maxMs: 700 })
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -84,6 +86,20 @@ test('admitOutput: stays within the limit, exactly at it is fine', () => {
   assert.equal(s.admitOutput(0, s.MAX_PENDING_BYTES + 1), false)
 })
 
+test('startupWait: nothing until the shell prints, then min and quiet period, capped at the max', () => {
+  const t = { minMs: 150, settleMs: 250, maxMs: 5000 }
+  assert.equal(s.startupWait(1000, 1000, undefined, t), 5000, 'no output: wait for the max bound')
+  assert.equal(s.startupWait(5900, 1000, undefined, t), 100)
+  assert.equal(s.startupWait(6000, 1000, undefined, t), 0, 'max bound reached')
+  assert.equal(s.startupWait(1010, 1000, 1005, t), 245, 'output just now: a full quiet period')
+  assert.equal(s.startupWait(1100, 1000, 1000, t), 150, 'quiet period (250) counts from the output, not the attach')
+  assert.equal(s.startupWait(1250, 1000, 1000, t), 0)
+  assert.equal(s.startupWait(1100, 1000, 1050, t), 200, 'a later chunk restarts the quiet period')
+  assert.equal(s.startupWait(1010, 1000, 800, t), 140, 'output before the attach still honours the minimum')
+  assert.equal(s.startupWait(5990, 1000, 5980, t), 10, 'a chatty shell is cut off at the max bound')
+  assert.equal(s.startupWait(7000, 1000, 6990, t), 0)
+})
+
 // ── attaching ──
 
 test('the first attach of a new shell types the startup command', async () => {
@@ -103,6 +119,59 @@ test('a page reload (first attach, created: true) still types the startup comman
 test('a shell with no startup command types nothing', async () => {
   const { sock } = await start({ startup: '' })
   sock.push(attached({ created: true }))
+  await sleep(900)
+  assert.ok(!sock.sent.some((f) => f.type === 'input'))
+})
+
+// ── prompt readiness ──
+
+test('the startup command waits for the first output and then a quiet period', async () => {
+  const { sock } = await start()
+  sock.push(attached({ created: true }))
+  await sleep(300)
+  assert.ok(!typed(sock, 'npm run dev\r'), 'a silent shell is not typed into before the max bound')
+  const outAt = Date.now()
+  sock.push({ type: 'data', data: 'PS C:\work> ' })
+  await sleep(50)
+  assert.ok(!typed(sock, 'npm run dev\r'), 'not while output is fresh')
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
+  assert.ok(Date.now() - outAt >= 110, 'after the quiet period')
+})
+
+test('output in many small chunks keeps pushing the startup command back', async () => {
+  const { sock } = await start()
+  sock.push(attached({ created: true }))
+  for (let i = 0; i < 6; i++) {
+    sock.push({ type: 'data', data: `profile step ${i}\r\n` })
+    await sleep(70)
+    assert.ok(!typed(sock, 'npm run dev\r'), `still loading after chunk ${i}`)
+  }
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
+})
+
+test('a shell that prints nothing gets the startup command at the max bound', async () => {
+  const { sock } = await start()
+  const t0 = Date.now()
+  sock.push(attached({ created: true }))
+  await sleep(500)
+  assert.ok(!typed(sock, 'npm run dev\r'))
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
+  assert.ok(Date.now() - t0 >= 650, 'not before the max bound')
+})
+
+test('the startup command is not typed if the socket closes while waiting', async () => {
+  const { sock } = await start()
+  sock.push(attached({ created: true }))
+  sock.push({ type: 'data', data: 'loading\r\n' })
+  sock.drop()
+  await sleep(900)
+  assert.ok(!sock.sent.some((f) => f.type === 'input'))
+})
+
+test('the startup command is not typed if the terminal is closed while waiting', async () => {
+  const { id, sock } = await start()
+  sock.push(attached({ created: true }))
+  s.disposeRuntime(id, false)
   await sleep(900)
   assert.ok(!sock.sent.some((f) => f.type === 'input'))
 })

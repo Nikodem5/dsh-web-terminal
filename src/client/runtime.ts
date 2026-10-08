@@ -9,6 +9,7 @@ import { emit, hostInfo, hostInfoReady, prefs, refreshHostInfo, runtimes, store,
 import { cleanTitle, displayName } from './names.ts'
 import { noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
+import { startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
@@ -224,6 +225,15 @@ export function ensureRuntime(win: WinState): Runtime {
     const socket = new WebSocket(`${socketBase()}/terminal/ws?${params.toString()}`)
     rt.socket = socket
     setConn(rt, 'connecting')
+    // Startup typing waits for the shell's first output and then a quiet spell (see startupWait).
+    let attachedAt = 0
+    let lastOutputAt: number | undefined
+    let startupTimer: ReturnType<typeof setTimeout> | undefined
+    let wakeStartup: (() => void) | undefined
+    const stopStartup = () => {
+      clearTimeout(startupTimer)
+      wakeStartup = undefined
+    }
 
     socket.onmessage = (event) => {
       let frame: { type: string; data?: string; replay?: string; created?: boolean; exited?: boolean; exitCode?: number | null; message?: string; busy?: boolean; agent?: AgentSignal | null } & Partial<AgentSignal>
@@ -249,6 +259,9 @@ export function ensureRuntime(win: WinState): Runtime {
           return
         }
         rt.attachedOnce = true
+        stopStartup()
+        attachedAt = Date.now()
+        lastOutputAt = undefined
         // A fresh shell has no agent yet; a reattached one reports what its agent was last doing.
         rt.agent = undefined
         restoreAgent(rt, frame.agent)
@@ -265,12 +278,25 @@ export function ensureRuntime(win: WinState): Runtime {
             // Wait for the host probe first: it names the agent-hook settings file, and on a cold app
             // start it can answer after the shell is already up.
             void hostInfoReady().then(() => {
-              // Read the session when typing, not at attach: a slow probe may have delayed us.
-              const session = store.wins.find((w) => w.id === rt.id)?.agentSession
-              const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings, session)
-              setTimeout(() => {
-                if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
-              }, 500)
+              // Type once the shell has printed and gone quiet (its prompt is up), not after a fixed delay:
+              // a slow profile would eat the command, a fast one waits for nothing.
+              const check = () => {
+                clearTimeout(startupTimer)
+                if (rt.killed || rt.socket !== socket || socket.readyState !== WebSocket.OPEN) return stopStartup()
+                const wait = startupWait(Date.now(), attachedAt, lastOutputAt)
+                if (wait > 0) {
+                  startupTimer = setTimeout(check, wait)
+                  return
+                }
+                stopStartup()
+                // Read the session when typing, not at attach: a slow probe may have delayed us.
+                const session = store.wins.find((w) => w.id === rt.id)?.agentSession
+                const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings, session)
+                socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
+              }
+              wakeStartup = check
+              rt.stopStartup = stopStartup
+              check()
             })
           }
         }
@@ -281,6 +307,8 @@ export function ensureRuntime(win: WinState): Runtime {
         if (frame.replay.length > 0) term.write(frame.replay)
       } else if (frame.type === 'data') {
         if (rt.hostLost || typeof frame.data !== 'string') return
+        lastOutputAt = Date.now()
+        wakeStartup?.()
         rt.lastOutputAt = Date.now()
         if (!admitOutput(rt.pendingBytes, frame.data.length)) {
           rt.droppedOutput = true
@@ -310,6 +338,7 @@ export function ensureRuntime(win: WinState): Runtime {
       }
     }
     socket.onclose = (event) => {
+      stopStartup()
       if (rt.socket !== socket || rt.killed) return
       if (rt.conn === 'exited' || rt.conn === 'failed') return
       if (event.code === 4000) return setConn(rt, 'lost', 'opened in another tab')
@@ -403,6 +432,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
   if (rt === undefined) return
   rt.killed = true
   if (rt.timer !== undefined) clearTimeout(rt.timer)
+  rt.stopStartup?.()
   try {
     if (kill && rt.socket?.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'kill' }))
     rt.socket?.close()

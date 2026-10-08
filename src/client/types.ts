@@ -95,6 +95,8 @@ export interface Runtime {
   /** Output was dropped while `pendingBytes` was over the limit. */
   droppedOutput: boolean
   timer: ReturnType<typeof setTimeout> | undefined
+  /** Cancels the pending startup-command typing (socket closed, terminal disposed). */
+  stopStartup?: () => void
   lastCols: number
   lastRows: number
   activity: Activity
