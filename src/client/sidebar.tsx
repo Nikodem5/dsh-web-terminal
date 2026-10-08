@@ -16,6 +16,7 @@ import {
   renameWin,
   setBroadcastTargets,
   toggleBroadcastTarget,
+  unreadCount,
 } from './terminal-store.ts'
 import type { Activity, WinState } from './terminal-store.ts'
 
@@ -70,6 +71,7 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
           const activity: Activity = rt?.activity ?? 'offline'
           const name = displayName(win)
           const attn = rt?.attention === true
+          const unread = unreadCount(win.id)
           return (
             <div
               key={win.id}
@@ -138,6 +140,7 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
                   {win.pinned ? ' · pinned' : ''}
                 </span>
               </span>
+              {unread > 0 ? <span className="wt-unread" title={`${unread} new line${unread === 1 ? '' : 's'} since you last looked`}>{unread > 99 ? '99+' : unread}</span> : null}
               {attn ? <span className="wt-badge">!</span> : null}
               <span className="wt-li-acts">
                 <button type="button" className="wt-hbtn" title="Rename (empty = automatic name)" onClick={(e) => { e.stopPropagation(); setRenaming(win.id) }}>✎</button>

@@ -30,7 +30,11 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Switch terminals | **Ctrl+Alt+←/→** cycles through the list order (works while a terminal has focus) |
 | Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste |
 | Find in terminal | **Ctrl+F** (or `⋯` → Find…) opens a find bar over the focused terminal: highlights every match in the scrollback, `n / total` counter, **Enter** / **Shift+Enter** next/previous, match-case / whole-word / regex toggles, **Esc** closes. Pre-fills from a one-line selection |
+| Jump to new output | **Ctrl+Shift+U** scrolls to the "new since" divider (see below) |
 | Links | URLs in terminal output are underlined on hover; **Ctrl+click** (Cmd+click) opens them in your system browser (plain clicks still select text) |
+
+### Overview (mission control)
+**Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Knowing what your agents are doing
 Status comes from the agent itself, not from guessing at output.
@@ -54,6 +58,9 @@ Status comes from the agent itself, not from guessing at output.
 - **Broadcast**: **⇉ Broadcast** adds checkboxes to the list. Type a command in the bar and Enter sends it to
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
+
+### New since you last looked
+A terminal counts as looked at while its window is focused, the Terminals page is showing and the app is in front. When you stop looking, the plugin remembers where the output ended. Output that adds at least one new line while you are away shows as a small count on the terminal's list row (separate from attention badges; in-place repaints such as a status line do not count). When you come back, a thin divider `── new since 14:32 ──` marks the first new line and stays until you look away again. If it is above the visible rows, a `↓ 42 new lines` pill at the window's bottom right (or **Ctrl+Shift+U**) jumps to it. Full-screen programs (vim, htop) are skipped, and a divider whose line has scrolled out of the scrollback is not shown. Attention and alerts are unchanged.
 
 ### Stats bar (chat header and Terminals page)
 A compact one-line bar in the chat header, and again in the Terminals page toolbar (next to *Close all*): terminal counts by status (working, needs you,
@@ -142,6 +149,20 @@ a quiet period.
 - **Limits**: a command that bash's history does not record (`HISTCONTROL=ignorespace`) has its text read from the
   screen instead. A nested shell or `ssh` session does not report (its prompt is not wrapped). A prompt function that
   returns nothing (so PowerShell would print its own `PS>`) gets B before that text.
+### Send a selection to another terminal
+Select text (an error in a build terminal, say), **right-click** it and pick where it goes, or press **Ctrl+Shift+S**
+(arrows + Enter, Esc cancels). The menu offers **Copy**, every other connected terminal (agents first, with their
+status dot) and **New Claude terminal here** (same folder and shell; the text is sent once `claude` is typed, its screen
+is quiet and it has switched paste mode on, and is copied to the clipboard instead if that takes over a minute).
+
+- The text is **pasted, never submitted**: you add context and press Enter. It goes in as a bracketed paste when the
+  target enabled that mode (Claude Code does); otherwise it is typed with the last line left open, and a multi-line
+  send asks first because each line would run. Trailing spaces are trimmed and control characters removed; over 32 KB
+  asks first. The target window is focused and restored if minimized.
+- **Aa → Send selection**: "Wrap text sent to an agent in a code block" (default on) sends a fenced block so the agent
+  reads it as quoted output. Other terminals get the plain text.
+- **Mouse programs**: while a TUI tracks the mouse, right-click belongs to it and passes through; **Shift+right-click**
+  (xterm's usual "select instead" key) opens the menu there. Without a selection right-click is unchanged.
 
 ### Safety
 - Closing a terminal that is still **working or waiting** (single close, **Close all**, replacing a layout)

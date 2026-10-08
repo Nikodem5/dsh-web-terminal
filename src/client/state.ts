@@ -52,6 +52,7 @@ export const prefs: Prefs = {
   pathTarget: 'vscode',
   pathTemplate: '',
   shellIntegration: true,
+  sendCodeBlock: true,
 }
 
 export const store: Store = { wins: [], zTop: 1, focusId: null, searchId: null, version: 0, broadcast: { on: false, live: false, ids: new Set() } }
@@ -159,6 +160,7 @@ function applyPrefs(p: Record<string, unknown>): void {
   if (isNum(p.fitCols)) prefs.fitCols = clamp(Math.round(p.fitCols), 40, 240)
   if (isNum(p.hungMinutes)) prefs.hungMinutes = clamp(Math.round(p.hungMinutes), 0, 240)
   if (p.pathTarget === 'vscode' || p.pathTarget === 'cursor' || p.pathTarget === 'default' || p.pathTarget === 'custom') prefs.pathTarget = p.pathTarget
+  if (typeof p.sendCodeBlock === 'boolean') prefs.sendCodeBlock = p.sendCodeBlock
   if (typeof p.pathTemplate === 'string') prefs.pathTemplate = p.pathTemplate.slice(0, 500)
   if (typeof p.shellIntegration === 'boolean') prefs.shellIntegration = p.shellIntegration
   if (p.termTheme === 'dark' || p.termTheme === 'light' || p.termTheme === 'auto') prefs.termTheme = p.termTheme

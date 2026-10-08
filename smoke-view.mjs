@@ -258,6 +258,20 @@ check(qa('.wt-li').length === 2, 'second terminal appears in the list')
   const z = wins.map((w) => Number(w.style.zIndex))
   check(z[0] > z[1], `new terminal has the highest z-index (${z.join(' vs ')})`)
 }
+
+// output to a terminal that is not in front leaves a subtle unread count in its list row
+{
+  window.document.hasFocus = () => true
+  const row = () => q('.wt-li[data-focused="false"]') // the first terminal: the new one has focus
+  check(row()?.querySelector('.wt-unread') === null, 'no unread indicator before any output')
+  sock.push({ type: 'data', data: 'a\r\nb\r\nc\r\n' })
+  await sleep(120)
+  const mark = row()?.querySelector('.wt-unread')
+  check(mark?.textContent === '3' && row()?.querySelector('.wt-badge') === null, `an unfocused terminal shows 3 unread lines, apart from attention badges (got "${mark?.textContent}")`)
+  click(row())
+  await sleep(60)
+  check(row()?.querySelector('.wt-unread') === null, 'looking at the terminal clears the list indicator')
+}
 const focusedBefore = q('.wt-li[data-focused="true"] .wt-li-name')?.textContent
 doc.defaultView.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))
 await sleep(40)
@@ -483,6 +497,132 @@ await sleep(20)
 check(q('.wt-dialog input').value === 'C:\\work\\repo', 'the fallback chip fills the recorded session folder')
 click(byText('.wt-dialog button', 'Cancel'))
 await sleep(20)
+
+// ── send the selection to another terminal ──
+{
+  // jsdom has no layout: give every element a fixed box so xterm measures a cell and a drag can select.
+  const orig = window.Element.prototype.getBoundingClientRect
+  window.Element.prototype.getBoundingClientRect = () => ({ left: 0, top: 0, right: 640, bottom: 320, width: 640, height: 320, x: 0, y: 0 })
+  // xterm measures a cell from the offset size of a 32-character probe.
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetWidth', { get() { return 640 }, configurable: true })
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetHeight', { get() { return 320 }, configurable: true })
+  click(byText('.wt-bar button', 'New terminal'))
+  await sleep(20)
+  setValue(q('.wt-dialog input'), 'C:\\build')
+  click(byText('.wt-dialog button', 'Open'))
+  await sleep(60)
+  // Agent A (the first terminal) is a Claude with bracketed paste on, as its prompt would have it.
+  sock.push({ type: 'agent', provider: 'claude', state: 'finished', detail: '' })
+  sock.push({ type: 'data', data: '\x1b[?2004h' })
+  const bsock = sockets[sockets.length - 1]
+  bsock.push({ type: 'attached', created: false, replay: '', exited: false, exitCode: null })
+  bsock.push({ type: 'data', data: 'TS2304 no name x' })
+  await sleep(100)
+  const win = qa('.wt-win')[0]
+  const screen = win.querySelector('.xterm-screen')
+  const mouse = (target, type, x, y, extra = {}) => target.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, detail: 1, ...extra }))
+  const rightClick = () => {
+    const e = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 20, button: 2 })
+    win.querySelector('.wt-holder').dispatchEvent(e)
+    return e
+  }
+  check(!rightClick().defaultPrevented && q('.wt-send') === null, 'right-click without a selection keeps the default behaviour')
+  mouse(screen, 'mousedown', 1, 1)
+  mouse(screen, 'mousemove', 400, 1)
+  window.document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, clientX: 400, clientY: 1 }))
+  await sleep(30)
+  const prevented = rightClick().defaultPrevented
+  await sleep(30)
+  check(prevented && q('.wt-send') !== null, 'right-click on a selection opens the Send to menu')
+  window.Element.prototype.getBoundingClientRect = orig
+  const labels = qa('.wt-send .wt-send-item').map((el) => el.textContent)
+  check(labels[0] === 'Copy' && labels.some((l) => l.includes('Agent A')) && labels[labels.length - 1].includes('New Claude terminal'), `the menu lists Copy, the other terminals and a new Claude terminal (${labels.join(' | ')})`)
+  check(q('.wt-send .wt-send-item[data-active="true"]')?.textContent.includes('Agent A'), 'the agent terminal is preselected')
+  q('.wt-send').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await sleep(40)
+  const agentSock = sockets.find((x) => x.sent.some((f) => f.type === 'input' && f.data.includes('[200~')))
+  check(q('.wt-send') === null && agentSock !== undefined && agentSock !== bsock, 'Enter sends the selection to the chosen terminal only')
+  check(!bsock.sent.some((f) => f.type === 'input'), 'nothing is typed into the source terminal')
+  check(q('.wt-win[data-focused="true"] .wt-name')?.textContent === 'Agent A', 'the target window is focused')
+  check(agentSock !== undefined && agentSock.sent.filter((f) => f.type === 'input').pop().data.endsWith('~'), 'the text arrives as a bracketed paste in a code block, without Enter')
+  // Escape cancels the picker.
+  window.Element.prototype.getBoundingClientRect = () => ({ left: 0, top: 0, right: 640, bottom: 320, width: 640, height: 320, x: 0, y: 0 })
+  mouse(screen, 'mousedown', 1, 1)
+  mouse(screen, 'mousemove', 400, 1)
+  window.document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, clientX: 400, clientY: 1 }))
+  await sleep(30)
+  rightClick()
+  await sleep(30)
+  q('.wt-send')?.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await sleep(30)
+  check(q('.wt-send') === null, 'Escape closes the Send to menu')
+  window.Element.prototype.getBoundingClientRect = orig
+  sock.push({ type: 'data', data: '\x1b[?2004l' })
+  sock.push({ type: 'agent', provider: 'claude', state: 'ended', detail: '' })
+  // Remove the extra terminal so the checks below see the original two.
+  window.confirm = () => true
+  click(win.querySelector('.wt-hbtn[data-danger="true"]'))
+}
+
+  await sleep(40)
+// mission control: a pure view transform, never a resize or a layout change
+{
+  const winShape = () => qa('.wt-win').map((w) => [w.style.left, w.style.top, w.style.width, w.style.height, w.style.zIndex, w.style.display].join(','))
+  const resizes = () => sockets.reduce((n, x) => n + x.sent.filter((f) => f.type === 'resize').length, 0)
+  const stored = () => window.localStorage.getItem('dsh.web-terminal.layout.v1')
+  const winNamed = (name) => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === name)
+  const key = (init) => window.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }))
+  const other = qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent !== 'Agent A')
+  const otherName = other.querySelector('.wt-name').textContent
+  click(other.querySelector('.wt-hbtn[title="Minimize"]'))
+  await sleep(30)
+  check(winNamed(otherName).style.display === 'none', 'overview setup: one window is minimized')
+  winNamed('Agent A').dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+  await sleep(400)
+  const saved = stored()
+  const resizeBefore = resizes()
+
+  click(byText('.wt-bar button', 'Overview'))
+  await sleep(30)
+  check(q('.wt-mission') !== null && qa('.wt-tile').length === 2, 'Overview shows a tile per terminal, minimized ones included')
+  check(qa('.wt-win').every((w) => w.style.display === 'flex' && /scale\(/.test(w.style.transform)), 'every window, minimized too, is CSS-scaled into its tile')
+  await sleep(400)
+  check(resizes() === resizeBefore && stored() === saved, 'overview sends no resize frame and persists no layout')
+
+  // typing filters the tiles; the non-matching window is hidden
+  key({ key: otherName[0].toLowerCase() })
+  key({ key: otherName[1].toLowerCase() })
+  await sleep(20)
+  check(qa('.wt-tile').length === 1 && q('.wt-mission-filter') !== null, 'typing filters the tiles by name')
+  check(winNamed('Agent A').style.visibility === 'hidden', 'a filtered-out window is hidden')
+  key({ key: 'Enter' })
+  await sleep(60)
+  check(q('.wt-mission') === null && winNamed(otherName).style.display === 'flex' && winNamed(otherName).dataset.focused === 'true', 'Enter on a filtered tile leaves overview, restores and focuses that terminal')
+  check(qa('.wt-win').every((w) => w.style.transform === ''), 'leaving overview clears the scaling')
+  await sleep(400)
+  check(resizes() === resizeBefore, 'leaving overview sends no resize frame either')
+
+  // minimize it again, refocus Agent A, then Esc must change nothing
+  click(winNamed(otherName).querySelector('.wt-hbtn[title="Minimize"]'))
+  await sleep(30)
+  winNamed('Agent A').dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+  await sleep(400)
+  const shape2 = winShape()
+  const saved2 = stored()
+  key({ key: ' ', code: 'Space', ctrlKey: true, shiftKey: true })
+  await sleep(20)
+  check(q('.wt-mission') !== null, 'Ctrl+Shift+Space opens overview')
+  key({ key: 'ArrowRight' })
+  await sleep(20)
+  check(qa('.wt-tile[data-sel="true"]').length === 1, 'arrow keys move one selected tile')
+  key({ key: 'Escape' })
+  await sleep(60)
+  check(q('.wt-mission') === null && winShape().join('|') === shape2.join('|') && stored() === saved2, 'Esc restores every window rect, z and minimized state exactly')
+  check(winNamed('Agent A').dataset.focused === 'true' && winNamed(otherName).style.display === 'none', 'Esc leaves focus and minimized state unchanged')
+  check(resizes() === resizeBefore, 'overview never resized a terminal')
+  click(byText('.wt-chip', otherName))
+  await sleep(30)
+}
 
 const busyWindow = () => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === 'Agent A')
 // safe close: a busy terminal asks first; Cancel keeps it, OK ends it

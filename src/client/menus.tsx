@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { requestCloseAll } from './actions.ts'
+import { SendSettings } from './send-menu.tsx'
 import { setPathTarget, setPathTemplate } from './path-links.ts'
 import { ShellIntegrationSettings } from './blocks-settings.tsx'
 import type { PathTarget } from './types.ts'
@@ -179,6 +180,7 @@ export function SettingsMenu(): ReactElement {
       </label>
       <PathLinksSettings />
       <ShellIntegrationSettings />
+      <SendSettings />
     </div>
   )
 }
