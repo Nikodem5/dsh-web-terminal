@@ -77,7 +77,7 @@ for (const [key, value] of Object.entries({
 }
 
 /** Bundle and import the store from memory; no file is written anywhere. */
-export async function loadStore() {
+export async function loadStore({ fresh = false } = {}) {
   const result = await build({
     entryPoints: [join(root, 'src', 'client', 'terminal-store.ts')],
     bundle: true,
@@ -88,6 +88,7 @@ export async function loadStore() {
     write: false,
     logLevel: 'silent',
   })
-  const code = result.outputFiles[0].text
+  // A data: URL imports once; a comment makes the code unique so a test can get its own module state.
+  const code = result.outputFiles[0].text + (fresh ? ' // fresh ' + Math.random() : '')
   return import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
 }
