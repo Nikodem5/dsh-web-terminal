@@ -142,6 +142,32 @@ the `x-dsh-wt-token` header (interpolated from the environment). The body is Cla
 `{"state":"needs-you","detail":"..."}` to `/signal/<provider>` with the same header. Requests with an unknown secret
 get 401; bodies over 64 KB get 413.
 
+### Usage and the stats endpoint
+
+The same settings file also sets Claude's `statusLine` to `node lib/statusline.js <host>/signal/usage` (a few
+times a second while a prompt runs, otherwise every `refreshInterval` seconds, 10 unless your own status line sets
+one). The wrapper POSTs Claude's status JSON to `/signal/usage` (same secret header, same limits) and runs *your*
+`statusLine` command from `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`) with the same stdin, printing its
+output, so your status line looks the same. It needs `node` on PATH; without it the entry is left out and your own
+status line keeps working (`/stats` then reports `statusLine.enabled: false`).
+
+`GET /api/dsh-web-terminal/stats` returns
+
+```
+{ ok, limits: { fiveHour, sevenDay: { usedPct, resetsAt /*ms*/, outAt /*ms forecast or null*/ } | null, sampledAt },
+  cost: { totalUsd, terminals }, tokens: { total, input, output, cacheRead, cacheCreation, asOf } | null,
+  statusLine: { enabled, reason } }
+```
+
+- `limits` are account-wide, from the newest status-line sample. `outAt` is when usage reaches 100% at the recent
+  pace (last hour for 5h, last 24 h for 7d; the average since the window or the first sample when there is too
+  little history), `null` when the limit lasts until the reset or there is no pace.
+- `cost` sums the latest `total_cost_usd` of each live terminal that reported one.
+- `tokens` is the lifetime total from `~/.claude/stats-cache.json` plus transcript usage in `~/.claude/projects`
+  (sub-agents included) after the cache's last computed local day, de-duplicated by message id. Rescanned at most
+  once a minute in the background; `null` until the first scan finishes.
+- Limits and tokens are saved to `~/.dsh/web-terminal/usage.json` so they survive a restart.
+
 ## Notes and limits
 
 - **Desktop WebSocket address**: the page is served from `dsh-app://app`, so the client connects to
