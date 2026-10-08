@@ -830,3 +830,30 @@ test('unread: the pill shows when the divider is above the viewport and jumping 
     t.done()
   }
 })
+
+test('unread: the overview is not looking; it keeps unread state and a pick shows the divider', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('$ ')
+    t.away()
+    await t.out(t.lines(4))
+    assert.equal(s.unreadCount(t.id), 4)
+    s.enterOverview(t.idB)
+    assert.equal(s.unreadCount(t.id), 4, 'entering the overview keeps the unread count')
+    await t.out(t.lines(3))
+    assert.equal(s.unreadCount(t.id), 7, 'still counting, and nothing is marked as seen')
+    assert.equal(s.dividerLine(t.id), -1)
+    const cursorAtMark = t.rt.term.buffer.active.baseY + t.rt.term.buffer.active.cursorY - 7
+    s.exitOverview(t.id) // pick
+    assert.equal(s.dividerLine(t.id), cursorAtMark + 1, 'the picked terminal shows its divider at the original spot')
+    assert.equal(s.unreadCount(t.id), 0)
+    // Leaving overview without a pick: the focused terminal is looked at again.
+    s.enterOverview(t.id)
+    await t.out(t.lines(2))
+    s.exitOverview()
+    assert.ok(s.dividerLine(t.id) > cursorAtMark + 1, 'a fresh divider marks where the overview started')
+  } finally {
+    s.exitOverview()
+    t.done()
+  }
+})

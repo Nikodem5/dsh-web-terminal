@@ -9,6 +9,7 @@
 import type { IDecoration, IMarker } from '@xterm/xterm'
 import { emit, store, subscribe } from './state.ts'
 import { unattended } from './attention.ts'
+import { mission } from './mission.ts'
 import type { Runtime } from './types.ts'
 
 // ── pure helpers ───────────────────────────────────────────────────────────
@@ -62,8 +63,10 @@ let wired = false
 const cursorLine = (rt: Runtime): number => rt.term.buffer.active.baseY + rt.term.buffer.active.cursorY
 const onNormal = (rt: Runtime): boolean => rt.term.buffer.active.type === 'normal'
 
-/** Watching the terminal: focused window, Terminals page showing, document visible, not minimized. */
+/** Watching the terminal: focused window, Terminals page showing, document visible, not minimized, not scanning the overview. */
 function isLooking(id: string): boolean {
+  // Overview tiles are tiny and the user is scanning, not reading.
+  if (mission.active) return false
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false
   if (store.wins.find((w) => w.id === id)?.minimized === true) return false
   return !unattended(id)

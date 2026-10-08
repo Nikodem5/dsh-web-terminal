@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
-import { baseName, displayName, getRuntime, refit, runtimes } from './terminal-store.ts'
+import { baseName, displayName, getRuntime, refit, runtimes, unreadCount } from './terminal-store.ts'
 import {
   exitOverview,
   filterTiles,
@@ -117,6 +117,7 @@ export function MissionOverlay({ wins, plan }: { wins: WinState[]; plan: Mission
               <span className="wt-dot" data-a={activity} />
               <span className="wt-tile-name">{displayName(win)}</span>
               {rt?.attention === true ? <span className="wt-badge" data-level={rt.attentionLevel ?? 'quiet'}>{rt.attentionLabel || 'needs you'}</span> : null}
+              {unreadCount(t.id) > 0 ? <span className="wt-unread" title="New output since you last looked">{unreadCount(t.id) > 99 ? '99+' : unreadCount(t.id)} new</span> : null}
               <span className="wt-tile-cwd">{baseName(win.cwd) || win.cwd}</span>
             </div>
           </div>
