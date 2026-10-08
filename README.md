@@ -115,6 +115,10 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
 | `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
 | `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
+| `lib/hook-post.js` | Command-hook forwarder Claude runs for `SessionStart` (HTTP hooks are ignored there) |
+| `lib/statusline.js` | Status-line wrapper Claude runs: posts usage / sub-agent tasks to the host, relays the user's own line |
+| `lib/subagents.js` | Pure per-terminal sub-agent store (status-line tasks + Start/Stop hooks, retention, cap) |
+| `lib/post.js` | Shared loopback POST and stdin helpers of the two scripts above |
 | `src/client/index.ts` | Registers the sidebar entry (`sidebar.panellist`), the page (`main`) and the header stats bar; injects the session's folder into the bar |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
 | `src/client/sidebar.tsx` | Right-hand terminal list |
@@ -140,8 +144,10 @@ exists the socket reattaches to it, otherwise a shell is spawned.
 Browser → host: `{"type":"input","data"}`, `{"type":"resize","cols","rows"}`, `{"type":"signal","signal"}`,
 `{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only).
 
-Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent"}` (always first; `created` is true only
-for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`),
+Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent","subagents"}` (always first; `created` is true only
+for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`;
+`subagents` is the current `SubagentInfo[]`, `[]` when none),
+`{"type":"subagents","tasks":SubagentInfo[]}` (the terminal's whole sub-agent list, sent when it changes, at most about twice a second),
 `{"type":"data","data"}`, `{"type":"activity","busy"}` (a program runs under the shell),
 `{"type":"agent","provider","state","detail","at"}` (an agent signal; `state` is one of `idle`, `working`,
 `needs-you`, `finished`, `failed`, `ended`), `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
@@ -155,6 +161,29 @@ the `x-dsh-wt-token` header (interpolated from the environment). The body is Cla
 (`lib/agent-signals.js`) maps events to a state. Any other tool can report by POSTing
 `{"state":"needs-you","detail":"..."}` to `/signal/<provider>` with the same header. Requests with an unknown secret
 get 401; bodies over 64 KB get 413.
+
+Claude Code runs only `command` hooks for `SessionStart` (an HTTP hook there is silently ignored), so the settings file
+registers `node "<plugin>/lib/hook-post.js" <url of /signal/claude>` for it (no matcher: startup, resume, clear and
+compact all fire). `hook-post.js` POSTs its stdin with the same header to `127.0.0.1` only, prints nothing (its stdout
+would go into Claude's context) and always exits 0; this is what turns a fresh Claude terminal from "Running" to "Idle".
+Without `node` on PATH the hook is left out. Every other event stays an HTTP hook.
+
+### Sub-agents
+
+Three sources are merged per terminal (`lib/subagents.js`), keyed by agent id:
+
+- `POST /signal/subagents`: the payload of the `subagentStatusLine` setting the settings file installs as
+  `node "<plugin>/lib/statusline.js" --subagents <url>`. It posts Claude's `tasks` (live `tokenCount`, `model`, `status`,
+  `label`/`description`, `startTime`) and then relays the user's own `subagentStatusLine` command from
+  `~/.claude/settings.json` (`CLAUDE_CONFIG_DIR` respected), or prints nothing so Claude's default rows stay.
+- `SubagentStart` / `SubagentStop` HTTP hooks to `/signal/claude`: the agent appears (running) and completes
+  (`status: "completed"`, `endedAt`, `agentType` kept). They carry no agent state.
+- `SessionEnd`, or the shell exiting, completes every running sub-agent.
+
+Finished sub-agents stay listed for 5 minutes (then vanish from the next frame); at most 50 per terminal. Strings are
+trimmed to 200 characters, numbers must be finite. The browser gets
+`SubagentInfo = {id, agentType, label, description, status, model|null, startTime|null (ms), endedAt|null (ms),
+tokenCount|null, contextWindowSize|null}` in the `attached` frame and in `subagents` frames.
 
 ### Usage and the stats endpoint
 
