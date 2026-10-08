@@ -1,6 +1,7 @@
 // dsh-web-terminal — terminal runtimes: the xterm instance and WebSocket behind each
 // window, reconnecting, sizing, restart and log export.
 
+import { isMissionShortcut, isOverview } from './mission.ts'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -81,7 +82,7 @@ function socketBase(): string {
 
 /** Key combinations the app handles itself, so the terminal must not swallow them. */
 function isAppShortcut(event: KeyboardEvent): boolean {
-  return event.ctrlKey && event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+  return (event.ctrlKey && event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) || isMissionShortcut(event)
 }
 
 /** Build (once) the xterm + socket for a window. */
@@ -422,7 +423,8 @@ export function effectiveFontSize(widthPx: number): number {
 
 /** Refit a runtime to its container (adapting the font size to its width) and tell the host. */
 export function refit(rt: Runtime): void {
-  if (!rt.holder.isConnected) return
+  // Mission control scales the live terminals without resizing them; a refit would resize the PTY.
+  if (isOverview() || !rt.holder.isConnected) return
   openRuntime(rt)
   if (rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
   const size = effectiveFontSize(rt.holder.clientWidth)

@@ -13,6 +13,8 @@ import { requestClose, requestCloseAll } from './actions.ts'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
+import { MissionOverlay, missionPlan, useMissionControl } from './mission-view.tsx'
+import type { MissionPlan } from './mission-view.tsx'
 import { Sidebar } from './sidebar.tsx'
 import { StatsBar } from './stats-bar.tsx'
 import { ensureStyles } from './styles.ts'
@@ -49,6 +51,7 @@ import {
   setSidebar,
   setViewMounted,
   subscribe,
+  toggleOverview,
   termBackground,
   toggleMaximize,
   updateWin,
@@ -195,10 +198,12 @@ interface WindowProps {
   stage: Size
   focused: boolean
   onGhost: (ghost: Rect | null) => void
+  /** Mission control: show the live window scaled into its tile (or hidden when filtered out). */
+  mission?: MissionPlan | null
 }
 
 /** One terminal window: chrome plus the re-parented xterm holder. */
-function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactElement {
+function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps): ReactElement {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [dragging, setDragging] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -237,6 +242,7 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
   }, [more])
 
   const px = toPx(win, stage)
+  const tile = mission?.tiles.get(win.id)
 
   /** Drag the window by its header, with edge snapping and Windows-style zones. */
   const onHeaderDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -344,7 +350,9 @@ function TerminalWindow({ win, stage, focused, onGhost }: WindowProps): ReactEle
       data-dragging={dragging}
       data-pinned={win.pinned}
       data-max={win.maximized}
-      style={{ left: px.x, top: px.y, width: px.w, height: px.h, zIndex: win.z, display: win.minimized ? 'none' : 'flex' }}
+      style={mission != null
+        ? { left: px.x, top: px.y, width: px.w, height: px.h, zIndex: 1, display: 'flex', transformOrigin: '0 0', pointerEvents: 'none', visibility: tile === undefined ? 'hidden' : 'visible', transform: tile === undefined ? undefined : `translate(${tile.tx}px, ${tile.ty}px) scale(${tile.scale})` }
+        : { left: px.x, top: px.y, width: px.w, height: px.h, zIndex: win.z, display: win.minimized ? 'none' : 'flex' }}
       onPointerDownCapture={() => focusWin(win.id)}
     >
       <div
@@ -440,6 +448,8 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   const [bcText, setBcText] = useState('')
   const viewRef = useRef<HTMLDivElement | null>(null)
   const [scheme, setScheme] = useState<'dark' | 'light'>('dark')
+  const plan = missionPlan(wins, stage)
+  useMissionControl(wins, focusId, plan)
 
   // Pick text colours from the MEASURED background so inputs and labels always contrast.
   useLayoutEffect(() => {
@@ -536,6 +546,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
             <button type="button" className="wt-btn wt-btn-icon" data-on={menu === 'settings'} title="Font and notification settings" onClick={() => setMenu(menu === 'settings' ? null : 'settings')}>Aa</button>
             {menu === 'settings' ? <SettingsMenu /> : null}
           </div>
+          <button type="button" className="wt-btn wt-btn-overview" data-on={plan !== null} title="Overview of every terminal (Ctrl+Shift+Space)" disabled={wins.length === 0} onClick={() => toggleOverview(focusId)}>▦ Overview</button>
           <button type="button" className="wt-btn wt-btn-agents" data-on={prefs.agentsPanel} title={prefs.agentsPanel ? 'Hide the sub-agents panel' : 'Show the sub-agents panel'} onClick={() => setAgentsPanel(!prefs.agentsPanel)}>
             Agents{runningAgents > 0 ? <span className="wt-btn-count">{runningAgents}</span> : null}
           </button>
@@ -569,8 +580,9 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
               </div>
             ) : null}
             {wins.map((w) => (
-              <TerminalWindow key={w.id} win={w} stage={stage} focused={focusId === w.id} onGhost={setGhost} />
+              <TerminalWindow key={w.id} win={w} stage={stage} focused={focusId === w.id} onGhost={setGhost} mission={plan} />
             ))}
+            {plan !== null ? <MissionOverlay wins={wins} plan={plan} /> : null}
             {ghost !== null ? <div className="wt-ghost" style={{ left: ghost.x * stage.w, top: ghost.y * stage.h, width: ghost.w * stage.w, height: ghost.h * stage.h }} /> : null}
           </div>
         </div>
