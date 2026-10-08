@@ -526,7 +526,6 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
               {displayName(w)}
             </button>
           ))}
-          <StatsBar />
         </div>
         <div className="wt-bar-right">
           {wins.length > 0 ? (
@@ -542,6 +541,9 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           </button>
           <button type="button" className="wt-btn wt-btn-icon" data-on={prefs.sidebar} title={prefs.sidebar ? 'Hide the terminal list' : 'Show the terminal list'} onClick={() => setSidebar(!prefs.sidebar)}>☰</button>
         </div>
+      </div>
+      <div className="wt-statsrow" data-toolbar="stats">
+        <StatsBar />
       </div>
       <div className="wt-cols">
       <div className="wt-main">

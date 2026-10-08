@@ -23,11 +23,12 @@ const VIEW_CSS = `
 
 /* toolbar */
 .wt-bar { flex: none; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; box-sizing: border-box; border-bottom: 0.5px solid var(--wt-line); position: relative; z-index: 30; background: var(--wt-surface); }
-/* Three regions in one fixed row: left and right never change width or wrap; only the middle (stats, chips) flexes and clips. */
+/* Row 1: left and right never change width or wrap; only the middle (chips) flexes and clips. Row 2 (.wt-statsrow) holds the stats bar. */
 .wt-bar-left, .wt-bar-right { flex: none; display: flex; align-items: center; gap: 6px; }
-.wt-bar-mid { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 10px; container-type: inline-size; container-name: wtbar; }
+.wt-bar-mid { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 10px; }
 .wt-bar-mid > * { flex: none; }
-.wt-bar-mid > .wt-stats { flex: 0 1 auto; min-width: 0; }
+.wt-statsrow { flex: none; display: flex; align-items: center; height: 26px; padding: 0 12px; box-sizing: border-box; overflow: hidden; border-bottom: 0.5px solid var(--wt-line); background: color-mix(in srgb, var(--wt-text) 4%, var(--wt-surface)); container-type: inline-size; container-name: wtbar; }
+.wt-statsrow > .wt-stats { flex: 0 1 auto; min-width: 0; height: 100%; }
 .wt-seg { display: inline-flex; align-items: center; }
 .wt-seg .wt-btn { border-radius: 0; margin-left: -0.5px; }
 .wt-seg .wt-btn:first-child { border-radius: 14px 0 0 14px; margin-left: 0; }
@@ -190,8 +191,8 @@ const VIEW_CSS = `
 /* In the page toolbar the bar sits on the plugin's measured surface, not the harness tokens. */
 .wt-view .wt-stats { color: color-mix(in srgb, var(--wt-text) 75%, transparent); }
 .wt-stats-warn { color: var(--wt-warn); }
-/* Percentages sit in a fixed-width right-aligned field so a changing value never shifts its neighbours. */
-.wt-pct { display: inline-block; min-width: 4ch; text-align: right; }
+/* Tabular digits (monospace) keep a changing percentage from jittering; the field is only as wide as its text. */
+.wt-pct { display: inline-block; }
 .wt-pct-warn { color: var(--wt-warn); font-weight: 600; }
 .wt-pct-danger { color: var(--wt-danger); font-weight: 600; }
 .wt-stats-group, .wt-stats-item { flex: none; }
@@ -201,9 +202,9 @@ const VIEW_CSS = `
 }
 .wt-view .wt-stats { --wt-warn: inherit; --wt-danger: inherit; }
 /* Narrow toolbar: drop the lowest-priority parts instead of pushing buttons (tokens, then cost, then 7d). */
-@container wtbar (max-width: 460px) { .wt-stats-item[data-p="tokens"] { display: none; } }
-@container wtbar (max-width: 380px) { .wt-stats-item[data-p="cost"] { display: none; } }
-@container wtbar (max-width: 300px) { .wt-stats-item[data-p="seven"] { display: none; } }
+@container wtbar (max-width: 560px) { .wt-stats-item[data-p="tokens"] { display: none; } }
+@container wtbar (max-width: 460px) { .wt-stats-item[data-p="cost"] { display: none; } }
+@container wtbar (max-width: 360px) { .wt-stats-item[data-p="seven"] { display: none; } }
 `
 
 let injected = false
