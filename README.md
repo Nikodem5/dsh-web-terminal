@@ -13,7 +13,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 ### Opening terminals
 | Action | How |
 |---|---|
-| New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or one of the harness's **Workspaces** — shown as chips under the folder field, as listed in the left sidebar), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell |
+| New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or one of the harness's **Workspaces** — shown as chips under the folder field, as listed in the left sidebar), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell, as soon as its prompt is up (it has printed and gone quiet for a moment; at most 5 s) |
 | Run Claude | **✦ Claude** is the same dialog preset to `claude` (chips for `claude --resume` / `--continue`) |
 | Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder and startup command |
 | Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins), then *Open* (replaces the open terminals) or *Add* |
@@ -127,6 +127,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
 | `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, stuck detection |
 | `src/client/launch.ts` | Adds `--settings` to a `claude` startup command |
+| `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet) |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
 | `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs` | Tests |
