@@ -120,3 +120,16 @@ test('an unsafe conversation id is dropped, because it ends up in a shell comman
   }
   assert.ok(SESSION_ID.test('3f4a3c42-a672-45ff-a7f5-ac6abdc48a8e'))
 })
+
+test('the Claude settings file adds the status-line wrapper only when asked, with a forward-slash path', () => {
+  assert.equal(buildClaudeSettings('http://127.0.0.1:1/signal/claude').statusLine, undefined)
+  const settings = buildClaudeSettings('http://127.0.0.1:1/signal/claude', {
+    statusLine: { script: String.raw`C:\plug ins\lib\statusline.js`, url: 'http://127.0.0.1:1/signal/usage', refreshInterval: 4 },
+  })
+  assert.deepEqual(settings.statusLine, {
+    type: 'command',
+    command: 'node "C:/plug ins/lib/statusline.js" http://127.0.0.1:1/signal/usage',
+    refreshInterval: 4,
+  })
+  assert.deepEqual(Object.keys(settings.hooks).sort(), [...CLAUDE_HOOK_EVENTS].sort())
+})
