@@ -43,18 +43,41 @@ export function isDarkSurface(element?: Element): boolean {
   return scheme.length > 0 ? scheme.includes('dark') : window.matchMedia?.('(prefers-color-scheme: dark)').matches !== false
 }
 
-/** xterm colours (VS Code Dark+/Light+ ANSI palettes) following the app's scheme at creation time. */
-export function termTheme(): Record<string, string> {
-  const dark = prefs.termTheme === 'auto' ? isDarkSurface() : prefs.termTheme === 'dark'
+/** WCAG relative luminance of a `#rrggbb` colour (gamma-linearised, unlike the quick `luminanceOf`). */
+export function wcagLuminance(hex: string): number {
+  const n = Number.parseInt(hex.slice(1), 16)
+  const lin = (v: number): number => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+}
+
+/** WCAG contrast ratio (1..21) between two `#rrggbb` colours. */
+export function contrastRatio(a: string, b: string): number {
+  const [x, y] = [wcagLuminance(a), wcagLuminance(b)]
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+
+/**
+ * The two palettes. Contrast against the background (checked in tests): every foreground and ANSI colour
+ * except black is >= 4.5:1 (default text 15.7:1 dark / 18.5:1 light), so grey hint lines stay legible
+ * even before xterm's minimumContrastRatio lifts them. Dark: VS Code Dark+ lifted where it was murky
+ * (blue 3.7 -> 6.8, magenta 3.9 -> 6.0, red 3.5 -> 5.6, bright black 3.2 -> 5.9). Light: the yellow/green/cyan
+ * that were 2.1-3.4 darkened to >= 4.5.
+ */
+export function termPalette(dark: boolean): Record<string, string> {
   return dark
     ? {
-        background: '#14161b', foreground: '#d4d4d4', cursor: '#7c93ff', cursorAccent: '#14161b', selectionBackground: '#3b4a8a99',
-        black: '#000000', red: '#cd3131', green: '#0dbc79', yellow: '#e5e510', blue: '#2472c8', magenta: '#bc3fbc', cyan: '#11a8cd', white: '#e5e5e5',
-        brightBlack: '#666666', brightRed: '#f14c4c', brightGreen: '#23d18b', brightYellow: '#f5f543', brightBlue: '#3b8eea', brightMagenta: '#d670d6', brightCyan: '#29b8db', brightWhite: '#ffffff',
+        background: '#14161b', foreground: '#eceff4', cursor: '#7c93ff', cursorAccent: '#14161b', selectionBackground: '#3b4a8a99',
+        black: '#3a3f4b', red: '#f0605d', green: '#3fd68f', yellow: '#e5e510', blue: '#5aa0ff', magenta: '#d070d8', cyan: '#2ec4e6', white: '#dcdfe6',
+        brightBlack: '#8b93a3', brightRed: '#ff7b7b', brightGreen: '#5ee8a6', brightYellow: '#fbfb6a', brightBlue: '#7db8ff', brightMagenta: '#e690ee', brightCyan: '#55d6f2', brightWhite: '#ffffff',
       }
     : {
-        background: '#ffffff', foreground: '#1f2328', cursor: '#4d6bfe', cursorAccent: '#ffffff', selectionBackground: '#4d6bfe33',
-        black: '#000000', red: '#cd3131', green: '#00bc00', yellow: '#949800', blue: '#0451a5', magenta: '#bc05bc', cyan: '#0598bc', white: '#555555',
-        brightBlack: '#666666', brightRed: '#cd3131', brightGreen: '#14ce14', brightYellow: '#b5ba00', brightBlue: '#0451a5', brightMagenta: '#bc05bc', brightCyan: '#0598bc', brightWhite: '#a5a5a5',
+        background: '#ffffff', foreground: '#111418', cursor: '#4d6bfe', cursorAccent: '#ffffff', selectionBackground: '#4d6bfe33',
+        black: '#000000', red: '#cd3131', green: '#00802b', yellow: '#7a6e00', blue: '#0451a5', magenta: '#bc05bc', cyan: '#047a99', white: '#555555',
+        brightBlack: '#666666', brightRed: '#cd3131', brightGreen: '#0f8a0f', brightYellow: '#8a6d00', brightBlue: '#0451a5', brightMagenta: '#bc05bc', brightCyan: '#047a99', brightWhite: '#767676',
       }
+}
+
+/** xterm colours following the app's scheme at creation time. */
+export function termTheme(): Record<string, string> {
+  return termPalette(prefs.termTheme === 'auto' ? isDarkSurface() : prefs.termTheme === 'dark')
 }
