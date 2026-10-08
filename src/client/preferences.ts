@@ -29,6 +29,12 @@ export function setSidebar(open: boolean): void {
   persistSoon()
 }
 
+export function setAgentsPanel(open: boolean): void {
+  prefs.agentsPanel = open
+  emit()
+  persistSoon()
+}
+
 export function setNotify(on: boolean): void {
   prefs.notify = on
   emit()

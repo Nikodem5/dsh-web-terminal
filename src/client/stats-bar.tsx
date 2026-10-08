@@ -16,7 +16,7 @@ import type { ReactElement } from 'react'
 import { getStats, subscribeStats } from './stats.ts'
 import { describeFiveHour, describeSevenDay, describeTokens, formatAge, formatTokens, formatUsd, isStale } from './stats-format.ts'
 import { ensureStyles } from './styles.ts'
-import { getVersion, noteSessionCwd, runtimes, subscribe } from './terminal-store.ts'
+import { getVersion, noteSessionCwd, runningSubagents, runtimes, subscribe } from './terminal-store.ts'
 
 const AGENT_KINDS = [
   { activity: 'working', label: 'working' },
@@ -76,6 +76,14 @@ export function StatsBar({ sessionCwd }: { sessionCwd?: () => string | undefined
             {counts[k.activity]} {k.label}
           </span>
         ))}
+      </span>,
+    )
+  }
+  const subagents = runningSubagents()
+  if (subagents > 0) {
+    parts.push(
+      <span key="subagents" className="wt-stats-item" title="Running Claude sub-agents across all terminals">
+        {subagents} {subagents === 1 ? 'agent' : 'agents'}
       </span>,
     )
   }

@@ -73,6 +73,14 @@ drag rows to reorder (that is also the Ctrl+Alt+←/→ order), ⧉ duplicate, �
 title (`Fix login bug`; bare "Claude Code" becomes `Claude · <folder>`). Renaming pins your name; renaming to an
 empty string returns to the automatic name.
 
+### Sub-agents panel (right)
+`Agents` in the toolbar (with a badge of running sub-agents) opens a panel beside the terminal list, remembered in the
+preferences. Sub-agents Claude spawned are grouped by terminal (click a group header to focus its window); each row shows
+status, label, type, short model name (`haiku-5-5`), elapsed time (ticking while running) and tokens. Running ones come
+first; completed ones are dimmed and drop off about five minutes after they end. The stats bar adds `N agents` while any
+run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;
+an older host without them simply shows an empty panel.
+
 ### Safety
 - Closing a terminal that is still **working or waiting** (single close, **Close all**, replacing a layout)
   asks first. Restarting a busy shell asks too.
@@ -145,7 +153,7 @@ Host → browser: `{"type":"attached","created","replay","exited","exitCode","ag
 for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`),
 `{"type":"data","data"}`, `{"type":"activity","busy"}` (a program runs under the shell),
 `{"type":"agent","provider","state","detail","at"}` (an agent signal; `state` is one of `idle`, `working`,
-`needs-you`, `finished`, `failed`, `ended`), `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
+`needs-you`, `finished`, `failed`, `ended`), `{"type":"subagents","tasks"}` (full sub-agent list; `attached` also carries `subagents`), `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
 
 ### Agent signals
 
