@@ -95,6 +95,12 @@ export function formatTokens(n: number): string {
 export const formatUsd = (n: number): string => `$${(isNum(n) ? n : 0).toFixed(2)}`
 export const formatPct = (n: number): string => `${Math.round(n)}%`
 
+/** Limit usage severity: normal up to 50%, warn above 50, danger above 75. */
+export function pctLevel(n: number): 'normal' | 'warn' | 'danger' {
+  if (!isNum(n)) return 'normal'
+  return n > 75 ? 'danger' : n > 50 ? 'warn' : 'normal'
+}
+
 /** `5m ago` / `2h ago` / `3d ago`. */
 export function formatAge(ms: number): string {
   const minutes = Math.max(0, Math.floor(ms / 60_000))
@@ -106,13 +112,14 @@ export function formatAge(ms: number): string {
 export const isStale = (sampledAt: number | null, now: number): boolean => sampledAt !== null && now - sampledAt > STALE_MS
 
 /** The 5h limit as display parts; `out` is separate so the bar can highlight it. */
-export function describeFiveHour(w: LimitWindow): { main: string; out: string | null } {
-  return { main: `5h ${formatPct(w.usedPct)} · resets ${formatClock(w.resetsAt)}`, out: w.outAt === null ? null : `out ~${formatClock(w.outAt)}` }
+export function describeFiveHour(w: LimitWindow): { main: string; label: string; pct: string; tail: string; level: ReturnType<typeof pctLevel>; out: string | null } {
+  const tail = ` · resets ${formatClock(w.resetsAt)}`
+  return { main: `5h ${formatPct(w.usedPct)}${tail}`, label: '5h', pct: formatPct(w.usedPct), tail, level: pctLevel(w.usedPct), out: w.outAt === null ? null : `out ~${formatClock(w.outAt)}` }
 }
 
 /** The 7d limit; the reset time goes to the tooltip instead of the line. */
-export function describeSevenDay(w: LimitWindow): { main: string; out: string | null; title: string } {
-  return { main: `7d ${formatPct(w.usedPct)}`, out: w.outAt === null ? null : `out ~${formatDayClock(w.outAt)}`, title: `7-day limit resets ${formatDayClock(w.resetsAt)}` }
+export function describeSevenDay(w: LimitWindow): { main: string; label: string; pct: string; tail: string; level: ReturnType<typeof pctLevel>; out: string | null; title: string } {
+  return { main: `7d ${formatPct(w.usedPct)}`, label: '7d', pct: formatPct(w.usedPct), tail: '', level: pctLevel(w.usedPct), out: w.outAt === null ? null : `out ~${formatDayClock(w.outAt)}`, title: `7-day limit resets ${formatDayClock(w.resetsAt)}` }
 }
 
 /** Tooltip with the token split. */

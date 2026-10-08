@@ -31,6 +31,17 @@ function countAgents(): Record<string, number> {
   return counts
 }
 
+/** `5h 29% · resets 17:30` with the percentage in a fixed-width, severity-coloured field. */
+function Limit({ d }: { d: { label: string; pct: string; tail: string; level: string } }): ReactElement {
+  return (
+    <>
+      {d.label}{' '}
+      <span className={d.level === 'normal' ? 'wt-pct' : `wt-pct wt-pct-${d.level}`}>{d.pct}</span>
+      {d.tail}
+    </>
+  )
+}
+
 function Out({ text }: { text: string | null }): ReactElement | null {
   return text === null ? null : (
     <>
@@ -97,13 +108,13 @@ export function StatsBar({ sessionCwd }: { sessionCwd?: () => string | undefined
       >
         {five !== null && (
           <span className="wt-stats-item">
-            {five.main}
+            <Limit d={five} />
             <Out text={five.out} />
           </span>
         )}
         {seven !== null && (
-          <span className="wt-stats-item" title={seven.title}>
-            {seven.main}
+          <span className="wt-stats-item" data-p="seven" title={seven.title}>
+            <Limit d={seven} />
             <Out text={seven.out} />
           </span>
         )}
@@ -119,14 +130,14 @@ export function StatsBar({ sessionCwd }: { sessionCwd?: () => string | undefined
   }
   if (cost !== null) {
     parts.push(
-      <span key="cost" className="wt-stats-item" title={`API-price equivalent across ${cost.terminals} open terminals`}>
+      <span key="cost" className="wt-stats-item" data-p="cost" title={`API-price equivalent across ${cost.terminals} open terminals`}>
         {formatUsd(cost.totalUsd)}
       </span>,
     )
   }
   if (tokens !== null) {
     parts.push(
-      <span key="tokens" className="wt-stats-item" title={describeTokens(tokens)}>
+      <span key="tokens" className="wt-stats-item" data-p="tokens" title={describeTokens(tokens)}>
         {formatTokens(tokens.total)} tok
       </span>,
     )

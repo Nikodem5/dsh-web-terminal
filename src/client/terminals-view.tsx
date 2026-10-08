@@ -501,21 +501,24 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
 
   return (
     <div className="wt-view wt-page" ref={viewRef} data-scheme={scheme} style={{ ['--wt-term-bg' as string]: termBackground() }} data-dsh-plugin="web-terminal">
-      <div className="wt-main">
-        <div className="wt-bar">
+      <div className="wt-bar" data-toolbar="true">
+        <div className="wt-bar-left">
           <button type="button" className="wt-btn" data-variant="primary" onClick={() => setDialog({})}>＋ New terminal</button>
-          <button type="button" className="wt-btn" title="New terminal that runs `claude`" onClick={() => setDialog({ startup: 'claude' })}>✦ Claude</button>
+          <button type="button" className="wt-btn wt-btn-claude" title="New terminal that runs `claude`" onClick={() => setDialog({ startup: 'claude' })}>✦ Claude</button>
           <span className="wt-sep" />
-          {PRESETS.map((p) => (
-            <button key={p.id} type="button" className="wt-btn" title={p.title} disabled={visibleCount === 0} onClick={() => arrange(p.id)}>{p.label}</button>
-          ))}
+          <div className="wt-seg">
+            {PRESETS.map((p) => (
+              <button key={p.id} type="button" className="wt-btn wt-btn-preset" title={p.title} disabled={visibleCount === 0} onClick={() => arrange(p.id)}>{p.label}</button>
+            ))}
+          </div>
           <span className="wt-sep" />
           <div className="wt-menu-wrap" onPointerDown={(e) => e.stopPropagation()}>
-            <button type="button" className="wt-btn" data-on={menu === 'layouts'} onClick={() => setMenu(menu === 'layouts' ? null : 'layouts')}>▾ Layouts</button>
+            <button type="button" className="wt-btn wt-btn-tool" data-on={menu === 'layouts'} onClick={() => setMenu(menu === 'layouts' ? null : 'layouts')}>▾ Layouts</button>
             {menu === 'layouts' ? <LayoutsMenu /> : null}
           </div>
-          <button type="button" className="wt-btn" data-on={broadcast.on} title="Send the same input to several terminals" disabled={wins.length === 0} onClick={() => setBroadcast({ on: !broadcast.on })}>⇉ Broadcast</button>
-          <span className="wt-grow" />
+          <button type="button" className="wt-btn wt-btn-tool wt-btn-broadcast" data-on={broadcast.on} title="Send the same input to several terminals" disabled={wins.length === 0} onClick={() => setBroadcast({ on: !broadcast.on })}>⇉ Broadcast</button>
+        </div>
+        <div className="wt-bar-mid">
           {needsYou > 0 ? <span className="wt-badge" title="Terminals waiting for you">{needsYou} need you</span> : null}
           {minimized.map((w) => (
             <button key={w.id} type="button" className="wt-chip" title="Restore" onClick={() => focusWin(w.id)}>
@@ -524,21 +527,26 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
             </button>
           ))}
           <StatsBar />
+        </div>
+        <div className="wt-bar-right">
           {wins.length > 0 ? (
-            <button type="button" className="wt-btn" title="Close every terminal and end their shells" onClick={() => requestCloseAll()}>Close all</button>
+            <button type="button" className="wt-btn wt-btn-danger" title="Close every terminal and end their shells" onClick={() => requestCloseAll()}>Close all</button>
           ) : null}
           {hostInfo.claude !== undefined && hostInfo.claude.available !== true ? <span className="wt-note">`claude` not found on PATH</span> : null}
           <div className="wt-menu-wrap" onPointerDown={(e) => e.stopPropagation()}>
-            <button type="button" className="wt-btn" data-on={menu === 'settings'} title="Font and notification settings" onClick={() => setMenu(menu === 'settings' ? null : 'settings')}>Aa</button>
+            <button type="button" className="wt-btn wt-btn-icon" data-on={menu === 'settings'} title="Font and notification settings" onClick={() => setMenu(menu === 'settings' ? null : 'settings')}>Aa</button>
             {menu === 'settings' ? <SettingsMenu /> : null}
           </div>
-          <button type="button" className="wt-btn" data-on={prefs.agentsPanel} title={prefs.agentsPanel ? 'Hide the sub-agents panel' : 'Show the sub-agents panel'} onClick={() => setAgentsPanel(!prefs.agentsPanel)}>
+          <button type="button" className="wt-btn wt-btn-agents" data-on={prefs.agentsPanel} title={prefs.agentsPanel ? 'Hide the sub-agents panel' : 'Show the sub-agents panel'} onClick={() => setAgentsPanel(!prefs.agentsPanel)}>
             Agents{runningAgents > 0 ? <span className="wt-btn-count">{runningAgents}</span> : null}
           </button>
-          <button type="button" className="wt-btn" data-on={prefs.sidebar} title={prefs.sidebar ? 'Hide the terminal list' : 'Show the terminal list'} onClick={() => setSidebar(!prefs.sidebar)}>☰</button>
+          <button type="button" className="wt-btn wt-btn-icon" data-on={prefs.sidebar} title={prefs.sidebar ? 'Hide the terminal list' : 'Show the terminal list'} onClick={() => setSidebar(!prefs.sidebar)}>☰</button>
         </div>
+      </div>
+      <div className="wt-cols">
+      <div className="wt-main">
         {broadcast.on ? (
-          <div className="wt-bar wt-bar2">
+          <div className="wt-bar2">
             <span style={{ fontSize: 12 }}>Send to <b>{broadcast.ids.size}</b> selected</span>
             <input className="wt-input wt-grow" value={bcText} placeholder="Type a command and press Enter — it goes to every selected terminal" onChange={(e) => setBcText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendBroadcast() }} />
             <button type="button" className="wt-btn" data-variant="primary" disabled={bcText.trim().length === 0 || broadcast.ids.size === 0} onClick={sendBroadcast}>Send</button>
@@ -567,6 +575,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
       </div>
       {prefs.agentsPanel ? <AgentsPanel wins={wins} /> : null}
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
+      </div>
       {dialog !== null ? <NewTerminalDialog startup={dialog.startup} workspaces={workspaceChoices(workspaceItems)} onClose={() => setDialog(null)} /> : null}
     </div>
   )

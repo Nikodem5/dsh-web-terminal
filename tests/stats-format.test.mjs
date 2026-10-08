@@ -48,12 +48,23 @@ test('formatAge and staleness', () => {
   assert.equal(f.isStale(null, 1e12), false)
 })
 
+test('percentage severity thresholds are over 50 and over 75', () => {
+  assert.equal(f.pctLevel(0), 'normal')
+  assert.equal(f.pctLevel(50), 'normal')
+  assert.equal(f.pctLevel(51), 'warn')
+  assert.equal(f.pctLevel(75), 'warn')
+  assert.equal(f.pctLevel(76), 'danger')
+  assert.equal(f.pctLevel(100), 'danger')
+  assert.equal(f.pctLevel(NaN), 'normal')
+})
+
 test('limit descriptions', () => {
   const five = f.describeFiveHour({ usedPct: 41.6, resetsAt: local(8, 14, 30), outAt: local(8, 13, 55) })
-  assert.deepEqual(five, { main: '5h 42% · resets 14:30', out: 'out ~13:55' })
+  assert.deepEqual(five, { main: '5h 42% · resets 14:30', label: '5h', pct: '42%', tail: ' · resets 14:30', level: 'normal', out: 'out ~13:55' })
   assert.equal(f.describeFiveHour({ usedPct: 10, resetsAt: local(8, 14, 30), outAt: null }).out, null)
   const seven = f.describeSevenDay({ usedPct: 63, resetsAt: local(9, 9, 0), outAt: local(8, 18, 0) })
   assert.equal(seven.main, '7d 63%')
+  assert.equal(seven.level, 'warn')
   assert.equal(seven.out, 'out ~Thu 18:00')
   assert.equal(seven.title, '7-day limit resets Fri 09:00')
 })

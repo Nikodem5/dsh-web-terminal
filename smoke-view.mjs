@@ -402,6 +402,7 @@ const barText = barHost.textContent
 check(barText.includes('5h 42%') && barText.includes('7d 63%') && barText.includes('out ~'), `stats bar shows limits (${barText})`)
 check(barText.includes('$12.34') && barText.includes('2.5B tok'), 'stats bar shows cost and tokens')
 check(barText.includes('1 working'), 'stats bar counts a working agent')
+check(barHost.querySelectorAll('.wt-pct').length === 2 && barHost.querySelectorAll('.wt-pct-warn').length === 1 && barHost.querySelector('.wt-pct-danger') === null, 'stats bar colours only the 63% percentage (warn), not 42%')
 sock.push({ type: 'agent', provider: 'claude', state: 'needs-you', detail: 'Permission: Bash: ls' })
 await sleep(60)
 check(barHost.textContent.includes('1 needs you') && !barHost.textContent.includes('working'), 'agent counts update live without a re-render')
@@ -438,6 +439,31 @@ check(q('.wt-agents').textContent.includes('No sub-agents running') && !q('.wt-v
 click(byText('.wt-bar button', 'Agents'))
 await sleep(40)
 check(q('.wt-agents') === null, 'the Agents button closes the panel')
+
+// toolbar stability: it is a full-width row above the columns, outside the shrinking area, and toggling panels never touches it
+{
+  const toolbarShape = () => {
+    const bar = q('.wt-page > .wt-bar')
+    return bar === null ? null : [...bar.children].map((r) => r.className + ':' + [...r.children].map((c) => c.className.split(' ').slice(0, 2).join('.')).join(',')).join('|')
+  }
+  const bar = q('.wt-page > .wt-bar')
+  check(bar !== null && bar.closest('.wt-main') === null && bar.closest('.wt-cols') === null, 'the toolbar sits outside the columns and the shrinking main area')
+  check(bar.nextElementSibling === q('.wt-cols') && q('.wt-cols > .wt-main') !== null, 'the columns follow the toolbar')
+  check([...bar.children].map((c) => c.className).join() === 'wt-bar-left,wt-bar-mid,wt-bar-right', 'toolbar = left | middle | right regions')
+  check(byText('.wt-bar button', 'Claude').classList.contains('wt-btn-claude') && byText('.wt-bar button', 'Agents').classList.contains('wt-btn-agents'), 'Claude and Agents buttons carry their own classes')
+  const before = toolbarShape()
+  const sidebarOpen = q('.wt-side') !== null
+  click(byText('.wt-bar button', '☰'))
+  await sleep(30)
+  check((q('.wt-side') !== null) !== sidebarOpen && toolbarShape() === before, 'toggling the terminal list does not change the toolbar structure')
+  click(byText('.wt-bar button', '☰'))
+  await sleep(30)
+  click(byText('.wt-bar button', 'Agents'))
+  await sleep(30)
+  check(q('.wt-agents') !== null && toolbarShape() === before && q('.wt-page > .wt-bar') === bar, 'opening the Agents panel keeps the same toolbar node and structure')
+  click(byText('.wt-bar button', 'Agents'))
+  await sleep(30)
+}
 
 // No Workspaces from the shell: the dialog falls back to the folder of the session last viewed in the chat header.
 workspaceItems = []
