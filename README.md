@@ -113,6 +113,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
+| `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
 | `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
 | `src/client/index.ts` | Registers the sidebar entry (`sidebar.panellist`), the page (`main`) and the header stats bar; injects the session's folder into the bar |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
@@ -185,7 +186,7 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
 - **Desktop WebSocket address**: the page is served from `dsh-app://app`, so the client connects to
   `__DSH_TRANSPORT__.streamBaseUrl` (the loopback host origin); the app adds the auth cookie.
 - **Agent state** is reported, not inferred (see *Agent signals*). The only inferred fact is "does the shell have a
-  live child process" (one OS process-table query every 3 s while any terminal is attached), shown as Running and
+  live child process" (one OS process-table query every 3 s while any terminal is attached; on Windows one long-lived PowerShell helper answers it and exits after 30 s without terminals), shown as Running and
   used to notice an agent that died without saying so. If your Claude settings restrict hooks with
   `allowedHttpHookUrls`, add `http://127.0.0.1:*/signal/claude`.
 - **Git Bash location**: found once and cached, in this order: `DSH_WT_GIT_BASH` (full path of a `bash.exe`, for an
