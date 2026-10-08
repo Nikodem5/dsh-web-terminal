@@ -3,6 +3,7 @@
 import type { Terminal } from '@xterm/xterm'
 import type { FitAddon } from '@xterm/addon-fit'
 import type { SearchAddon } from '@xterm/addon-search'
+import type { SubagentInfo } from './subagents.ts'
 
 /** Rectangle in canvas fractions (0..1). */
 export interface Rect {
@@ -106,6 +107,8 @@ export interface Runtime {
   lastInputAt: number
   /** What the agent in this terminal last reported; undefined for a plain shell. */
   agent: AgentInfo | undefined
+  /** Claude sub-agents the host reports for this terminal (running, plus recently completed). */
+  subagents: SubagentInfo[]
   /** The "may be stuck" alert already fired for the current working spell. */
   hungRaised: boolean
   /** Needs the user's eyes: an agent is blocked, failed or finished, or the shell exited, while unattended. */
@@ -162,6 +165,8 @@ export interface Prefs {
   /** Folder of the chat session viewed last (recorded by the header bar); fallback when the harness lists no Workspaces. */
   sessionCwd: string
   sidebar: boolean
+  /** The sub-agents panel on the Terminals page. */
+  agentsPanel: boolean
   notify: boolean
   /** Play a chime for urgent alerts. */
   sound: boolean

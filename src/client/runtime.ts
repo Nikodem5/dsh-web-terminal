@@ -9,6 +9,7 @@ import { emit, hostInfo, hostInfoReady, prefs, refreshHostInfo, runtimes, store,
 import { cleanTitle, displayName } from './names.ts'
 import { noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
+import { applySubagents } from './subagent-state.ts'
 import { startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
@@ -136,6 +137,7 @@ export function ensureRuntime(win: WinState): Runtime {
     lastOutputAt: 0,
     lastInputAt: 0,
     agent: undefined,
+    subagents: [],
     hungRaised: false,
     attentionLevel: null,
     attentionLabel: '',
@@ -265,6 +267,7 @@ export function ensureRuntime(win: WinState): Runtime {
         // A fresh shell has no agent yet; a reattached one reports what its agent was last doing.
         rt.agent = undefined
         restoreAgent(rt, frame.agent)
+        applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         term.reset()
         if ((frame.replay ?? '').length > 0) term.write(frame.replay as string)
         if (frame.exited === true) {
@@ -327,6 +330,8 @@ export function ensureRuntime(win: WinState): Runtime {
         noteHostBusy(rt, frame.busy === true)
       } else if (frame.type === 'agent') {
         if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at, session: frame.session })
+      } else if (frame.type === 'subagents') {
+        applySubagents(rt, (frame as { tasks?: unknown }).tasks)
       } else if (frame.type === 'exit') {
         if (rt.hostLost) return
         setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)

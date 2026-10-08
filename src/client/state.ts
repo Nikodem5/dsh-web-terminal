@@ -34,6 +34,7 @@ export const prefs: Prefs = {
   lastCwd: '',
   sessionCwd: '',
   sidebar: true,
+  agentsPanel: false,
   notify: true,
   sound: true,
   hungMinutes: 10,
@@ -136,7 +137,7 @@ function applyPrefs(p: Record<string, unknown>): void {
   if (typeof p.lastShell === 'string') prefs.lastShell = p.lastShell
   if (typeof p.lastCwd === 'string') prefs.lastCwd = p.lastCwd
   if (typeof p.sessionCwd === 'string') prefs.sessionCwd = p.sessionCwd
-  for (const key of ['fontCustom', 'autoFont', 'sidebar', 'notify', 'sound'] as const) if (typeof p[key] === 'boolean') prefs[key] = p[key] as boolean
+  for (const key of ['fontCustom', 'autoFont', 'sidebar', 'agentsPanel', 'notify', 'sound'] as const) if (typeof p[key] === 'boolean') prefs[key] = p[key] as boolean
   if (isNum(p.fitCols)) prefs.fitCols = clamp(Math.round(p.fitCols), 40, 240)
   if (isNum(p.hungMinutes)) prefs.hungMinutes = clamp(Math.round(p.hungMinutes), 0, 240)
   if (p.termTheme === 'dark' || p.termTheme === 'light' || p.termTheme === 'auto') prefs.termTheme = p.termTheme

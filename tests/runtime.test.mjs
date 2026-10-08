@@ -46,6 +46,8 @@ async function until(check, what, timeout = 3000) {
 /** Resolves once xterm has parsed everything written so far. */
 const flush = (rt) => new Promise((resolve) => rt.term.write('', resolve))
 
+const sub = (id, status = 'running') => ({ id, agentType: 'Explore', label: id, description: '', status, model: 'claude-haiku-5-5', startTime: 1000, endedAt: null, tokenCount: 5, contextWindowSize: null })
+
 const signal = (state) => ({ provider: 'claude', state, detail: '' })
 const attached = (extra = {}) => ({ type: 'attached', created: false, replay: '', exited: false, exitCode: null, agent: null, ...extra })
 const typed = (sock, text) => sock.sent.some((f) => f.type === 'input' && f.data === text)
@@ -418,4 +420,22 @@ test('a key that looks like a report (Shift+F3 is CSI 1;2 R) is still mirrored',
   assert.deepEqual(inputs(a.sock), ['\x1b[1;2R'])
   assert.deepEqual(inputs(b.sock), ['\x1b[1;2R'])
   s.setBroadcast({ on: false, live: false })
+})
+
+test('subagents frames replace the list, the attached frame seeds it, a missing list means none', async () => {
+  const { rt, sock } = await start()
+  sock.push(attached({ subagents: [sub('a1')] }))
+  await until(() => rt.subagents.length === 1, 'the attached list')
+  const before = s.getVersion()
+  sock.push({ type: 'subagents', tasks: [sub('a1', 'completed'), sub('a2'), { nope: true }, 'junk'] })
+  await until(() => rt.subagents.length === 2, 'the frame list')
+  assert.deepEqual(rt.subagents.map((t) => [t.id, t.status]), [['a1', 'completed'], ['a2', 'running']])
+  assert.ok(s.getVersion() > before, 'a change emits')
+  sock.push({ type: 'subagents', tasks: 'bad' })
+  await until(() => rt.subagents.length === 0, 'an invalid list clears')
+  assert.equal(s.runningSubagents(), 0)
+  sock.push({ type: 'subagents', tasks: [sub('b1')] })
+  await until(() => s.runningSubagents() === 1, 'running count')
+  sock.push(attached())
+  await until(() => rt.subagents.length === 0, 'an attach from an old host without the field')
 })
