@@ -81,6 +81,34 @@ first; completed ones are dimmed and drop off about five minutes after they end.
 run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;
 an older host without them simply shows an empty panel.
 
+### Clickable file paths
+Hold **Ctrl** (**Cmd** on macOS) over a file path in the output: it is underlined, the pointer changes and a tooltip
+shows the resolved path. **Ctrl+click** opens it; plain clicks still select text and reach TUIs that read the mouse.
+Only paths that **exist** are linked (checked by the host, batched, cached per terminal for 10 s, misses included).
+
+- **Detected**: `C:\a\b.ts`, `C:/a/b.ts`, `\\server\share\f`, `/a/b.ts`, `~/a/b`, `src/a.ts`, `./a`, `../a`, and a bare
+  `file.ext` (extension required). Positions: `:12`, `:12:5`, `(12)`, `(12,5)`, `#L12`, `#L12-L20`, `line 12`
+  (`, line 12, column 5`). Quotes, brackets and trailing `. , ; :` are stripped; paths with spaces need quotes. URLs
+  (the web-links addon owns those), versions (`1.2.3`), times (`12:30`) and ratios are ignored. Wrapped lines are joined.
+- **Relative paths** resolve against the terminal's folder: on **Linux** the live cwd of the shell's newest
+  descendant (else the shell) from `/proc`, so a `cd` is followed. On **Windows and macOS** only the folder the
+  terminal was started in is known, so after a `cd` relative paths still resolve against the start folder (absolute
+  ones are unaffected). Git Bash `/c/Users/...` paths are mapped to `C:\Users\...` on Windows.
+- **Aa → Clickable file paths → Open with**: `VS Code` (default, `code -g file:line:col`), `Cursor`, `OS default app`
+  (Explorer / `xdg-open` / `open`; programs and scripts such as `.exe .bat .sh` are refused, since opening would run
+  them) or `Custom command`, a template like `myeditor {file}:{line}:{col}`. Placeholders `{file} {line} {col} {dir}`;
+  quotes group arguments; each argument is substituted separately (a path with spaces stays one argument). A missing
+  line/col written after a `:` is dropped together with the colon, anywhere else it becomes `1`. Folders always open in
+  the file manager. If the editor is missing, a message appears in the terminal (e.g. "VS Code not found on PATH").
+- **Routes** (behind the harness `/api` checks, POST JSON): `/api/dsh-web-terminal/paths`
+  `{terminalId, cwd?, candidates[≤50, ≤1024 chars]}` → `{ok, results:[{candidate, path|null, isDir}]}` (`stat` only,
+  file contents are never read; `cwd` is the fallback when the session is unknown), and `/api/dsh-web-terminal/open`
+  `{path, line?, col?, target:'vscode'|'cursor'|'default'|'custom', template?}` → `{ok}` or `{ok:false, error}`. The path
+  is re-checked to exist. Programs are started from an argv array, detached, without a shell; on Windows a `.cmd` shim
+  is replaced by the real `Code.exe`/`Cursor.exe` beside it, and only if there is none run through `cmd.exe` after
+  arguments with shell metacharacters are refused. The browser already has a full shell over `/terminal/ws`, so a
+  custom command adds no capability.
+
 ### Safety
 - Closing a terminal that is still **working or waiting** (single close, **Close all**, replacing a layout)
   asks first. Restarting a busy shell asks too.
@@ -127,6 +155,8 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
+| `lib/paths.js`, `lib/open.js` | Clickable paths: existence check with cwd rules; opening in an editor from an argv (no shell) |
+| `src/client/paths.ts`, `path-links.ts` | Path detection (pure) and the xterm link provider |
 | `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
 | `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
 | `lib/hook-post.js` | Command-hook forwarder Claude runs for `SessionStart` (HTTP hooks are ignored there) |
@@ -245,7 +275,7 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
   reachable wherever the harness web server is (loopback by default).
 - Up to 24 concurrent shells. A second connection to the same id (e.g. another browser tab) supersedes the first.
 - The page is registered under the `main` key and sidebar id `dsh-web-terminal`; the sidebar selects it by that id. On macOS the toolbar pads its top by the frame's `--dsh-frame-top-clearance`.
-- Not yet: clickable file paths, font zoom (Ctrl+wheel), per-terminal colour tags, quick-send snippets.
+- Not yet: font zoom (Ctrl+wheel), per-terminal colour tags, quick-send snippets.
 
 ## Roadmap (planned ideas, not built yet)
 
@@ -265,7 +295,6 @@ Ordered roughly by how much they help when running several agents. Recommended f
 - **Search all terminals** — one search box across every terminal's scrollback, jumping to the match.
 
 ### Files and input
-- ★ **Clickable file paths** — `Ctrl+click` on `src/foo.ts:42` opens it (URLs already work).
 - **Drag a file or folder onto a terminal** — pastes its quoted path.
 - **Quick-send snippets** — saved prompts sent to one terminal or to the broadcast group.
 
