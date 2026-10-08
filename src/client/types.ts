@@ -4,6 +4,7 @@ import type { Terminal } from '@xterm/xterm'
 import type { FitAddon } from '@xterm/addon-fit'
 import type { SearchAddon } from '@xterm/addon-search'
 import type { SubagentInfo } from './subagents.ts'
+import type { BlockModel } from './blocks.ts'
 
 /** Rectangle in canvas fractions (0..1). */
 export interface Rect {
@@ -124,6 +125,12 @@ export interface Runtime {
   /** Short badge text and the longer tooltip/notification text. */
   attentionLabel: string
   attentionReason: string
+  // ── command blocks (blocks.ts) ──
+  /** Command blocks cut by the shell integration; created with the runtime. */
+  blocks?: BlockModel
+  /** The shell's real current folder, once it reports one (OSC 633;P / OSC 7). */
+  cwd?: string
+  // ── end command blocks ──
 }
 
 /** Font preferences shared by every terminal. */
@@ -191,6 +198,8 @@ export interface Prefs {
   /** Editor for Ctrl+clicked file paths, and the command template when it is `custom`. */
   pathTarget: PathTarget
   pathTemplate: string
+  /** Inject shell integration (command blocks, real cwd) into newly started shells. */
+  shellIntegration: boolean
   /** Frame text sent to an agent terminal as a fenced code block. */
   sendCodeBlock: boolean
 }

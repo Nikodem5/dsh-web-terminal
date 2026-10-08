@@ -51,6 +51,7 @@ export const prefs: Prefs = {
   hungMinutes: 10,
   pathTarget: 'vscode',
   pathTemplate: '',
+  shellIntegration: true,
   sendCodeBlock: true,
 }
 
@@ -161,6 +162,7 @@ function applyPrefs(p: Record<string, unknown>): void {
   if (p.pathTarget === 'vscode' || p.pathTarget === 'cursor' || p.pathTarget === 'default' || p.pathTarget === 'custom') prefs.pathTarget = p.pathTarget
   if (typeof p.sendCodeBlock === 'boolean') prefs.sendCodeBlock = p.sendCodeBlock
   if (typeof p.pathTemplate === 'string') prefs.pathTemplate = p.pathTemplate.slice(0, 500)
+  if (typeof p.shellIntegration === 'boolean') prefs.shellIntegration = p.shellIntegration
   if (p.termTheme === 'dark' || p.termTheme === 'light' || p.termTheme === 'auto') prefs.termTheme = p.termTheme
   const font = isObj(p.font) ? p.font : {}
   // "Reset font" and any edit set fontCustom, so a stored font equal to the old default is also treated as unchosen.

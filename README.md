@@ -116,6 +116,39 @@ Only paths that **exist** are linked (checked by the host, batched, cached per t
   arguments with shell metacharacters are refused. The browser already has a full shell over `/terminal/ws`, so a
   custom command adds no capability.
 
+### Command blocks / shell integration
+
+A shell that cooperates tells the terminal where each prompt, command and output starts and how the command ended, so
+every command becomes a **block**. Phase 1 draws a thin bar in the left padding of the terminal: pulsing accent while
+the command runs, green when it succeeded, red when it failed (grey if the shell reported no exit code). The model
+(command, exit code, duration, folder, xterm markers for prompt / input / output / end; up to 500 per terminal) is
+kept for the next steps (hover actions, jumping between blocks, failed-command alerts). The shell also reports its
+**real current folder**, which Ctrl+click on a relative path now resolves against, even on Windows where a `cd` was
+invisible before. When it is active, the startup command is typed the moment the first prompt is ready instead of after
+a quiet period.
+
+- **How**: invisible OSC sequences, VS Code's convention: `133;A` prompt start, `133;B` prompt end, `133;C` output
+  start, `133;D;<exit>` finished, `633;E;<command>` the command line (`\`, `\x3b` for `;` and `\xNN` for control
+  characters), `633;P;Cwd=<folder>`. OSC 7 (`file://host/path`) is understood too. Nothing is printed.
+- **Injected at spawn, your files stay untouched.**
+  - PowerShell 5.1 / 7: `powershell.exe -NoLogo -NoExit -Command ". ([scriptblock]::Create([IO.File]::ReadAllText('<plugin>/lib/shell/integration.ps1')))"`.
+    Your profile loads first; the script then wraps whatever `prompt` exists (oh-my-posh, starship, your own): D with the
+    exit code, the folder and A before it, B after it. C and E come from wrapping `PSConsoleHostReadLine`, which PowerShell
+    calls once per accepted line whatever key accepted it. Without PSReadLine there is no such hook, so only prompts and
+    folder are reported (no blocks). The script is read as text, so a Restricted execution policy does not block it.
+  - bash (Linux): `bash --rcfile <plugin>/lib/shell/integration.bash -i`. The script first sources `~/.bashrc` (bash
+    itself reads `/etc/bash.bashrc` where the distro builds that in), then prepends to `PROMPT_COMMAND` (your `$?` is
+    preserved), appends B to `PS1` last (so prompt tools that rewrite `PS1` keep working), and prints C from `PS0`
+    (bash 4.4+) or a `DEBUG` trap on older versions. E is read from history after the command ended.
+  - Git Bash: the same with `DSH_WT_BASH_LOGIN=1` in the environment instead of `-l` (a login shell ignores
+    `--rcfile`): the script replays `/etc/profile` and the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`. The
+    shell is therefore not a "login shell" (`logout` does not work, use `exit`).
+  - cmd, WSL, sh, fish: no integration. **zsh: not yet** (needs a `ZDOTDIR` shim; started as before).
+- **Turn it off**: Aa menu, **Shell integration** (applies to terminals started after the change; the client adds
+  `integration=0` to the socket URL), or `DSH_WT_SHELL_INTEGRATION=0` in the harness environment for every shell.
+- **Limits**: a command that bash's history does not record (`HISTCONTROL=ignorespace`) has its text read from the
+  screen instead. A nested shell or `ssh` session does not report (its prompt is not wrapped). A prompt function that
+  returns nothing (so PowerShell would print its own `PS>`) gets B before that text.
 ### Send a selection to another terminal
 Select text (an error in a build terminal, say), **right-click** it and pick where it goes, or press **Ctrl+Shift+S**
 (arrows + Enter, Esc cancels). The menu offers **Copy**, every other connected terminal (agents first, with their
@@ -185,6 +218,8 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `lib/statusline.js` | Status-line wrapper Claude runs: posts usage / sub-agent tasks to the host, relays the user's own line |
 | `lib/subagents.js` | Pure per-terminal sub-agent store (status-line tasks + Start/Stop hooks, retention, cap) |
 | `lib/post.js` | Shared loopback POST and stdin helpers of the two scripts above |
+| `lib/shells.js`, `lib/shell/integration.ps1`, `integration.bash` | Shell table and the integration injected at spawn (command blocks, real cwd) |
+| `src/client/blocks.ts`, `blocks-settings.tsx`, `blocks.css.ts` | OSC 133/633 parsing, the block model, the gutter bars, the Aa switch |
 | `src/client/start.ts` | Plugin start: reconnects every saved terminal before the page is opened |
 | `src/client/index.ts` | Registers the sidebar entry (`sidebar.panellist`), the page (`main`) and the header stats bar; injects the session's folder into the bar |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
@@ -198,7 +233,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
 | `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, stuck detection |
 | `src/client/launch.ts` | Adds `--settings` to a `claude` startup command |
-| `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet) |
+| `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet; or the shell integration's prompt-ready signal) |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
 | `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs` | Tests |
