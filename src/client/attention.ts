@@ -228,12 +228,16 @@ export function restoreAgent(rt: Runtime, signal: AgentSignal | null | undefined
 }
 
 /**
- * The user typed into a terminal whose agent was waiting on them: assume they answered.
- * The next signal corrects this if they did not (Claude has no event for "prompt answered").
+ * The user typed into a terminal: a quiet flag (finished, bell, stuck) is acknowledged, and if the
+ * agent was waiting on them, assume they answered. The next signal corrects this if they did not
+ * (Claude has no event for "prompt answered"). An urgent flag on a state other than needs-you
+ * (failed, stopped, host restarted) stays until the user focuses the window.
  */
 export function noteUserInput(rt: Runtime): void {
-  if (rt.agent?.state !== 'needs-you') return
-  rt.agent = { ...rt.agent, state: 'working', since: Date.now() }
+  const answering = rt.agent?.state === 'needs-you'
+  const quiet = rt.attention && rt.attentionLevel === 'quiet'
+  if (!answering && !quiet) return
+  if (answering && rt.agent !== undefined) rt.agent = { ...rt.agent, state: 'working', since: Date.now() }
   clearAttention(rt)
   refreshActivity(rt)
   emit()

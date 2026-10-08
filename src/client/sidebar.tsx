@@ -2,7 +2,7 @@
 // name (double-click to rename), folder, attention badge, drag to reorder,
 // broadcast checkboxes, quick duplicate/close.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { requestClose } from './actions.ts'
 import {
@@ -38,6 +38,8 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
+  // Escape blurs the input to close it, and blur commits; this tells the blur handler to discard instead.
+  const cancelRename = useRef(false)
   const broadcast = getBroadcast()
 
   return (
@@ -111,10 +113,12 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
                     defaultValue={name}
                     onClick={(e) => e.stopPropagation()}
                     onBlur={(e) => {
-                      renameWin(win.id, e.target.value)
+                      if (!cancelRename.current) renameWin(win.id, e.target.value)
+                      cancelRename.current = false
                       setRenaming(null)
                     }}
                     onKeyDown={(e) => {
+                      if (e.key === 'Escape') cancelRename.current = true
                       if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur()
                     }}
                   />

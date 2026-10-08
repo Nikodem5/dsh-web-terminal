@@ -2,19 +2,25 @@
 
 import { emit, runtimes, store } from './state.ts'
 
+/** The user picked targets themselves (a checkbox, All or None); from then on an empty selection is deliberate. */
+let touched = false
+
 export function setBroadcast(patch: Partial<{ on: boolean; live: boolean }>): void {
   store.broadcast = { ...store.broadcast, ...patch, ids: store.broadcast.ids }
-  if (patch.on === true && store.broadcast.ids.size === 0) for (const w of store.wins) store.broadcast.ids.add(w.id)
+  // Only a selection nobody has chosen yet defaults to every window; "None" must survive turning broadcast off and on.
+  if (patch.on === true && !touched && store.broadcast.ids.size === 0) for (const w of store.wins) store.broadcast.ids.add(w.id)
   emit()
 }
 
 export function toggleBroadcastTarget(id: string): void {
+  touched = true
   if (store.broadcast.ids.has(id)) store.broadcast.ids.delete(id)
   else store.broadcast.ids.add(id)
   emit()
 }
 
 export function setBroadcastTargets(ids: string[]): void {
+  touched = true
   store.broadcast.ids = new Set(ids)
   emit()
 }

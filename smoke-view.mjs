@@ -58,6 +58,7 @@ window.HTMLCanvasElement.prototype.getContext = () => null
 // jsdom has no IE-era event API, which React probes when an input takes focus.
 window.Element.prototype.attachEvent = () => {}
 window.Element.prototype.detachEvent = () => {}
+window.Element.prototype.setPointerCapture = () => {}
 Object.defineProperty(window.Element.prototype, 'clientWidth', { get() { return 600 } })
 Object.defineProperty(window.Element.prototype, 'clientHeight', { get() { return 300 } })
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -122,6 +123,10 @@ check(q('.wt-dialog') !== null, 'New terminal dialog opens')
 check(q('.wt-dialog input').value === 'C:\\Users\\me' || q('.wt-dialog input').value.length > 0, 'dialog has a default folder')
 setValue(q('.wt-dialog input'), 'C:\\work\\repo')
 await sleep(40)
+// Enter on a button presses that button; it must not also open the terminal.
+byText('.wt-dialog button', 'Cancel').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+await sleep(20)
+check(q('.wt-dialog') !== null && qa('.wt-win').length === 0, 'Enter on the Cancel button does not open a terminal')
 click(byText('.wt-dialog button', 'claude --resume'))
 await sleep(40)
 click(byText('.wt-dialog button', 'Open'))
@@ -197,6 +202,26 @@ await sleep(30)
 sock.push({ type: 'data', data: '\x1b]0;\u2733 Something else\x07' })
 await sleep(120)
 check(q('.wt-li-name')?.textContent === 'Agent A', `manual rename wins over the auto name (got "${q('.wt-li-name')?.textContent}")`)
+
+// Escape cancels a rename instead of saving it (sidebar and window title)
+{
+  q('.wt-li-name').dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }))
+  await sleep(20)
+  const edit = q('.wt-li input.wt-name-input')
+  setValue(edit, 'Discarded')
+  edit.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  edit.dispatchEvent(new window.FocusEvent('blur', { bubbles: true }))
+  await sleep(30)
+  check(q('.wt-li input.wt-name-input') === null && q('.wt-li-name')?.textContent === 'Agent A', `Escape cancels a sidebar rename (got "${q('.wt-li-name')?.textContent}")`)
+  click(q('.wt-win .wt-name'))
+  await sleep(20)
+  const head = q('.wt-win input.wt-name-input')
+  setValue(head, 'Discarded')
+  head.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  head.dispatchEvent(new window.FocusEvent('blur', { bubbles: true }))
+  await sleep(30)
+  check(q('.wt-win input.wt-name-input') === null && q('.wt-win .wt-name')?.textContent === 'Agent A', `Escape cancels a title-bar rename (got "${q('.wt-win .wt-name')?.textContent}")`)
+}
 
 // second terminal + Ctrl+Alt+Right switching
 click(byText('.wt-bar button', 'New terminal'))
@@ -291,6 +316,27 @@ check(focusedBefore !== focusedAfter, `Ctrl+Alt+Right moves focus (${focusedBefo
   await sleep(80)
   const zs = qa('.wt-win').map((w) => Number(w.style.zIndex))
   check(Math.max(...zs) < 4100, `z-order stays bounded after thousands of focus changes (max ${Math.max(...zs)})`)
+}
+
+// dragging a maximized window into the full-screen zone keeps the pre-maximize size as its restore size
+{
+  const win = qa('.wt-win')[0]
+  const head = win.querySelector('.wt-head')
+  const before = win.style.width
+  head.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }))
+  await sleep(30)
+  const full = win.style.width
+  check(full !== before, `double-click maximizes (${before} -> ${full})`)
+  const pointer = (type, x, y) => head.dispatchEvent(new window.MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 }))
+  pointer('pointerdown', 300, 10)
+  pointer('pointermove', 320, 60)
+  pointer('pointermove', 400, 0)
+  pointer('pointerup', 400, 0)
+  await sleep(30)
+  check(win.style.width === full, 'dropping on the top edge maximizes again')
+  click(win.querySelector('.wt-hbtn[title="Restore"]'))
+  await sleep(30)
+  check(win.style.width === before, `restore returns to the old size, not full screen (${win.style.width} vs ${before})`)
 }
 
 // broadcast
