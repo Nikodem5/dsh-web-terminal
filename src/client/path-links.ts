@@ -185,7 +185,8 @@ export function registerPathLinks(rt: Runtime): void {
   const term = rt.term
   const check = createChecker(() => {
     const win = store.wins.find((w) => w.id === rt.id)
-    return { terminalId: `${rt.id}-${win?.gen ?? 0}`, cwd: win?.cwd ?? '' }
+    // The folder the shell reported (shell integration) beats the one it started in.
+    return { terminalId: `${rt.id}-${win?.gen ?? 0}`, cwd: rt.cwd ?? win?.cwd ?? '' }
   })
   const hint = isMac() ? 'Cmd+click to open' : 'Ctrl+click to open'
 

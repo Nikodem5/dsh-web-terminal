@@ -10,10 +10,11 @@ import { cleanTitle, displayName } from './names.ts'
 import { noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
 import { applySubagents } from './subagent-state.ts'
-import { startupWait } from './prompt-ready.ts'
+import { startupTiming, startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import { registerPathLinks } from './path-links.ts'
+import { createBlocks } from './blocks.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
 /** Grid for a terminal that was never fitted (the host's own default, so a fresh PTY matches). */
@@ -152,6 +153,7 @@ export function ensureRuntime(win: WinState): Runtime {
     attentionReason: '',
   }
   runtimes.set(win.id, rt)
+  rt.blocks = createBlocks(rt) // command blocks: OSC 133/633 handlers work before the terminal is opened
   ticker ??= setInterval(tick, 1000)
 
   // Bytes of the key press xterm is about to report through onData (onKey fires first, synchronously).
@@ -227,6 +229,7 @@ export function ensureRuntime(win: WinState): Runtime {
     const dims = rt.fit.proposeDimensions()
     const params = new URLSearchParams({ id: `${rt.id}-${current.gen ?? 0}`, shell: current.shell })
     if (current.cwd.length > 0) params.set('cwd', current.cwd)
+    if (!prefs.shellIntegration) params.set('integration', '0')
     // Always explicit: before the page opens there is no fit, and the xterm grid is what the host must match.
     const fitted = rt.opened && dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)
     params.set('cols', String(fitted ? dims.cols : term.cols))
@@ -239,6 +242,9 @@ export function ensureRuntime(win: WinState): Runtime {
     let lastOutputAt: number | undefined
     let startupTimer: ReturnType<typeof setTimeout> | undefined
     let wakeStartup: (() => void) | undefined
+    // Prompts seen before this attach do not count: shell integration reports the one that is ready now.
+    let promptBase = 0
+    if (rt.blocks !== undefined) rt.blocks.onPromptReady = () => wakeStartup?.()
     const stopStartup = () => {
       clearTimeout(startupTimer)
       wakeStartup = undefined
@@ -276,6 +282,8 @@ export function ensureRuntime(win: WinState): Runtime {
         restoreAgent(rt, frame.agent)
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         term.reset()
+        rt.blocks?.reset()
+        promptBase = rt.blocks?.promptsReady ?? 0
         if ((frame.replay ?? '').length > 0) term.write(frame.replay as string)
         if (frame.exited === true) {
           setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
@@ -293,7 +301,7 @@ export function ensureRuntime(win: WinState): Runtime {
               const check = () => {
                 clearTimeout(startupTimer)
                 if (rt.killed || rt.socket !== socket || socket.readyState !== WebSocket.OPEN) return stopStartup()
-                const wait = startupWait(Date.now(), attachedAt, lastOutputAt)
+                const wait = startupWait(Date.now(), attachedAt, lastOutputAt, startupTiming, (rt.blocks?.promptsReady ?? 0) > promptBase)
                 if (wait > 0) {
                   startupTimer = setTimeout(check, wait)
                   return
@@ -314,6 +322,7 @@ export function ensureRuntime(win: WinState): Runtime {
         // The host dropped output on a congested socket; its replay is the screen as it really is.
         if (typeof frame.replay !== 'string') return
         term.reset()
+        rt.blocks?.reset()
         if (frame.replay.length > 0) term.write(frame.replay)
       } else if (frame.type === 'data') {
         if (rt.hostLost || typeof frame.data !== 'string') return
@@ -387,6 +396,7 @@ export function openRuntime(rt: Runtime): void {
     }),
   )
   registerPathLinks(rt)
+  rt.blocks?.opened() // gutters need the renderer
   // The grid was never sent to the host (or only xterm's default); report the real one.
   rt.lastCols = 0
 }
