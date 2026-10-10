@@ -3,11 +3,12 @@
 //
 // A real cordis ctx THROWS on any property that is not in `inject`, so this file touches ctx.webServer and
 // ctx.effect only.
-import { join } from 'node:path'
+import { promises as fsp } from 'node:fs'
+import { dirname, isAbsolute, join, resolve as resolvePath } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { EditorError, fromFsError } from './errors.js'
 import { splitRelative } from './confine.js'
-import { createRoots, dataDir } from './roots.js'
+import { createRoots, dataDir, validateRoot } from './roots.js'
 import { MAX_LIST_FILES, MAX_WRITE_BYTES, listTree, readFile, walkFiles, writeFile } from './files.js'
 import * as gitOps from './git.js'
 import { createWatchers } from './watcher.js'
@@ -160,6 +161,33 @@ function apply(ctx, options) {
           }),
         )
         return { roots: list, rejected }
+      },
+    }),
+    // The root a path outside every registered root should get: git top-level, else the folder. Registers nothing.
+    route('/resolve', {
+      GET: async ({ url }) => {
+        const raw = param(url, 'path')
+        if (raw === '' || raw.length > 1024 || /[\u0000-\u001f]/.test(raw) || !isAbsolute(raw)) throw new EditorError(400, 'bad-request', 'path must be an absolute path')
+        let stat
+        try {
+          stat = await fsp.stat(raw)
+        } catch (error) {
+          throw fromFsError(error)
+        }
+        const dir = stat.isDirectory() ? resolvePath(raw) : dirname(resolvePath(raw))
+        let top = null
+        try {
+          top = await gitOps.topLevel(dir)
+        } catch (error) {
+          if (!(error instanceof EditorError) || !['no-git', 'timeout'].includes(error.code)) throw error
+        }
+        if (top !== null) {
+          const checked = await validateRoot(resolvePath(top))
+          if (checked.error === undefined) return { root: checked.path, isGit: true }
+        }
+        const checked = await validateRoot(dir)
+        if (checked.error !== undefined) throw new EditorError(403, 'root', `Cannot use this folder as a root: ${checked.error}`)
+        return { root: checked.path, isGit: top !== null }
       },
     }),
     route('/tree', {

@@ -73,6 +73,14 @@ export async function repoInfo(root) {
   return { inside: inside.trim() === 'true', prefix: prefix.trim() }
 }
 
+/** The work tree top-level of a folder (`git rev-parse --show-toplevel`, short timeout), or null outside a work tree. */
+export async function topLevel(dir) {
+  const result = await git(['rev-parse', '--show-toplevel'], { cwd: dir, timeout: 5000 })
+  if (result.code !== 0) return null
+  const line = result.stdout.split(/\r?\n/)[0].trim()
+  return line === '' ? null : line
+}
+
 /** Throws 409 not-git unless the root is in a work tree. */
 export async function requireRepo(root) {
   const info = await repoInfo(root)
