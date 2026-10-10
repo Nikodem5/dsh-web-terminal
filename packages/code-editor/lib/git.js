@@ -13,7 +13,7 @@ const MAX_CONCURRENT = 6
 
 // Safety flags: no optional index writes (a status must not touch .git/index, or the watcher would loop), literal
 // pathspecs (no globs from user paths), and no repo-configured fsmonitor command (an untrusted repo could run code).
-const BASE_ARGS = ['--no-optional-locks', '--literal-pathspecs', '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=off']
+const BASE_ARGS = ['--no-optional-locks', '--literal-pathspecs', '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'core.quotepath=off']
 
 let running = 0
 const waiting = []
@@ -30,11 +30,11 @@ function release() {
  * Run git. Resolves `{ code, stdout, stderr }` for any exit status; throws EditorError for a missing git, a timeout
  * or oversized output.
  */
-export async function git(args, { cwd, buffer = false, timeout = GIT_TIMEOUT_MS, maxBuffer = MAX_OUTPUT } = {}) {
+export async function git(args, { cwd, buffer = false, timeout = GIT_TIMEOUT_MS, maxBuffer = MAX_OUTPUT, env: extraEnv } = {}) {
   await slot()
   try {
     return await new Promise((resolve, reject) => {
-      execFile(
+      const child = execFile(
         'git',
         [...BASE_ARGS, ...args],
         {
@@ -43,7 +43,7 @@ export async function git(args, { cwd, buffer = false, timeout = GIT_TIMEOUT_MS,
           maxBuffer,
           windowsHide: true,
           encoding: buffer ? 'buffer' : 'utf8',
-          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', GIT_PAGER: 'cat' },
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', GIT_PAGER: 'cat', ...extraEnv },
         },
         (error, stdout, stderr) => {
           if (error === null) return resolve({ code: 0, stdout, stderr: String(stderr) })
@@ -54,6 +54,8 @@ export async function git(args, { cwd, buffer = false, timeout = GIT_TIMEOUT_MS,
           reject(new EditorError(500, 'git', 'git failed'))
         },
       )
+      child.stdin?.on('error', () => {}) // git never reads a prompt from us: close stdin so hooks cannot wait on it
+      child.stdin?.end()
     })
   } finally {
     release()
@@ -277,7 +279,7 @@ export async function discard(root, rootReal, paths, untracked) {
 }
 
 /** Read a blob by id into the diff shape: `{ content|null, binary, tooLarge }`. */
-async function blob(root, oid) {
+export async function blob(root, oid) {
   const size = await git(['cat-file', '-s', oid], { cwd: root, timeout: 5000 })
   if (size.code !== 0) return { content: null, binary: false, tooLarge: false }
   if (Number(size.stdout.trim()) > MAX_FILE_BYTES) return { content: null, binary: false, tooLarge: true }
