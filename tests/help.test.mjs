@@ -100,3 +100,14 @@ test('the badge and gutter legends match the stylesheets', () => {
   assert.deepEqual([...swatch].sort(), [...gutter].sort(), 'the legend swatch is drawn by the same rules')
   assert.deepEqual(h.ATTENTION_LEGEND.map((a) => a.level).sort(), ['quiet', 'urgent'])
 })
+
+test('the command-header and alert legends describe what the code has', () => {
+  const bar = css('block-bar.ts')
+  const glyphs = [...bar.matchAll(/glyph: '([^']+)'/g)].map((m) => m[1])
+  assert.equal(glyphs.length, 5)
+  const described = h.BLOCK_ACTIONS.map((a) => a.how).join('\n')
+  for (const g of glyphs) assert.ok(described.includes(g), `the help describes the ${g} button`)
+  const notify = css('block-notify.ts')
+  for (const a of h.COMMAND_ALERT_LEGEND) assert.ok(notify.includes(`label: '${a.badge}'`), `${a.badge} is a label block-notify.ts raises`)
+  assert.equal(h.COMMAND_ALERT_LEGEND.length, 2)
+})

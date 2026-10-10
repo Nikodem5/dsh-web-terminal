@@ -9,6 +9,8 @@ import {
   ACTIVITY_ORDER,
   ACTIVITY_TITLE,
   ATTENTION_LEGEND,
+  BLOCK_ACTIONS,
+  COMMAND_ALERT_LEGEND,
   GUTTER_LEGEND,
   MOUSE_ACTIONS,
   STATS_LEGEND,
@@ -142,6 +144,13 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
               <span>{m.what}</span>
             </div>
           ))}
+          <div className="wt-pop-title">Command header</div>
+          {BLOCK_ACTIONS.map((m) => (
+            <div key={m.how} className="wt-help-row" data-block-action>
+              <span className="wt-help-how">{m.how}</span>
+              <span>{m.what}</span>
+            </div>
+          ))}
         </Section>
 
         <Section title="Status colours">
@@ -155,6 +164,12 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
           {ATTENTION_LEGEND.map((a) => (
             <div key={a.level} className="wt-help-row wt-help-icon">
               <span className="wt-badge" data-level={a.level}>{a.badge}</span>
+              <span>{a.what}</span>
+            </div>
+          ))}
+          {COMMAND_ALERT_LEGEND.map((a) => (
+            <div key={a.badge} className="wt-help-row wt-help-icon">
+              <span className="wt-badge" data-level="quiet">{a.badge}</span>
               <span>{a.what}</span>
             </div>
           ))}

@@ -126,10 +126,43 @@ A shell that cooperates tells the terminal where each prompt, command and output
 every command becomes a **block**. Phase 1 draws a thin bar in the left padding of the terminal: pulsing accent while
 the command runs, green when it succeeded, red when it failed (grey if the shell reported no exit code). The model
 (command, exit code, duration, folder, xterm markers for prompt / input / output / end; up to 500 per terminal) is
-kept for the next steps (hover actions, jumping between blocks, failed-command alerts). The shell also reports its
+used by the phase 2 features below. The shell also reports its
 **real current folder**, which Ctrl+click on a relative path now resolves against, even on Windows where a `cd` was
 invisible before. When it is active, the startup command is typed the moment the first prompt is ready instead of after
 a quiet period.
+
+**Phase 2 builds on that model** (all of it needs the integration to be active; a shell without it has no blocks and no
+header):
+
+- **Hover header.** Pointing at a command's lines or at its bar shows a compact header at the right edge, on the block's
+  first row (a block that starts above the window keeps it at the top edge; if the prompt text is long enough to reach it,
+  it drops one row): the command, `✓` / `✗ <code>` / `running`, duration and start time, and five buttons.
+  - `⧉` **Copy output**: the rows between the output start and end markers, wrapped lines joined back, line ends and
+    trailing blank lines trimmed. Off when the first output row has already left the scrollback (it would copy only part).
+    On a running command it copies what is there now.
+  - `⌘` **Copy command**. `▭` **Select output** selects those rows, so Ctrl+C and Ctrl+Shift+S work on them.
+  - `↻` **Rerun** types the command and Enter, but only while the shell sits at a prompt (the newest block is not
+    running, no program under the shell, not on the alternate screen) and only for a one-line command; otherwise it is
+    disabled and the tooltip says why. It does not look at what is already typed at the prompt.
+  - `➤` **Send to…** opens the Send menu with the output.
+- **Navigation.** **Ctrl+Shift+Up / Down** scroll to the previous / next command's prompt (the row flashes);
+  past the last command Down goes to the bottom. **Ctrl+Shift+E** jumps to the newest failed command, again to the one
+  before it, then wraps. They only act on the normal screen of a terminal that has finished or running blocks; in a
+  full-screen program, with no blocks (or no failed one, for E) the key goes to the program as before. Neither combination
+  is bound by PSReadLine (checked in 2.0 with `Get-PSReadLineKeyHandler -Bound`), bash/readline or the other shortcuts here.
+  Ctrl+Shift+E is sent to programs as the same byte as Ctrl+E (xterm ignores Shift on letters), so it shadows
+  readline's end-of-line only while a failed command exists to jump to.
+- **Sticky bar.** While the top row of the window is inside a command's output (its prompt scrolled above), a slim bar
+  `▸ <command>  ✓ 1.2s` is pinned there; click it to jump to the prompt. Hidden when the prompt is visible and on the
+  alternate screen. A running command ticks.
+- **Long-command flags.** When a command ends after at least N seconds (Aa menu: **Flag commands longer than** Off / 5 / 10 /
+  30 / 60 s, default 10) and the terminal is not the one in front of you: success gives a quiet `done` badge (a desktop
+  notification only while the whole app is in the background, like `finished`); a non-zero exit gives a `failed` badge and a
+  desktop notification unless the Terminals tab is showing, no chime (`npm test failed (exit 1) after 2m 03s`). Nothing for
+  `claude`, for a terminal that has an agent state, for a command that used the alternate screen (editors, pagers, TUIs),
+  or when the shell reported no exit code. Typing in the terminal clears the badge like any quiet flag.
+- **No folding.** xterm cannot hide buffer rows, and a fake (an overlay hiding the text) would break selection, search
+  and copy, so collapsing a command's output is deliberately not offered.
 
 - **How**: invisible OSC sequences, VS Code's convention: `133;A` prompt start, `133;B` prompt end, `133;C` output
   start, `133;D;<exit>` finished, `633;E;<command>` the command line (`\`, `\x3b` for `;` and `\xNN` for control

@@ -53,6 +53,23 @@ export const ATTENTION_LEGEND: readonly AttentionLegend[] = [
   { level: 'quiet', badge: 'finished', what: 'Quiet: a turn ended, the bell rang, or a shell exited cleanly. Yellow badge; a notification only when the app is in the background.' },
 ]
 
+/** The hover header of a command (block-bar.ts); the order is the order of its buttons. */
+export const BLOCK_ACTIONS: readonly MouseAction[] = [
+  { how: 'Hover a command or its bar', what: 'Show its header: command, exit (✓ / ✗ code), duration and start time' },
+  { how: '⧉ in the header', what: 'Copy the output (wrapped lines joined, trailing blank lines dropped); off when part of it has scrolled out' },
+  { how: '⌘ in the header', what: 'Copy the command text' },
+  { how: '↻ in the header', what: 'Type the command again and press Enter, only when the shell is at a prompt (off while a program runs)' },
+  { how: '➤ in the header', what: 'Send the output to another terminal (the Send menu)' },
+  { how: '▭ in the header', what: 'Select the output, so Ctrl+C / Ctrl+Shift+S work on it' },
+  { how: 'Click the bar at the top (▸ command)', what: 'Jump to the prompt of that command; the bar shows while you read the middle of a long output' },
+]
+
+/** Badges a long command can raise (block-notify.ts); the Aa menu sets how long "long" is. */
+export const COMMAND_ALERT_LEGEND: readonly { badge: string; what: string }[] = [
+  { badge: 'done', what: 'A command that ran past the Aa threshold succeeded while you were elsewhere. A notification only when the app is in the background.' },
+  { badge: 'failed', what: 'The same, but it exited non-zero: also a desktop notification (no chime). Not for claude, agents or full-screen programs.' },
+]
+
 export interface GutterLegend {
   state: 'ok' | 'fail' | 'run' | 'unk'
   what: string
