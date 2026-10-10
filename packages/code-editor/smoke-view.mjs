@@ -189,6 +189,29 @@ check(qa('.ce-qo-item').length === 2, 'Ctrl+P opens quick open listing files')
 key(q('[data-ce-quick] input'), { key: 'Escape' })
 check(await until(() => !q('[data-ce-quick]'), 'quick open closed'), 'Escape closes quick open')
 
+// "changed by agent" marks from a fake Terminals plugin (window.__dshTerminals)
+{
+  const subs = new Set()
+  let terminals = [{ terminalId: 't1', name: 'api', files: [{ path: '/w/proj/a.txt', at: Date.now(), tool: 'Edit' }, { path: '/w/proj/src/deep/x.ts', at: Date.now(), tool: 'Write' }, { path: '/elsewhere/z.ts', at: 1, tool: 'Edit' }] }]
+  window.__dshTerminals = { version: 1, listEdits: () => terminals, subscribe: (f) => { subs.add(f); return () => subs.delete(f) } }
+  window.dispatchEvent(new window.Event('dsh-terminals:edits'))
+  const rowMark = (p) => q(`[role=treeitem][data-path="${p}"] [data-agent-mark]`)
+  check(await until(() => rowMark('a.txt'), 'explorer mark'), 'an explorer row of a file an agent changed gets a mark')
+  check(/Changed by Claude · api · .*(Edit)/.test(rowMark('a.txt').title), 'the mark names the terminal, time and tool')
+  check(rowMark('src')?.dataset.agentMark === 'dir', 'a collapsed folder above a changed file gets a faint dot')
+  check(!!q('.ce-tab [data-agent-mark=file]'), 'the tab of a changed file is marked')
+  check(qa('.ce-row[data-group] [data-agent-mark=file]').length >= 1, 'the CHANGES entry of a changed file is marked')
+  key(q('.ce-sec-h'), { key: 'p', ctrlKey: true })
+  await until(() => qa('.ce-qo-item').length === 2, 'quick open items (marks)')
+  check(!!q('.ce-qo-item[data-path="a.txt"] [data-agent-mark=file]') && !q('.ce-qo-item[data-path="src/b.ts"] [data-agent-mark=file]'), 'quick open marks only the changed file')
+  key(q('[data-ce-quick] input'), { key: 'Escape' })
+  await until(() => !q('[data-ce-quick]'), 'quick open closed (marks)')
+  terminals = []
+  for (const f of subs) f()
+  check(await until(() => !q('[data-agent-mark]'), 'marks removed'), 'the marks disappear when the terminal no longer reports the files (closed)')
+  delete window.__dshTerminals
+}
+
 // Ctrl+E / Ctrl+P from INSIDE the editor element and from the page body (focus outside the Code view)
 const editorEl = host.element
 check(editorEl.isConnected, 'the fake editor element is mounted in the page')

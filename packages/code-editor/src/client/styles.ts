@@ -85,6 +85,8 @@ export const VIEW_CSS = `
 .ce-tab[data-kind="diff"] .ce-ttl, .ce-tab[data-kind="compare"] .ce-ttl { font-style: italic; }
 .ce-tab .ce-x { width: 18px; height: 18px; flex: none; border: none; background: transparent; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: inherit; padding: 0; }
 .ce-tab .ce-x:hover { background: var(--ce-hover); }
+.ce-agent { flex: none; font-size: 10.5px; line-height: 1; color: var(--ce-warn); cursor: default; }
+.ce-agent-dir { flex: none; width: 5px; height: 5px; margin-left: 2px; border-radius: 50%; background: var(--ce-warn); opacity: 0.45; }
 .ce-tab .ce-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ce-text); opacity: 0.8; }
 .ce-tab[data-conflict="true"] .ce-dot { background: var(--ce-warn); }
 .ce-crumb { flex: none; display: flex; align-items: center; gap: 6px; min-height: 26px; padding: 2px 10px; color: var(--ce-dim); border-bottom: 0.5px solid var(--ce-line); overflow: hidden; }

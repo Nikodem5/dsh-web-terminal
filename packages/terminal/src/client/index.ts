@@ -10,6 +10,7 @@
 // part tolerates any load order.
 
 import type { Context } from '@deepseek-ai/cordis'
+import { installTerminalsApi } from './edits-api.ts'
 import { startTerminals } from './start.ts'
 import { StatsBar } from './stats-bar.tsx'
 import { TerminalsIcon } from './panel-icon.tsx'
@@ -31,6 +32,7 @@ const PANEL_ID = 'dsh-web-terminal'
 export function apply(ctx: Context): void {
   // Saved terminals reconnect now, not when the page is first opened (alerts and agent counts need the sockets).
   startTerminals()
+  installTerminalsApi() // read-only window.__dshTerminals for other plugins (the editor marks files an agent changed)
   const slots = ctx.slots as {
     inject(key: string, callback: () => () => void): () => void
     register(options: Record<string, unknown>, component: unknown): () => void

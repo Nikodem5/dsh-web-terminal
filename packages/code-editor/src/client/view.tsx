@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react'
+import { AgentBadge, AgentFolderDot, useAgentMarkRoot } from './agent-marks.tsx'
 import { groupChanges, statusLetter, type GroupName } from './changes.ts'
 import { flattenTree, workspaceChoices } from './explorer.ts'
 import { FileIcon, FolderIcon } from './file-icon.tsx'
@@ -152,13 +153,13 @@ function Explorer({ store, s }: { store: EditorStore; s: State }): ReactElement 
         if (r.kind === 'dir') {
           return (
             <div key={r.path} className="ce-row" style={pad} role="treeitem" aria-expanded={r.expanded} data-path={r.path} onClick={() => void store.toggleDir(r.path)}>
-              <Chevron open={r.expanded} /><FolderIcon open={r.expanded} /><span className="ce-name">{r.name}</span>
+              <Chevron open={r.expanded} /><FolderIcon open={r.expanded} /><span className="ce-name">{r.name}</span>{r.expanded ? null : <AgentFolderDot path={r.path} />}
             </div>
           )
         }
         return (
           <div key={r.path} className="ce-row" style={{ ...pad, paddingLeft: pad.paddingLeft + 14 }} role="treeitem" data-path={r.path} data-active={activePath === r.path} onClick={() => void store.openFile(r.path)}>
-            <FileIcon name={r.name} /><span className="ce-name">{r.name}</span>
+            <FileIcon name={r.name} /><span className="ce-name">{r.name}</span><AgentBadge path={r.path} />
           </div>
         )
       })}
@@ -183,6 +184,7 @@ function ChangeRow({ store, f, group, repo }: { store: EditorStore; f: GitFile; 
     <div className="ce-row" data-path={f.path} data-group={group} data-active={store.getState().active === id} onClick={open} title={f.origPath ? `${f.origPath} -> ${f.path}` : f.path}>
       <FileIcon name={f.path} />
       <span className="ce-name">{baseName(f.path)}</span>
+      <AgentBadge path={full} />
       {dir ? <span className="ce-dim">{dir}</span> : null}
       <span className="ce-acts">
         {group !== 'staged' ? <button className="ce-ibtn" data-act="discard" data-danger="true" title={group === 'untracked' ? 'Delete file' : 'Discard changes'} onClick={stop(() => void store.discard([f], repo))}>&#x21B6;</button> : null}
@@ -309,6 +311,7 @@ function TabBar({ store, s }: { store: EditorStore; s: State }): ReactElement {
         >
           <FileIcon name={t.path} />
           <span className="ce-ttl">{t.title}</span>
+          {t.kind === 'compare' ? null : <AgentBadge path={t.path} />}
           {t.dirty ? <span className="ce-dot" title="Unsaved changes" /> : null}
           <button className="ce-x" aria-label={`Close ${t.title}`} onClick={(e) => { e.stopPropagation(); store.closeTab(t.id) }}>
             <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2L8 8M8 2L2 8" /></svg>
@@ -440,6 +443,7 @@ function QuickOpen({ store, s }: { store: EditorStore; s: State }): ReactElement
               <div key={r.path} className="ce-qo-item" role="option" aria-selected={i === sel} data-sel={i === sel} data-path={r.path} onMouseEnter={() => setSel(i)} onClick={() => choose(r.path)}>
                 <FileIcon name={r.path} />
                 <span>{part(slash, r.path.length)}</span>
+                <AgentBadge path={r.path} />
                 <span className="ce-dim">{slash > 0 ? part(0, slash - 1) : null}</span>
               </div>
             )
@@ -488,6 +492,7 @@ export function CodeEditorPage({ store, useWorkspaces }: PageProps): ReactElemen
   const [scheme, setScheme] = useState<'dark' | 'light'>('dark')
 
   useEffect(() => { injectStyles() }, [])
+  useAgentMarkRoot(s.root)
   useEffect(() => { void store.setWorkspaces(choices.map((c) => c.path)) }, [key, store]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void store.ensureHost() }, [store])
 

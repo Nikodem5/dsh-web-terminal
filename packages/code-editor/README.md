@@ -64,6 +64,7 @@ Source in `src/client/`, built by `node build.mjs` into one classic script (`lib
 - Tabs with a dirty dot, middle-click close and a confirmation for unsaved tabs. Files open in Monaco; change entries open in the diff editor (staged or unstaged, side by side or inline).
 - Saving sends `expectedMtime`. A 409 (or an on-disk change under unsaved edits) shows "File changed on disk" with Reload / Overwrite / Compare (disk vs mine diff, then keep mine or take disk).
 - A clean open tab reloads silently on disk changes (cursor and scroll kept). Status bar: branch, ahead/behind, live state, root, line:col, EOL, language.
+- **Changed by agent**: a small lightning mark (hover: `Changed by Claude · <terminal> · 14:32 (Edit)`) on files that a Claude session in a currently open Dsh Web Terminal edited (Edit / Write / MultiEdit / NotebookEdit, reported by Claude hooks). It shows on explorer rows (collapsed folders above get a faint dot), tabs, quick-open results and CHANGES entries, only for files inside the open root, and is temporary: it disappears when that terminal is closed. It needs the terminal plugin (`window.__dshTerminals`, contract in `packages/terminal/README.md`); without it nothing is shown. Source: `src/client/agent-marks.ts` (pure mapping and live source) and `agent-marks.tsx` (badges). Path matching is case-insensitive and slash-agnostic for Windows roots.
 - Per-root UI state (open tabs, active tab, expanded folders, diff layout) is kept in `localStorage`.
 
 ### Shortcuts
@@ -94,4 +95,4 @@ On load the editor sets `window.__dshCodeEditor = { version: 1 }` so other plugi
 
 ### Client tests
 
-`tests/client-*.test.mjs` (api wrapper, fuzzy ranking, changes grouping, discard plan, explorer rows, shortcuts, persistence, live socket, store state machine) and `smoke-view.mjs` (renders the page in jsdom with a mocked fetch and a fake editor host).
+`tests/agent-marks.test.mjs` (marker mapping, parent folders, removal on terminal close), `tests/client-*.test.mjs` (api wrapper, fuzzy ranking, changes grouping, discard plan, explorer rows, shortcuts, persistence, live socket, store state machine) and `smoke-view.mjs` (renders the page in jsdom with a mocked fetch and a fake editor host).

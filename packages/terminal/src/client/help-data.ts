@@ -114,6 +114,18 @@ export const STATS_LEGEND: readonly StatsLegendItem[] = [
   { term: '● 2 working', what: 'Terminals by agent status (working, needs you, finished).' },
 ]
 
+export interface AgentMarkHelp {
+  how: string
+  what: string
+}
+
+/** Mirrors the code editor's agent markers (packages/code-editor/src/client/agent-marks.ts). */
+export const AGENT_MARK_HELP: readonly AgentMarkHelp[] = [
+  { how: '⚡ in the code editor', what: 'A file a Claude session in one of your open terminals changed (Edit, Write, MultiEdit, NotebookEdit). It shows in the explorer (folders above it get a faint dot), tabs, quick open and the CHANGES list; hover for the terminal, the time and the tool.' },
+  { how: 'Temporary', what: 'The mark lasts while that terminal is open. Closing the terminal, or restarting its shell, removes it.' },
+  { how: 'Needs Claude hooks', what: 'Only Claude started through this plugin reports edits; shell commands and other editors are not marked.' },
+]
+
 // ── diagnostics ──
 
 export interface ConnCounts {
