@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import { Pop } from './popover.tsx'
 import { getStats, subscribeStats } from './stats.ts'
 import {
   ACTIVITY_ORDER,
@@ -114,7 +115,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
   }
 
   return (
-    <div className="wt-pop wt-help" data-right="true" role="dialog" aria-label="Help" onPointerDown={(e) => e.stopPropagation()}>
+    <Pop className="wt-help" data-right="true" role="dialog" aria-label="Help" onPointerDown={(e) => e.stopPropagation()}>
       <div className="wt-help-head">
         <input ref={inputRef} className="wt-input wt-grow" value={query} placeholder="Filter shortcuts…" aria-label="Filter shortcuts" onChange={(e) => setQuery(e.target.value)} />
         <button type="button" className="wt-hbtn" title="Close (Esc)" onClick={onClose}>✕</button>
@@ -215,6 +216,6 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
           </div>
         </Section>
       </div>
-    </div>
+    </Pop>
   )
 }
