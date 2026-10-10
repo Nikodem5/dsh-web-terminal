@@ -5,6 +5,7 @@ import type { FitAddon } from '@xterm/addon-fit'
 import type { SearchAddon } from '@xterm/addon-search'
 import type { SubagentInfo } from './subagents.ts'
 import type { BlockModel } from './blocks.ts'
+import type { EditInfo } from './edits-api.ts'
 
 /** Rectangle in canvas fractions (0..1). */
 export interface Rect {
@@ -137,6 +138,8 @@ export interface Runtime {
   agent: AgentInfo | undefined
   /** Claude sub-agents the host reports for this terminal (running, plus recently completed). */
   subagents: SubagentInfo[]
+  /** Files this terminal's agent changed (the host's `edits` list). */
+  edits: EditInfo[]
   /** The "may be stuck" alert already fired for the current working spell. */
   hungRaised: boolean
   /** Needs the user's eyes: an agent is blocked, failed or finished, or the shell exited, while unattended. */

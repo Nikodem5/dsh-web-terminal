@@ -124,3 +124,10 @@ test('the command-header and alert legends describe what the code has', () => {
   for (const a of h.COMMAND_ALERT_LEGEND) assert.ok(notify.includes(`label: '${a.badge}'`), `${a.badge} is a label block-notify.ts raises`)
   assert.equal(h.COMMAND_ALERT_LEGEND.length, 2)
 })
+
+test('the agent-mark help describes the marker, its lifetime and its requirement', () => {
+  const text = h.AGENT_MARK_HELP.map((m) => `${m.how} ${m.what}`).join(' ')
+  assert.equal(h.AGENT_MARK_HELP.length, 3)
+  assert.match(text, /code editor/)
+  assert.match(text, /terminal is open/)
+})

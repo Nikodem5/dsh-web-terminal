@@ -9,6 +9,7 @@ import { getStats, subscribeStats } from './stats.ts'
 import {
   ACTIVITY_ORDER,
   ACTIVITY_TITLE,
+  AGENT_MARK_HELP,
   ATTENTION_LEGEND,
   BLOCK_ACTIONS,
   COMMAND_ALERT_LEGEND,
@@ -190,6 +191,15 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
             <div key={g.state} className="wt-help-row wt-help-icon">
               <span className="wt-gutter-swatch" data-state={g.state} />
               <span>{g.what}</span>
+            </div>
+          ))}
+        </Section>
+
+        <Section title="Files changed by an agent">
+          {AGENT_MARK_HELP.map((m) => (
+            <div key={m.how} className="wt-help-row">
+              <span className="wt-help-how">{m.how}</span>
+              <span>{m.what}</span>
             </div>
           ))}
         </Section>

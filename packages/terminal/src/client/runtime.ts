@@ -12,6 +12,7 @@ import { cleanTitle, displayName } from './names.ts'
 import { SSH_LOST, noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
 import { applySubagents } from './subagent-state.ts'
+import { applyEdits, notifyEdits } from './edits-api.ts'
 import { startupTiming, startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
@@ -155,6 +156,7 @@ export function ensureRuntime(win: WinState): Runtime {
     lastInputAt: 0,
     agent: undefined,
     subagents: [],
+    edits: [],
     hungRaised: false,
     attentionLevel: null,
     attentionLabel: '',
@@ -303,6 +305,7 @@ export function ensureRuntime(win: WinState): Runtime {
         rt.agent = undefined
         restoreAgent(rt, frame.agent)
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
+        applyEdits(rt, (frame as { edits?: unknown }).edits)
         term.reset()
         rt.blocks?.reset()
         promptBase = rt.blocks?.promptsReady ?? 0
@@ -375,6 +378,8 @@ export function ensureRuntime(win: WinState): Runtime {
         if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at, session: frame.session })
       } else if (frame.type === 'subagents') {
         applySubagents(rt, (frame as { tasks?: unknown }).tasks)
+      } else if (frame.type === 'edits') {
+        applyEdits(rt, (frame as { files?: unknown }).files)
       } else if (frame.type === 'exit') {
         if (rt.hostLost) return
         setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
@@ -529,6 +534,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
   } catch {}
   rt.holder.remove()
   runtimes.delete(id)
+  if ((rt.edits?.length ?? 0) > 0) notifyEdits() // `?.`: tests build partial runtimes
   // Nothing left to watch: stop the once-a-second tick until the next terminal opens.
   if (runtimes.size === 0 && ticker !== undefined) {
     clearInterval(ticker)

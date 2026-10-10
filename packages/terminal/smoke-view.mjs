@@ -675,7 +675,7 @@ await sleep(20)
   click(btn)
   await sleep(40)
   check(q('.wt-help') !== null, 'the Help button opens the panel')
-  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Status colours|Stats bar|Diagnostics', 'all six sections render')
+  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Status colours|Files changed by an agent|Stats bar|Diagnostics', 'all seven sections render')
   const total = qa('.wt-help [data-shortcut]').length
   check(total >= 15 && qa('.wt-help-group').length >= 7, 'shortcuts are listed in groups')
   check(qa('.wt-help .wt-dot').map((d) => d.dataset.a).join(',') === 'working,needs-you,finished,running,idle,exited,offline,connected,disconnected', 'the legend draws every status dot with the real .wt-dot classes')

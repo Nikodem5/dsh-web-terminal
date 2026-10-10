@@ -94,6 +94,13 @@ first; completed ones are dimmed and drop off about five minutes after they end.
 run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;
 an older host without them simply shows an empty panel.
 
+### Files changed by an agent
+When a Claude session in one of your open terminals edits a file (Edit, Write, MultiEdit, NotebookEdit), the code editor
+plugin, if installed, marks that file with a small lightning badge in its explorer, tabs, quick open and CHANGES list;
+hovering shows the terminal, the time and the tool. The mark is temporary: it disappears when the terminal is closed (or its
+shell restarted). Only Claude started through this plugin reports edits (its hooks do the reporting); changes made by shell
+commands or by you are not marked. See the wire contract below for the API the editor reads.
+
 ### Clickable file paths
 Hold **Ctrl** (**Cmd** on macOS) over a file path in the output: it is underlined, the pointer changes and a tooltip
 shows the resolved path. **Ctrl+click** opens it; plain clicks still select text and reach TUIs that read the mouse.
@@ -287,6 +294,7 @@ Restart the desktop app: plugins load at boot.
 | `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
 | `lib/hook-post.js` | Command-hook forwarder Claude runs for `SessionStart` (HTTP hooks are ignored there) |
 | `lib/statusline.js` | Status-line wrapper Claude runs: posts usage / sub-agent tasks to the host, relays the user's own line |
+| `lib/edits.js` | Pure per-terminal "files the agent changed" store (validates the PostToolUse edit payload, cap 500) |
 | `lib/subagents.js` | Pure per-terminal sub-agent store (status-line tasks + Start/Stop hooks, retention, cap) |
 | `lib/shared/` (build output, gitignored) | Host helpers copied from `packages/shared/host` by `build.mjs`, so the installed package is self-contained |
 | `lib/post.js` | Shared loopback POST and stdin helpers of the two scripts above |
@@ -324,9 +332,10 @@ an invalid request is answered with an `error` frame and no process is started.
 Browser → host: `{"type":"input","data"}`, `{"type":"resize","cols","rows"}`, `{"type":"signal","signal"}`,
 `{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only).
 
-Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent","subagents"}` (always first; `created` is true only
+Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent","subagents","edits"}` (always first; `created` is true only
 for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`;
-`subagents` is the current `SubagentInfo[]`, `[]` when none),
+`subagents` is the current `SubagentInfo[]`, `[]` when none; `edits` is the changed-file list below, `[]` when none),
+`{"type":"edits","files":[{path,at,tool}]}` (the terminal's whole changed-file list, at most about three times a second),
 `{"type":"subagents","tasks":SubagentInfo[]}` (the terminal's whole sub-agent list, sent when it changes, at most about twice a second),
 `{"type":"data","data"}`, `{"type":"activity","busy"}` (a program runs under the shell),
 `{"type":"agent","provider","state","detail","at"}` (an agent signal; `state` is one of `idle`, `working`,
@@ -364,6 +373,21 @@ Finished sub-agents stay listed for 5 minutes (then vanish from the next frame);
 trimmed to 200 characters, numbers must be finite. The browser gets
 `SubagentInfo = {id, agentType, label, description, status, model|null, startTime|null (ms), endedAt|null (ms),
 tokenCount|null, contextWindowSize|null}` in the `attached` frame and in `subagents` frames.
+
+### Files the agent changed
+The settings file adds a second `PostToolUse` hook group (the first, unmatched one still drives the agent state) with
+matcher `Edit|Write|MultiEdit|NotebookEdit`, posting to `POST /signal/claude-edit` with the terminal's token. The payload's
+`tool_name`, `tool_input.file_path` (`notebook_path` for NotebookEdit) and `cwd` are used: the path must be a string of at
+most 1024 characters without NUL, absolute or resolvable against an absolute `cwd`; anything else is dropped. It is not an
+agent-state signal. `lib/edits.js` keeps `path -> {at, tool}` per terminal (500 newest; a re-edited file moves to the end),
+sent as `{"type":"edits","files":[{path,at,tool}]}` (the full list, throttled to about 300 ms) and in `attached`. The list
+is dropped when the terminal is destroyed.
+
+In the browser the Terminals plugin exposes a read-only API for other plugins (the code editor uses it to mark files an
+agent changed): `window.__dshTerminals = { version: 1, listEdits(), subscribe(cb) }`, where `listEdits()` returns
+`[{terminalId, name, live, files: [{path, at, tool}]}]` for terminals that are currently open, and `subscribe(cb)` returns
+an unsubscribe function. The same changes fire a `dsh-terminals:edits` event on `window`. Closing a terminal removes its
+entries and notifies subscribers.
 
 ### Usage and the stats endpoint
 
