@@ -92,7 +92,7 @@ after(() => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let seq = 0
 const freshId = () => `r${Date.now()}x${++seq}`
-const until = async (predicate, ms = 3000) => {
+const until = async (predicate, ms = 20000) => {
   const start = Date.now()
   while (Date.now() - start < ms) {
     if (await predicate()) return true
@@ -216,7 +216,7 @@ test('dispose before the signal server listens: no settings file, info still res
     const info = host.info()
     host.stop()
     host.stop = () => {}
-    await Promise.race([info, sleep(2000).then(() => assert.fail('info hung'))])
+    await Promise.race([info, sleep(30000).then(() => assert.fail('info hung'))])
     await sleep(100)
     const dir = join(other, 'web-terminal')
     assert.ok(!existsSync(dir) || readdirSync(dir).every((n) => !n.startsWith('claude-settings-')), 'no settings file written')

@@ -76,6 +76,14 @@ for (const [key, value] of Object.entries({
   Object.defineProperty(globalThis, key, { value, configurable: true, writable: true })
 }
 
+/** Every store module loaded so far; each has its own debounced save timer but they all share one localStorage. */
+const loaded = []
+
+/** Cancel the pending save of every loaded store, so no stray timer writes into the next test's seeded storage. */
+export function quiesceStores() {
+  for (const m of loaded) m.cancelPersist()
+}
+
 /** Bundle and import the store from memory; no file is written anywhere. */
 export async function loadStore({ fresh = false } = {}) {
   const result = await build({
@@ -90,5 +98,7 @@ export async function loadStore({ fresh = false } = {}) {
   })
   // A data: URL imports once; a comment makes the code unique so a test can get its own module state.
   const code = result.outputFiles[0].text + (fresh ? ' // fresh ' + Math.random() : '')
-  return import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+  const mod = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+  loaded.push(mod)
+  return mod
 }

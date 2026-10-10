@@ -80,6 +80,12 @@ export function persistSoon(): void {
   }, 250)
 }
 
+/** Drop a pending debounced save (tests use it so a timer from one test cannot write into the next). */
+export function cancelPersist(): void {
+  if (persistTimer !== undefined) clearTimeout(persistTimer)
+  persistTimer = undefined
+}
+
 export function subscribe(listener: () => void): () => void {
   listeners.add(listener)
   return () => {

@@ -5,11 +5,17 @@ import { request } from 'node:http'
 
 const TOKEN_HEADER = 'x-dsh-wt-token'
 
+/** Idle-socket limit for the post: short, because a status line must stay cheap. DSH_WT_POST_TIMEOUT_MS raises it (tests on a loaded machine). */
+function postTimeoutMs() {
+  const override = Number(process.env.DSH_WT_POST_TIMEOUT_MS)
+  return Number.isFinite(override) && override > 0 ? override : 500
+}
+
 /**
  * Fire-and-forget POST to the host; resolves when done, never rejects.
  * The token only ever goes to this machine's own host process (http, 127.0.0.1).
  */
-export function postJson(url, token, body, timeoutMs = 500) {
+export function postJson(url, token, body, timeoutMs = postTimeoutMs()) {
   return new Promise((resolve) => {
     let target
     try {

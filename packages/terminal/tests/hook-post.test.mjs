@@ -7,6 +7,8 @@ import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// The wrapper's post gives up after 500 ms; a loaded machine can be slower than that, so the tests allow far longer.
+process.env.DSH_WT_POST_TIMEOUT_MS = '20000'
 const script = join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'hook-post.js')
 
 async function listener() {

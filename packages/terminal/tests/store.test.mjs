@@ -6,9 +6,9 @@
 //
 //   npm test   (or: node --test tests/*.test.mjs)
 
-import { test, before, beforeEach, after } from 'node:test'
+import { test, before, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { loadStore, window } from './helpers/load-store.mjs'
+import { loadStore, quiesceStores, window } from './helpers/load-store.mjs'
 
 let s // the loaded store module
 
@@ -22,9 +22,12 @@ after(() => {
   window.close()
 })
 
+afterEach(() => quiesceStores())
+
 beforeEach(() => {
   s.closeAll()
   s.setBroadcast({ on: false })
+  quiesceStores() // closeAll above scheduled a save: it must not land after a test seeds storage
   window.localStorage.clear()
 })
 
@@ -413,7 +416,8 @@ test('broadcastLine reports zero when no terminal has an open socket', () => {
 
 test('window state is written to localStorage after a short delay', async () => {
   s.openTerminal({ cwd: 'C:\\a', title: 'Persisted' })
-  await new Promise((r) => setTimeout(r, 400))
+  const deadline = Date.now() + 10_000
+  while (window.localStorage.getItem('dsh.web-terminal.layout.v1') === null && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
   const saved = JSON.parse(window.localStorage.getItem('dsh.web-terminal.layout.v1'))
   assert.ok(saved.wins.some((w) => w.title === 'Persisted'))
   assert.ok(window.localStorage.getItem('dsh.web-terminal.prefs.v1'))
@@ -752,7 +756,8 @@ test('the remembered conversation is restored from the host after a page reload,
   const rt = terminalWithRuntime()
   s.restoreAgent(rt, { ...signal('finished'), session: SESSION, at: 1 })
   assert.equal(byId(rt.id).agentSession, SESSION)
-  await new Promise((r) => setTimeout(r, 400))
+  const deadline = Date.now() + 10_000
+  while (!JSON.parse(window.localStorage.getItem('dsh.web-terminal.layout.v1') ?? '{"wins":[]}').wins.some((w) => w.id === rt.id && w.agentSession === SESSION) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
   const saved = JSON.parse(window.localStorage.getItem('dsh.web-terminal.layout.v1'))
   assert.equal(saved.wins.find((w) => w.id === rt.id).agentSession, SESSION)
 })
@@ -806,9 +811,8 @@ test('moving the mouse over a terminal that needs you does not answer it; a key 
 
 // ── broadcast selection ──
 
-// A fresh store module saves to the shared localStorage 250 ms after a change; let that land before the next test.
-// Longer than the store's 250 ms save delay, so a slow machine cannot let a stray save land in the next test.
-const settle = () => new Promise((r) => setTimeout(r, 600))
+// Every store module has its own save timer but they share one localStorage: cancel pending saves instead of sleeping them out.
+const settle = async () => quiesceStores()
 
 test('turning broadcast back on keeps a selection the user cleared with None', async () => {
   const f = await loadStore({ fresh: true })
@@ -865,7 +869,8 @@ test('corrupt preferences keep the layout, are backed up before the next save, a
   assert.equal(f.getPrefs().lastShell, 'default')
   assert.equal(window.localStorage.getItem(`${PREFS_KEY}.corrupt`), '{broken', 'the raw value survives the overwrite below')
   f.toggleFavourite('C:\\new')
-  await new Promise((r) => setTimeout(r, 400))
+  const deadline2 = Date.now() + 10_000
+  while (window.localStorage.getItem(PREFS_KEY) === '{broken' && Date.now() < deadline2) await new Promise((r) => setTimeout(r, 20))
   assert.deepEqual(JSON.parse(window.localStorage.getItem(PREFS_KEY)).favourites, ['C:\\new'])
   f.closeAll()
   await settle()

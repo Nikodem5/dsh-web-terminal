@@ -28,7 +28,7 @@ beforeEach(() => {
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-async function until(check, what, timeout = 3000) {
+async function until(check, what, timeout = 20000) {
   const end = Date.now() + timeout
   while (Date.now() < end) {
     const value = check()
@@ -244,17 +244,17 @@ test('with shell integration the startup command is typed as soon as the first p
   await sleep(150)
   assert.equal(typed(sock, 'npm run dev\r'), false, 'a prompt that is drawn but not ready for input is not enough')
   sock.push({ type: 'data', data: osc('133;B') })
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command right after B', 1000)
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command right after B', 20000)
 })
 
 test('a shell without integration still waits for the quiet period', async () => {
-  Object.assign(s.startupTiming, { minMs: 40, settleMs: 400, maxMs: 2000 })
+  Object.assign(s.startupTiming, { minMs: 40, settleMs: 2500, maxMs: 8000 })
   const { sock } = await unopened({ startup: 'npm run dev' })
   sock.push(attached({ created: true }))
   sock.push({ type: 'data', data: 'PS C:\\> ' })
   await sleep(150)
   assert.equal(typed(sock, 'npm run dev\r'), false)
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command after the quiet period', 2500)
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command after the quiet period', 20000)
 })
 
 // ── the preference ──

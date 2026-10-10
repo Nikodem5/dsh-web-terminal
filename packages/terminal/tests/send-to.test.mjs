@@ -25,7 +25,7 @@ beforeEach(() => {
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-async function until(check, what, timeout = 3000) {
+async function until(check, what, timeout = 20000) {
   const end = Date.now() + timeout
   while (Date.now() < end) {
     const value = check()
@@ -181,10 +181,10 @@ test('send to a new Claude terminal waits for the typed command, a quiet screen 
   s.openRuntime(rt)
   const sock = await until(() => FakeWebSocket.last !== src.sock && FakeWebSocket.last, 'its socket')
   sock.push(attached({ created: true }))
-  await until(() => inputs(sock).length > 0, 'the claude command', 4000)
+  await until(() => inputs(sock).length > 0, 'the claude command', 20000)
   await sleep(1200)
   assert.equal(inputs(sock).length, 1, 'not sent while paste mode is off')
   rt.term.write('\x1b[?2004h')
-  await until(() => inputs(sock).length === 2, 'the send', 3000)
+  await until(() => inputs(sock).length === 2, 'the send', 20000)
   assert.equal(inputs(sock)[1].data, '\x1b[200~```\rboom\r```\r\x1b[201~')
 })

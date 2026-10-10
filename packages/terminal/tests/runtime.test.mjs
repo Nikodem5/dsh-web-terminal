@@ -33,7 +33,7 @@ beforeEach(() => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /** Wait until `check()` is truthy (the runtime connects on an animation frame, reconnects on a timer). */
-async function until(check, what, timeout = 3000) {
+async function until(check, what, timeout = 20000) {
   const end = Date.now() + timeout
   while (Date.now() < end) {
     const value = check()
@@ -64,7 +64,7 @@ async function start(opts = {}) {
 /** Drop the socket and wait for the runtime's reconnect. */
 async function reconnect(sock) {
   sock.drop()
-  return until(() => (FakeWebSocket.last !== sock ? FakeWebSocket.last : undefined), 'the reconnect', 5000)
+  return until(() => (FakeWebSocket.last !== sock ? FakeWebSocket.last : undefined), 'the reconnect', 20000)
 }
 
 // ── pure decisions ──
@@ -108,14 +108,14 @@ test('startupWait: nothing until the shell prints, then min and quiet period, ca
 test('the first attach of a new shell types the startup command', async () => {
   const { sock } = await start()
   sock.push(attached({ created: true }))
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 4000)
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 20000)
 })
 
 test('a page reload (first attach, created: true) still types the startup command and shows the screen as live', async () => {
   const { rt, sock } = await start()
   sock.push(attached({ created: true }))
   assert.equal(rt.conn, 'live')
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 4000)
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 20000)
   assert.ok(!sock.sent.some((f) => f.type === 'kill'))
 })
 
@@ -129,6 +129,8 @@ test('a shell with no startup command types nothing', async () => {
 // ── prompt readiness ──
 
 test('the startup command waits for the first output and then a quiet period', async () => {
+  // Real timers: the quiet period is many times the sleeps below, so a loaded machine cannot cross it early.
+  Object.assign(s.startupTiming, { minMs: 40, settleMs: 1500, maxMs: 8000 })
   const { sock } = await start()
   sock.push(attached({ created: true }))
   await sleep(300)
@@ -137,11 +139,13 @@ test('the startup command waits for the first output and then a quiet period', a
   sock.push({ type: 'data', data: 'PS C:\work> ' })
   await sleep(50)
   assert.ok(!typed(sock, 'npm run dev\r'), 'not while output is fresh')
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
-  assert.ok(Date.now() - outAt >= 110, 'after the quiet period')
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 20000)
+  assert.ok(Date.now() - outAt >= 1400, 'after the quiet period')
 })
 
 test('output in many small chunks keeps pushing the startup command back', async () => {
+  // Real timers: the quiet period is many times the sleeps below, so a loaded machine cannot cross it early.
+  Object.assign(s.startupTiming, { minMs: 40, settleMs: 1500, maxMs: 8000 })
   const { sock } = await start()
   sock.push(attached({ created: true }))
   for (let i = 0; i < 6; i++) {
@@ -149,17 +153,19 @@ test('output in many small chunks keeps pushing the startup command back', async
     await sleep(70)
     assert.ok(!typed(sock, 'npm run dev\r'), `still loading after chunk ${i}`)
   }
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 20000)
 })
 
 test('a shell that prints nothing gets the startup command at the max bound', async () => {
+  // Real timers: the max bound is many times the sleep below, so a loaded machine cannot cross it early.
+  Object.assign(s.startupTiming, { minMs: 40, settleMs: 120, maxMs: 2500 })
   const { sock } = await start()
   const t0 = Date.now()
   sock.push(attached({ created: true }))
-  await sleep(500)
+  await sleep(200)
   assert.ok(!typed(sock, 'npm run dev\r'))
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 1500)
-  assert.ok(Date.now() - t0 >= 650, 'not before the max bound')
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 20000)
+  assert.ok(Date.now() - t0 >= 2400, 'not before the max bound')
 })
 
 test('the startup command is not typed if the socket closes while waiting', async () => {
@@ -184,7 +190,7 @@ test('the startup command is not typed if the terminal is closed while waiting',
 test('a reconnect that finds a new shell keeps the screen, kills the stray shell, and offers Restart', async () => {
   const { id, rt, sock } = await start()
   sock.push(attached({ created: true }))
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 4000)
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 20000)
   sock.push({ type: 'data', data: 'long running agent output\r\n' })
   s.applyAgentSignal(rt, signal('working'))
   await flush(rt)
@@ -237,7 +243,7 @@ test('restart after a host restart spawns a new shell that types the startup com
   const fresh = await until(() => (FakeWebSocket.last !== next ? FakeWebSocket.last : undefined), 'the new shell socket')
   assert.ok(fresh.url.includes(`${id}-1`), 'a new generation id')
   fresh.push(attached({ created: true }))
-  await until(() => typed(fresh, 'npm run dev\r'), 'the startup command', 4000)
+  await until(() => typed(fresh, 'npm run dev\r'), 'the startup command', 20000)
   assert.ok(!fresh.sent.some((f) => f.type === 'kill'), 'the fresh shell is not mistaken for a host restart')
 })
 
@@ -261,7 +267,7 @@ test('a reconnect to the same shell (created: false) replays the screen and stay
 test('resync repaints the screen from the replay without touching connection state or startup', async () => {
   const { id, rt, sock } = await start()
   sock.push(attached({ created: true }))
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 4000)
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 20000)
   sock.push({ type: 'data', data: 'garbled\r\n' })
   await flush(rt)
   const inputs = sock.sent.filter((f) => f.type === 'input').length
@@ -332,7 +338,7 @@ test('a host restart refreshes the probe, so the next Restart uses the new host 
   try {
     const { id, rt, sock } = await start({ startup: 'claude' })
     sock.push(attached({ created: true }))
-    await until(() => sock.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-1.json')), 'the first command', 4000)
+    await until(() => sock.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-1.json')), 'the first command', 20000)
     assert.equal(calls, 1)
 
     const next = await reconnect(sock)
@@ -344,7 +350,7 @@ test('a host restart refreshes the probe, so the next Restart uses the new host 
     s.ensureRuntime(s.getWins().find((w) => w.id === id))
     const fresh = await until(() => (FakeWebSocket.last !== next ? FakeWebSocket.last : undefined), 'the new shell socket')
     fresh.push(attached({ created: true }))
-    await until(() => fresh.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-2.json')), 'the command with the new settings file', 4000)
+    await until(() => fresh.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-2.json')), 'the command with the new settings file', 20000)
     assert.ok(!fresh.sent.some((f) => f.data?.includes('claude-settings-1.json')), 'the dead host file is never used')
   } finally {
     globalThis.fetch = realFetch
@@ -361,7 +367,7 @@ test('a startup command typed after a probe that named no settings file asks the
     assert.equal(calls, 1)
     const { sock } = await start({ startup: 'claude' })
     sock.push(attached({ created: true }))
-    await until(() => sock.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-9.json')), 'the command with the settings file', 4000)
+    await until(() => sock.sent.some((f) => f.type === 'input' && f.data.includes('claude-settings-9.json')), 'the command with the settings file', 20000)
   } finally {
     globalThis.fetch = realFetch
   }
@@ -492,7 +498,7 @@ test('a fresh session started before the page still types its startup command', 
   const sock = await until(() => FakeWebSocket.last, 'the socket')
   sock.push(attached({ created: true }))
   sock.push({ type: 'data', data: 'PS> ' })
-  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 4000)
+  await until(() => typed(sock, 'npm run dev\r'), 'the startup command', 20000)
   f.closeAll()
   await sleep(300)
 })

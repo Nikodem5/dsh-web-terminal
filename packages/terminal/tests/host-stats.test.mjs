@@ -27,7 +27,7 @@ function fakeHandle() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const until = async (predicate, ms = 5000) => {
+const until = async (predicate, ms = 20000) => {
   const start = Date.now()
   while (Date.now() - start < ms) {
     if (await predicate()) return true

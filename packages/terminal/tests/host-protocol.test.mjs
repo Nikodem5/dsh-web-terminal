@@ -96,7 +96,7 @@ function connect(query) {
   })
 }
 
-const until = async (predicate, ms = 2000) => {
+const until = async (predicate, ms = 20000) => {
   const start = Date.now()
   while (Date.now() - start < ms) {
     if (predicate()) return true

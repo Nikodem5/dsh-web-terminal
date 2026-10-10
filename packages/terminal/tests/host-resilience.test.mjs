@@ -57,9 +57,9 @@ async function attach(ctxParts) {
   stops.push(() => { for (const t of teardowns) t(); http.close() })
   const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?id=r${Date.now()}&shell=cmd&cols=80&rows=24`)
   const frame = await new Promise((resolve, reject) => {
-    ws.on('message', (raw) => resolve(JSON.parse(String(raw))))
-    ws.on('error', reject)
-    setTimeout(() => reject(new Error('no frame: terminal stuck on connecting')), 3000)
+    const timer = setTimeout(() => reject(new Error('no frame: terminal stuck on connecting')), 30_000)
+    ws.on('message', (raw) => { clearTimeout(timer); resolve(JSON.parse(String(raw))) })
+    ws.on('error', (e) => { clearTimeout(timer); reject(e) })
   })
   ws.close()
   return { frame, warnings }

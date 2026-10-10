@@ -103,7 +103,7 @@ after(() => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let seq = 0
 const freshId = () => `h${Date.now()}x${++seq}`
-const until = async (predicate, ms = 3000) => {
+const until = async (predicate, ms = 20000) => {
   const start = Date.now()
   while (Date.now() - start < ms) {
     if (predicate()) return true

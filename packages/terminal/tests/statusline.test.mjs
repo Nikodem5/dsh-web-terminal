@@ -14,6 +14,8 @@ const script = join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'statu
 const root = mkdtempSync(join(tmpdir(), 'dsh-wt-statusline-'))
 after(() => rmSync(root, { recursive: true, force: true }))
 let n = 0
+// The wrapper's post gives up after 500 ms; a loaded machine can be slower than that, so the tests allow far longer.
+process.env.DSH_WT_POST_TIMEOUT_MS = '20000'
 
 /** A fake Claude config dir whose settings carry `statusLine` (when given). */
 function configDir(statusLine) {

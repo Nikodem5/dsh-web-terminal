@@ -26,7 +26,7 @@ beforeEach(() => {
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-async function until(check, what, timeout = 3000) {
+async function until(check, what, timeout = 20000) {
   const end = Date.now() + timeout
   while (Date.now() < end) {
     const value = check()

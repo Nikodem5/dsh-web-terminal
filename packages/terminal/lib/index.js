@@ -219,10 +219,12 @@ function resolveOnPath(command) {
       const first = out.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length > 0)
       finish(first)
     })
+    // Only a hung lister should hit this: a lookup that merely runs slowly (a loaded machine) must not read as "not installed",
+    // because the answer for `node` is kept for the life of the host.
     setTimeout(() => {
       try { child.kill() } catch {}
       finish(undefined)
-    }, 3000).unref?.()
+    }, 15_000).unref?.()
   })
 }
 

@@ -179,7 +179,9 @@ test('real PowerShell helper answers and leaves no process after stop', { skip: 
   assert.ok(mine.some((c) => c.name === 'powershell.exe'), 'the helper is our child')
   const helperPid = mine.find((c) => c.name === 'powershell.exe').pid
   t.stop()
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  const out = execFileSync('tasklist', ['/FI', `PID eq ${helperPid}`, '/NH'], { windowsHide: true }).toString()
-  assert.ok(!out.includes(String(helperPid)), 'helper process is gone')
+  // Process teardown is asynchronous and slow under load: poll for the exit, with a generous deadline.
+  const alive = () => execFileSync('tasklist', ['/FI', `PID eq ${helperPid}`, '/NH'], { windowsHide: true }).toString().includes(String(helperPid))
+  const deadline = Date.now() + 15_000
+  while (alive() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
+  assert.ok(!alive(), 'helper process is gone')
 })

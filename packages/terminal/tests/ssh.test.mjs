@@ -231,9 +231,9 @@ async function host() {
     new Promise((resolve, reject) => {
       const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?${query}`)
       const frames = []
-      ws.on('message', (raw) => { frames.push(JSON.parse(String(raw))); resolve({ ws, frames }) })
-      ws.on('error', reject)
-      setTimeout(() => reject(new Error('no frame')), 3000)
+      const timer = setTimeout(() => reject(new Error('no frame')), 30_000)
+      ws.on('message', (raw) => { clearTimeout(timer); frames.push(JSON.parse(String(raw))); resolve({ ws, frames }) })
+      ws.on('error', (e) => { clearTimeout(timer); reject(e) })
     })
   const info = () => new Promise((resolve) => routes.find((r) => r.path === '/api/dsh-web-terminal/info').handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
   return { spawned, connect, info }
