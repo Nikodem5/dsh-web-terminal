@@ -15,6 +15,8 @@ import { injectStyles } from './styles.ts'
 import { getStore } from './instance.ts'
 import { BranchChip, BranchPicker, HistoryBody, RepoTools, useGitTools } from './git-panel.tsx' // git tools block
 import { isDarkSurface } from './theme.ts'
+import { MdModeButtons, MdWork, canPreview } from './md-view.tsx'
+import { SearchPanel, SideTabs } from './search-view.tsx'
 import type { GitFile, RepoEntry } from './types.ts'
 
 function useStore(store: EditorStore): State {
@@ -271,6 +273,7 @@ function Sidebar({ store, s, choices }: { store: EditorStore; s: State; choices:
   const total = totalChanges(s)
   const history = useGitTools(store).history // git tools block
   const both = exOpen && chOpen
+  const view = useSyncExternalStore(store.search.subscribe, () => store.search.getState().view, () => store.search.getState().view)
   const grow = (open: boolean, share: number): Record<string, number | string> => (open ? { flex: `${both ? share : 1} 1 0px` } : { flex: '0 0 auto' })
   const dragSections = (y: number): void => {
     const box = secs.current?.getBoundingClientRect()
@@ -280,7 +283,9 @@ function Sidebar({ store, s, choices }: { store: EditorStore; s: State; choices:
   return (
     <aside className="ce-side" style={{ width: s.layout.sidebar }}>
       <RootPicker store={store} s={s} choices={choices} />
-      <div className="ce-secs" ref={secs}>
+      <SideTabs store={store} />
+      {view === 'search' ? <SearchPanel store={store} /> : null}
+      <div className="ce-secs" ref={secs} hidden={view === 'search'}>
         <Section title="EXPLORER" open={exOpen} onToggle={() => store.setLayout({ exOpen: !exOpen })} style={grow(exOpen, exFrac)}
           actions={<button className="ce-ibtn" title="Refresh" data-act="refresh-tree" onClick={() => void store.refreshExplorer()}>&#x21BB;</button>}>
           <Explorer store={store} s={s} />
@@ -346,6 +351,7 @@ function Crumb({ store, s, tab }: { store: EditorStore; s: State; tab: Tab }): R
           <button className="ce-btn" data-on={s.inline} data-act="inline" onClick={() => store.setInline(true)}>Inline</button>
         </span>
       ) : null}
+      {canPreview(tab) ? <MdModeButtons store={store} tab={tab} /> : null}
       {tab.kind === 'diff' ? <button className="ce-btn" data-act="open-file" onClick={() => void store.openFile(tab.path)}>Open file</button> : null}
       {/* git tools block */}
       {tab.kind === 'file' || tab.kind === 'diff' || (tab.kind === 'compare' && tab.of === null) ? <button className="ce-btn" data-act="file-history" title="Show the commits that changed this file" onClick={() => void store.gitTools.fileHistory(tab.path)}>History</button> : null}
@@ -526,10 +532,13 @@ export function CodeEditorPage({ store, useWorkspaces }: PageProps): ReactElemen
     const onKey = (e: KeyboardEvent): void => {
       const action = pageAction(e, viewRef.current)
       if (action === null) return
+      // F4 / Shift+F4 only mean something while there are search results.
+      if ((action === 'searchNext' || action === 'searchPrev') && store.search.visible().length === 0) return
       e.preventDefault()
       e.stopImmediatePropagation()
       if (action === 'save') void store.save()
       else if (action === 'closeTab') store.closeActive()
+      else if (action === 'searchFiles' || action === 'searchNext' || action === 'searchPrev') store.searchKey(action)
       else store.setQuickOpen(!store.getState().quickOpen)
     }
     window.addEventListener('keydown', onKey, true)
@@ -553,7 +562,7 @@ export function CodeEditorPage({ store, useWorkspaces }: PageProps): ReactElemen
           <TabBar store={store} s={s} />
           {tab ? <Crumb store={store} s={s} tab={tab} /> : null}
           {tab ? <ConflictBar store={store} tab={tab} /> : null}
-          <EditorArea store={store} s={s} tab={tab} />
+          <MdWork store={store} s={s} tab={tab}><EditorArea store={store} s={s} tab={tab} /></MdWork>
         </main>
       </div>
       <StatusBar store={store} s={s} tab={tab} />

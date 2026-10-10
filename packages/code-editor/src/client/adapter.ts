@@ -1,5 +1,8 @@
 // dsh-code-editor - the editor behind a small interface, so the page logic is testable without Monaco.
 
+/** Shortcuts the editor itself catches (Monaco swallows keys before the page's window listener sees them). */
+export type EditorKey = 'save' | 'quickOpen' | 'closeTab' | 'searchFiles' | 'searchNext' | 'searchPrev'
+
 export interface Position { line: number; col: number }
 
 export interface EditorHost {
@@ -24,7 +27,15 @@ export interface EditorHost {
   readonly element: HTMLElement
   onChange(cb: (id: string) => void): void
   onCursor(cb: (p: Position) => void): void
-  onKey(cb: (action: 'save' | 'quickOpen' | 'closeTab') => void): void
+  onKey(cb: (action: EditorKey) => void): void
+  // --- search + markdown preview (all optional: hosts without them just skip the feature) ---
+  /** Highlight a search match in the shown file `id` (replaces the previous one; cleared by `clearHighlight` or by showing another file). */
+  highlight?(id: string, line: number, col: number, length: number): void
+  clearHighlight?(): void
+  /** Syntax-colour code to HTML (`<span class="mtkN">` runs); null when the language is unknown. The caller sanitizes. */
+  colorize?(text: string, language: string): Promise<string | null>
+  /** The shown file scrolled; ratio = scrollTop / scrollable height (0..1). */
+  onScroll?(cb: (id: string, ratio: number) => void): void
   dispose(): void
 }
 

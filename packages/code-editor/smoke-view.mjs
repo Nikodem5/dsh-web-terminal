@@ -46,6 +46,8 @@ for (const k of ['HTMLElement', 'HTMLIFrameElement', 'Node', 'Element', 'Event',
 globalThis.requestAnimationFrame = window.requestAnimationFrame.bind(window)
 globalThis.cancelAnimationFrame = window.cancelAnimationFrame.bind(window)
 window.document.oninput = null
+window.URL.createObjectURL = () => 'blob:smoke'
+window.URL.revokeObjectURL = () => {}
 
 const domEntry = profileRequire.resolve('react-dom/client')
 const domRequire = createRequire(pathToFileURL(domEntry).href)
@@ -58,7 +60,9 @@ window.eval(bundle)
 const { CodeEditorPage, EditorStore, createApi } = window.__ce_smoke__
 
 // mocked host API
-const fs = { 'a.txt': { content: 'hello\n', mtime: 1 }, 'src/b.ts': { content: 'export {}\n', mtime: 1 } }
+const MD = '# Hello\n\nSee [other](docs/o.md), [web](https://example.com) and ![pic](img/p.png) ![x](https://evil.example/t.png)\n\n<img src=x onerror="window.__pwned=1">\n<script>window.__pwned=1</script>\n\n```js\nlet a = 1\n```\n'
+const fs = { 'a.txt': { content: 'hello\n', mtime: 1 }, 'src/b.ts': { content: 'export {}\n', mtime: 1 }, 'README.md': { content: MD, mtime: 1 }, 'docs/o.md': { content: '# Other\n', mtime: 1 } }
+const searchCalls = []
 const puts = []
 const statusCalls = []
 const stageCalls = []
@@ -80,7 +84,7 @@ window.fetch = (url, init = {}) => {
   if (route === '/tree') {
     return json(200, { ok: true, entries: u.searchParams.get('dir') === '' ? [{ name: 'src', type: 'dir', size: 0, mtime: 1 }, { name: 'a.txt', type: 'file', size: 6, mtime: 1 }] : [{ name: 'b.ts', type: 'file', size: 9, mtime: 1 }] })
   }
-  if (route === '/files') return json(200, { ok: true, files: Object.keys(fs), truncated: false })
+  if (route === '/files') return json(200, { ok: true, files: Object.keys(fs).filter((k) => k !== 'README.md' && k !== 'docs/o.md'), truncated: false })
   if (route === '/file' && (init.method ?? 'GET') === 'GET') {
     const f = fs[u.searchParams.get('path')]
     return f ? json(200, { ok: true, content: f.content, mtime: f.mtime, size: 1, binary: false, tooLarge: false, eol: 'lf' }) : json(404, { ok: false, error: 'missing' })
@@ -105,6 +109,11 @@ window.fetch = (url, init = {}) => {
     if (r === '/w/multi/pk/beta') return json(200, { ok: true, branch: 'main', ahead: 0, behind: 0, files: [] })
     return json(200, status)
   }
+  if (route === '/search') {
+    searchCalls.push(Object.fromEntries(u.searchParams))
+    return json(200, { ok: true, results: [{ path: 'a.txt', matches: [{ line: 1, col: 1, length: 5, preview: 'hello', at: 0 }] }, { path: 'src/b.ts', matches: [{ line: 1, col: 8, length: 2, preview: 'export {}', at: 7 }] }], truncated: false, took: 3 })
+  }
+  if (route === '/raw') return Promise.resolve({ ok: true, status: 200, json: async () => ({}), blob: async () => new window.Blob(['png']) })
   // git tools block
   if (route === '/git/branches') return json(200, { ok: true, current: 'main', detached: false, head: null, upstream: 'origin/main', upstreamRemote: 'origin', ahead: 1, behind: 0, remotes: ['origin'], local: [{ name: 'main', hash: 'abc', upstream: 'origin/main', upstreamRemote: 'origin', current: true }, { name: 'dev', hash: 'abd', upstream: null, upstreamRemote: null, current: false }], remote: [{ name: 'origin/topic', remote: 'origin', short: 'topic', hash: 'abe', local: false }] })
   if (route === '/git/checkout') { gitPosts.push(['checkout', body]); return json(200, { ok: true, branch: body.branch }) }
@@ -131,7 +140,9 @@ const host = {
   hasModel: (id) => models.has(id),
   getEol: () => 'lf',
   disposeModel: (id) => models.delete(id),
-  reveal() {}, setTheme() {}, setInline() {}, layout() {}, focus() {},
+  reveal(l, c) { host.revealed = [l, c] }, highlight(id, l, c, n) { host.hit = [id, l, c, n] }, clearHighlight() { host.hit = null },
+  async colorize(t) { return `<span class="mtk1">${t.replace(/</g, '&lt;')}</span><img src=x onerror="window.__pwned=1">` },
+  setTheme() {}, setInline() {}, layout() {}, focus() {},
   onChange(f) { cb.change = f }, onCursor() {}, onKey(f) { cb.key = f }, dispose() {},
 }
 
@@ -342,6 +353,76 @@ await until(() => host.diff && host.diff.id === 'diff:w:alpha/x.ts', 'nested dif
 check(host.diff?.id === 'diff:w:alpha/x.ts', 'a nested change opens a diff tab keyed by its root-relative path')
 click(q('.ce-repo[data-repo=alpha] .ce-repo-h'))
 check(await until(() => q('.ce-repo[data-repo=alpha]').dataset.open === 'false', 'collapse repo'), 'a repository block collapses')
+
+// ---- search in files ---------------------------------------------------------------------------------------------
+await store.openFolder('/w/proj')
+await until(() => q('[data-act=view-search]'), 'sidebar tabs')
+check(q('[data-act=view-files]').dataset.on === 'true', 'the Files view is shown first')
+window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+await until(() => q('[data-search-panel]'), 'search panel')
+check(q('.ce-secs').hidden === true && q('[data-act=view-search]').dataset.on === 'true', 'Ctrl+Shift+F shows the SEARCH view')
+const input = q('[aria-label="Search in files"]')
+const setField = (el, v) => { Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new window.Event('input', { bubbles: true })) }
+setField(input, 'hel')
+setField(input, 'hello')
+await until(() => searchCalls.length === 1, 'debounced search')
+check(searchCalls[0].q === 'hello' && searchCalls[0].root === '/w/proj' && searchCalls[0].regex === '0', 'typing sends ONE debounced /search request')
+await until(() => qa('.ce-smatch').length === 2, 'result rows')
+check(qa('.ce-sfile').map((e) => e.dataset.path).join() === 'a.txt,src/b.ts', 'results are grouped by file')
+check(q('[data-search-summary]').textContent.startsWith('2 results in 2 files'), 'the summary counts results and files')
+check(q('.ce-smatch mark').textContent === 'hello', 'the match is marked in its preview')
+click(q('[data-act=regex]'))
+await until(() => searchCalls.length === 2, 'regex toggle search')
+check(searchCalls[1].regex === '1', 'the regex toggle searches right away')
+await until(() => qa('.ce-smatch').length === 2, 'rows again')
+click(qa('.ce-smatch')[1])
+await until(() => host.hit, 'highlight')
+check(host.shown === 'file:src/b.ts' && host.revealed?.join() === '1,8' && host.hit.join() === 'file:src/b.ts,1,8,2', 'clicking a result opens the file at the match and highlights it')
+window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F4', bubbles: true, cancelable: true }))
+await until(() => host.shown === 'file:a.txt', 'F4 next')
+check(host.hit?.join() === 'file:a.txt,1,1,5', 'F4 steps to the next result and opens it')
+input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+await until(() => qa('.ce-smatch[data-sel=true]')[0]?.dataset.line === '1' && qa('.ce-sfile')[1].querySelector('[data-sel=true]'), 'arrow selection')
+check(host.shown === 'file:a.txt', 'ArrowDown in the query box moves the selection without opening')
+click(q('[data-act=view-files]'))
+await until(() => !q('[data-search-panel]'), 'files view')
+check(q('.ce-secs').hidden === false, 'Files switches back')
+
+// ---- markdown preview ------------------------------------------------------------------------------------------------
+await store.openFile('README.md')
+await until(() => q('[data-act=md-side]'), 'preview buttons')
+check(!q('[data-md-pane]') && q('[data-act=md-off]').dataset.on === 'true', 'the preview is off by default')
+await store.openFile('a.txt')
+check(!q('[data-act=md-side]'), 'only markdown tabs get the preview buttons')
+await store.openFile('README.md')
+click(q('[data-act=md-side]'))
+await until(() => q('[data-md-pane] h1'), 'preview')
+check(q('.ce-work').dataset.md === 'side' && q('[data-md-pane] h1').textContent === 'Hello', 'Side by side renders the markdown next to the editor')
+check(window.__pwned === undefined && !q('[data-md-pane] script') && !q('[data-md-pane] [onerror]'), 'scripts and handlers in the markdown never run or survive')
+await until(() => q('[data-md-pane] img[src]'), 'image')
+check(q('[data-md-pane] img').getAttribute('src') === 'blob:smoke', 'a relative image is fetched through the host')
+check(q('[data-md-pane] [data-ce-noimg]')?.textContent.includes('x') === true, 'a remote image is a placeholder')
+await until(() => q('[data-md-pane] pre code .mtk1'), 'colorized code')
+check(q('[data-md-pane] pre code').textContent === 'let a = 1\n' && !q('[data-md-pane] pre img'), 'code blocks are coloured through the editor, its output sanitized')
+models.set('file:README.md', '# Changed\n'); cb.change('file:README.md')
+await until(() => q('[data-md-pane] h1')?.textContent === 'Changed', 'live update')
+check(true, 'typing updates the preview')
+const opened = []
+const realOpen = window.open
+window.open = (...a) => { opened.push(a) }
+models.set('file:README.md', MD); cb.change('file:README.md')
+await until(() => q('[data-md-pane] a[data-ce-ext]'), 'links back')
+click(q('[data-md-pane] a[data-ce-ext]'))
+check(opened.length === 1 && opened[0][0] === 'https://example.com/' && opened[0][2].includes('noopener'), 'an http link opens externally with noopener')
+window.open = realOpen
+click(q('[data-md-pane] a[data-ce-md]'))
+await until(() => host.shown === 'file:docs/o.md', 'md link')
+check(true, 'a relative .md link opens in the editor')
+await store.openFile('README.md')
+click(q('[data-act=md-only]'))
+check(await until(() => q('.ce-work').dataset.md === 'only', 'only'), 'Preview only hides the editor')
+click(q('[data-act=md-off]'))
+check(await until(() => !q('[data-md-pane]'), 'off'), 'Off removes the preview')
 
 root.unmount()
 store.dispose()

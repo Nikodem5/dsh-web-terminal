@@ -26,3 +26,11 @@ export type WsFrame =
 
 /** What another plugin may ask for (`window` event `dsh-code-editor:open`). */
 export interface OpenRequest { path: string; line?: number; col?: number; review?: boolean; root?: string }
+
+// --- search in files (ce-search-md) ---
+/** One match of `GET /search`: 1-based line / UTF-16 column, `at` = offset of the match inside `preview`. */
+export interface SearchMatch { line: number; col: number; length: number; preview: string; at?: number }
+export interface SearchFile { path: string; matches: SearchMatch[] }
+export interface SearchResponse { results: SearchFile[]; truncated: boolean; timedOut?: boolean; took: number }
+export interface SearchQuery { q: string; regex: boolean; caseSensitive: boolean; word: boolean; include: string; exclude: string }
+// --- end search ---

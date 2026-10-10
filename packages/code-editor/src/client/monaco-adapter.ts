@@ -33,7 +33,7 @@ import 'monaco-editor/esm/vs/basic-languages/bat/bat.contribution'
 import EDITOR_WORKER from 'ce-worker:editor'
 // @ts-expect-error virtual module provided by build.mjs (Monaco CSS with the codicon font inlined)
 import CSS_TEXT from 'ce-css:all'
-import type { AdapterFactory, EditorHost, Position } from './adapter.ts'
+import type { AdapterFactory, EditorHost, EditorKey, Position } from './adapter.ts'
 
 declare const __MONACO_VERSION__: string
 export const MONACO_VERSION = __MONACO_VERSION__
@@ -115,7 +115,9 @@ class MonacoHost implements EditorHost {
   private currentDiff: string | null = null
   private changeCb: (id: string) => void = () => {}
   private cursorCb: (p: Position) => void = () => {}
-  private keyCb: (a: 'save' | 'quickOpen' | 'closeTab') => void = () => {}
+  private keyCb: (a: EditorKey) => void = () => {}
+  private hit: monaco.editor.IEditorDecorationsCollection | null = null
+  private scrollCb: (id: string, ratio: number) => void = () => {}
 
   constructor(dark: boolean) {
     this.element = document.createElement('div')
@@ -142,11 +144,22 @@ class MonacoHost implements EditorHost {
       ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyE, () => this.keyCb('quickOpen'))
       // Ctrl+W is the desktop app's window accelerator (it never reaches the page); Ctrl+F4 is VS Code's alternative.
       ed.addCommand(KeyMod.CtrlCmd | KeyCode.F4, () => this.keyCb('closeTab'))
+      // Search in files (Ctrl+Shift+F is the VS Code key; Ctrl+Shift+H is the alias the web build of the app leaves free) and F4 / Shift+F4 for the next / previous result.
+      ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyF, () => this.keyCb('searchFiles'))
+      ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyH, () => this.keyCb('searchFiles'))
+      ed.addCommand(KeyCode.F4, () => this.keyCb('searchNext'))
+      ed.addCommand(KeyMod.Shift | KeyCode.F4, () => this.keyCb('searchPrev'))
     }
     bind(this.editor)
     bind(this.diff.getModifiedEditor())
     bind(this.diff.getOriginalEditor())
     this.editor.onDidChangeCursorPosition((e) => this.cursorCb({ line: e.position.lineNumber, col: e.position.column }))
+    this.editor.onDidScrollChange(() => {
+      const id = this.currentFile
+      if (id === null) return
+      const room = this.editor.getScrollHeight() - this.editor.getLayoutInfo().height
+      this.scrollCb(id, room > 0 ? this.editor.getScrollTop() / room : 0)
+    })
     this.diff.getModifiedEditor().onDidChangeCursorPosition((e) => this.cursorCb({ line: e.position.lineNumber, col: e.position.column }))
   }
 
@@ -159,6 +172,7 @@ class MonacoHost implements EditorHost {
 
   showFile(id: string, text: string, language: string, readOnly: boolean): string {
     this.saveView()
+    if (id !== this.currentFile) this.clearHighlight()
     let f = this.files.get(id)
     if (!f) {
       const model = monaco.editor.createModel(text, language, monaco.Uri.from({ scheme: 'dshce', path: `/file/${encodeURIComponent(id)}` }))
@@ -201,6 +215,7 @@ class MonacoHost implements EditorHost {
 
   showNone(): void {
     this.saveView()
+    this.clearHighlight()
     this.currentFile = null
     this.currentDiff = null
     this.editor.setModel(null)
@@ -251,7 +266,30 @@ class MonacoHost implements EditorHost {
   focus(): void { (this.currentFile ? this.editor : this.diff.getModifiedEditor()).focus() }
   onChange(cb: (id: string) => void): void { this.changeCb = cb }
   onCursor(cb: (p: Position) => void): void { this.cursorCb = cb }
-  onKey(cb: (a: 'save' | 'quickOpen' | 'closeTab') => void): void { this.keyCb = cb }
+  onKey(cb: (a: EditorKey) => void): void { this.keyCb = cb }
+  onScroll(cb: (id: string, ratio: number) => void): void { this.scrollCb = cb }
+
+  highlight(id: string, line: number, col: number, length: number): void {
+    const f = this.files.get(id)
+    if (!f || this.currentFile !== id) return
+    this.clearHighlight()
+    this.hit = this.editor.createDecorationsCollection([{
+      range: new monaco.Range(line, col, line, col + Math.max(1, length)),
+      options: { className: 'ce-search-hit', inlineClassName: 'ce-search-hit-inline', overviewRuler: { color: '#f0b429', position: monaco.editor.OverviewRulerLane.Center } },
+    }])
+  }
+
+  clearHighlight(): void {
+    this.hit?.clear()
+    this.hit = null
+  }
+
+  async colorize(text: string, language: string): Promise<string | null> {
+    const id = language.toLowerCase()
+    const known = monaco.languages.getLanguages().find((l) => l.id === id || l.aliases?.some((a) => a.toLowerCase() === id) || l.extensions?.some((x) => x.toLowerCase() === `.${id}`))
+    if (!known) return null
+    try { return await monaco.editor.colorize(text, known.id, { tabSize: 4 }) } catch { return null }
+  }
 
   dispose(): void {
     try {
