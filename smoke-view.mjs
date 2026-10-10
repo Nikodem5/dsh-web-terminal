@@ -624,6 +624,37 @@ await sleep(20)
   await sleep(30)
 }
 
+// command blocks: hovering a command shows its header, and Copy output copies the output text
+{
+  const E = String.fromCharCode(27)
+  const o = (body) => `${E}]${body}\x07`
+  sock.push({ type: 'data', data: `\r\n${o('133;A')}$ ${o('133;B')}echo hi\r\n${o('633;E;echo hi')}${o('133;C')}hello world\r\n${o('133;D;0')}${o('133;A')}$ ${o('133;B')}` })
+  await sleep(80)
+  const copied = []
+  Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: async (t) => void copied.push(t) }, configurable: true })
+  // jsdom has no layout: give every terminal's screen 20 px rows, then sweep the pointer down the first holder that reacts.
+  let header = null
+  for (const holder of qa('.wt-holder')) {
+    const screen = holder.querySelector('.xterm-screen')
+    const rows = holder.querySelectorAll('.xterm-rows > div').length
+    if (screen === null || rows === 0) continue
+    screen.getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: rows * 20, width: 400, height: rows * 20 })
+    for (let r = 0; r < rows && header === null; r++) {
+      holder.dispatchEvent(new window.MouseEvent('mousemove', { clientX: 40, clientY: r * 20 + 5, bubbles: true }))
+      const h = holder.querySelector('.wt-bh')
+      if (h !== null && !h.hidden && h.textContent.includes('echo hi')) header = h
+    }
+    if (header !== null) break
+  }
+  check(header !== null, 'hovering a command shows its header with the command text')
+  check(header?.querySelector('.wt-bh-exit')?.textContent === '✓' && header.querySelector('[data-action="copy-output"]') !== null, 'the header shows the exit mark and a Copy output button')
+  header?.querySelector('[data-action="copy-output"]')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  await sleep(40)
+  check(copied.length === 1 && copied[0] === 'hello world', `Copy output puts the command's output on the clipboard (got ${JSON.stringify(copied)})`)
+  header?.parentElement?.dispatchEvent(new window.MouseEvent('mouseleave'))
+  check(header?.hidden === true, 'the header goes away when the pointer leaves')
+}
+
 // help panel: the book button, sections, filter, Esc, F1
 {
   const btn = q('.wt-bar-right button[title="Help"]')

@@ -130,6 +130,8 @@ export interface Runtime {
   blocks?: BlockModel
   /** The shell's real current folder, once it reports one (OSC 633;P / OSC 7). */
   cwd?: string
+  /** Hover header and sticky bar (block-bar.ts); exists once the terminal is opened. */
+  blockBar?: { refresh(): void; dispose(): void }
   // ── end command blocks ──
 }
 
@@ -206,6 +208,8 @@ export interface Prefs {
   shellIntegration: boolean
   /** Frame text sent to an agent terminal as a fenced code block. */
   sendCodeBlock: boolean
+  /** A command that ran at least this many seconds raises a done / failed flag when the terminal is unattended; 0 = never. */
+  commandNotifySec: number
 }
 
 /** Everything the view reads; mutated in place, `version` bumps on change. */

@@ -17,6 +17,9 @@ import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import { registerPathLinks } from './path-links.ts'
 import { createBlocks } from './blocks.ts'
+import { installBlockBar } from './block-bar.ts'
+import { handleBlockKey } from './block-actions.ts'
+import { watchBlockAlerts } from './block-notify.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
 import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
@@ -158,6 +161,7 @@ export function ensureRuntime(win: WinState): Runtime {
   }
   runtimes.set(win.id, rt)
   rt.blocks = createBlocks(rt) // command blocks: OSC 133/633 handlers work before the terminal is opened
+  watchBlockAlerts(rt)
   trackUnread(rt)
   ticker ??= setInterval(tick, 1000)
 
@@ -210,6 +214,7 @@ export function ensureRuntime(win: WinState): Runtime {
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true
     if (isAppShortcut(event)) return false
+    if (handleBlockKey(rt, event)) return false // previous / next / failed command (only with blocks on the normal screen)
     if (isUnreadJump(event)) {
       event.preventDefault()
       jumpToUnread(rt.id)
@@ -415,6 +420,7 @@ export function openRuntime(rt: Runtime): void {
   registerPathLinks(rt)
   rt.blocks?.opened() // gutters need the renderer
   registerSendMenu(rt)
+  installBlockBar(rt)
   syncUnread(rt)
   // The grid was never sent to the host (or only xterm's default); report the real one.
   rt.lastCols = 0
@@ -510,6 +516,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
     rt.socket?.close()
   } catch {}
   untrackUnread(id)
+  rt.blockBar?.dispose()
   try {
     rt.term.dispose()
   } catch {}

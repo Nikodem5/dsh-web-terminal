@@ -38,6 +38,8 @@ export interface Alert {
   level: AttentionLevel
   label: string
   reason: string
+  /** A quiet flag that still interrupts like an urgent one (a desktop notification unless the Terminals tab is showing), without the chime. */
+  interrupt?: boolean
 }
 
 /** Text after a colon, when there is any. */
@@ -135,7 +137,7 @@ function chime(): void {
 function notify(win: WinState, rt: Runtime, alert: Alert): void {
   if (!prefs.notify || typeof Notification === 'undefined') return
   const appFocused = document.hasFocus()
-  if (alert.level === 'quiet' ? appFocused : appFocused && viewMounts > 0) return
+  if (alert.level === 'quiet' && alert.interrupt !== true ? appFocused : appFocused && viewMounts > 0) return
   try {
     if (Notification.permission === 'default') Notification.requestPermission().catch(() => {})
     if (Notification.permission !== 'granted') return

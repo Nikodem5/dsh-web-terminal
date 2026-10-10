@@ -53,6 +53,7 @@ export const prefs: Prefs = {
   pathTemplate: '',
   shellIntegration: true,
   sendCodeBlock: true,
+  commandNotifySec: 10,
 }
 
 export const store: Store = { wins: [], zTop: 1, focusId: null, searchId: null, version: 0, broadcast: { on: false, live: false, ids: new Set() } }
@@ -163,6 +164,7 @@ function applyPrefs(p: Record<string, unknown>): void {
   if (typeof p.sendCodeBlock === 'boolean') prefs.sendCodeBlock = p.sendCodeBlock
   if (typeof p.pathTemplate === 'string') prefs.pathTemplate = p.pathTemplate.slice(0, 500)
   if (typeof p.shellIntegration === 'boolean') prefs.shellIntegration = p.shellIntegration
+  if (p.commandNotifySec === 0 || p.commandNotifySec === 5 || p.commandNotifySec === 10 || p.commandNotifySec === 30 || p.commandNotifySec === 60) prefs.commandNotifySec = p.commandNotifySec
   if (p.termTheme === 'dark' || p.termTheme === 'light' || p.termTheme === 'auto') prefs.termTheme = p.termTheme
   const font = isObj(p.font) ? p.font : {}
   // "Reset font" and any edit set fontCustom, so a stored font equal to the old default is also treated as unchosen.
