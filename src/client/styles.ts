@@ -185,6 +185,20 @@ const VIEW_CSS = `
 .wt-btn-count { position: absolute; top: -6px; right: -4px; min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; line-height: 1; border-radius: 8px; background: var(--wt-agents-solid); color: #fff; font-variant-numeric: tabular-nums; }
 .wt-state { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--wt-dim); }
 
+/* help panel (popover under the book button) */
+.wt-help { top: 34px; width: min(460px, calc(100vw - 32px)); max-height: min(640px, calc(100vh - 110px)); padding: 0; gap: 0; overflow-y: auto; scrollbar-width: thin; font-size: 12px; line-height: 1.45; }
+.wt-help-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 8px; background: var(--wt-surface); border-bottom: 0.5px solid var(--wt-line); }
+.wt-help-body { padding: 4px 10px 12px; }
+.wt-help-sec { padding-top: 8px; }
+.wt-help-sec + .wt-help-sec { border-top: 0.5px solid var(--wt-line); margin-top: 10px; }
+.wt-help-sec h4 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+.wt-help-row { display: grid; grid-template-columns: minmax(120px, 38%) 1fr; gap: 4px 10px; align-items: baseline; padding: 3px 0; }
+.wt-help-row[data-bad="true"] > span:last-child { color: var(--wt-danger); }
+.wt-help-row.wt-help-icon { grid-template-columns: 56px 1fr; align-items: center; }
+.wt-help-how { color: var(--wt-dim); overflow-wrap: anywhere; }
+.wt-kbd { justify-self: start; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; padding: 1px 6px; border: 0.5px solid var(--wt-line); border-radius: 5px; background: var(--wt-field); color: var(--wt-text); }
+.wt-help .wt-badge { justify-self: start; }
+
 /* find bar */
 .wt-find { position: absolute; top: 40px; right: 14px; z-index: 40; display: flex; align-items: center; gap: 4px; padding: 5px 6px; border: 0.5px solid var(--wt-line); border-radius: 10px; background: var(--wt-surface); color: var(--wt-text); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 .wt-find .wt-input { width: 190px; height: 24px; }

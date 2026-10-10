@@ -10,7 +10,7 @@
 // navigation, sticky header, failed-command alerts) read.
 
 import type { IDecoration, IMarker, Terminal } from '@xterm/xterm'
-import { emit, persistSoon, prefs } from './state.ts'
+import { emit, persistSoon, prefs, runtimes } from './state.ts'
 import type { Runtime } from './types.ts'
 
 /** Blocks kept per terminal; older ones are dropped (their text is still in the scrollback). */
@@ -373,6 +373,12 @@ export function createBlocks(rt: Runtime): BlockModel {
     },
   }
   return model
+}
+
+/** Whether the shell of terminal `id` has sent any integration marker (OSC 133 prompt); undefined for an unknown terminal. */
+export function integrationSeen(id: string): boolean | undefined {
+  const rt = runtimes.get(id)
+  return rt === undefined ? undefined : rt.blocks?.integrated === true
 }
 
 // ── preference ──
