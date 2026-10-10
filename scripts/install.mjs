@@ -39,18 +39,25 @@ const plugins = readdirSync(join(root, 'packages'), { withFileTypes: true })
   })
   .filter((plugin) => plugin.pkg.dsh !== undefined)
 
-const selected = only === 'all' ? plugins : plugins.filter((p) => p.pkg.name === only || p.dirName === only)
+let selected = only === 'all' ? plugins : plugins.filter((p) => p.pkg.name === only || p.dirName === only)
 if (selected.length === 0) {
   console.error(`no installable package matches "${only}" (available: ${plugins.map((p) => p.pkg.name).join(', ') || 'none'})`)
   process.exit(1)
 }
 
 if (!remove) {
-  for (const plugin of selected) {
-    if (!existsSync(join(plugin.dir, 'lib', 'client.js'))) {
-      console.error(`${plugin.pkg.name}: lib/client.js is missing — run \`npm run build\` first`)
-      process.exit(1)
-    }
+  const unbuilt = selected.filter((plugin) => !existsSync(join(plugin.dir, 'lib', 'client.js')))
+  if (only !== 'all' && unbuilt.length > 0) {
+    // Asked for by name: a missing build is an error.
+    console.error(`${unbuilt[0].pkg.name}: lib/client.js is missing — run \`npm run build\` first`)
+    process.exit(1)
+  }
+  // Installing everything: skip packages whose client half is not built yet, and say so.
+  for (const plugin of unbuilt) console.warn(`skip ${plugin.pkg.name}: lib/client.js is not built (run \`npm run build\`)`)
+  selected = selected.filter((plugin) => !unbuilt.includes(plugin))
+  if (selected.length === 0) {
+    console.error('nothing to install: no selected package is built')
+    process.exit(1)
   }
 }
 

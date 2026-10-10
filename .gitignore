@@ -1,6 +1,8 @@
 node_modules/
 packages/terminal/lib/client.js
 packages/terminal/lib/shared/
+packages/code-editor/lib/client.js
+packages/code-editor/lib/shared/
 *.log
 CLAUDE.md
 GLOSSARY.md

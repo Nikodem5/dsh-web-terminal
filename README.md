@@ -5,7 +5,7 @@ A monorepo of plugins for the DeepSeek Harness web GUI (npm workspaces).
 | Package | Name | Status |
 |---|---|---|
 | [`packages/terminal`](packages/terminal/README.md) | `dsh-web-terminal` | Interactive PTY terminals, command blocks, SSH, agent status. Full documentation in its README |
-| [`packages/code-editor`](packages/code-editor/README.md) | `dsh-code-editor` | Monaco-based editor, coming next (placeholder) |
+| [`packages/code-editor`](packages/code-editor/README.md) | `dsh-code-editor` | Monaco-based code editor and reviewer (host half done, see its README) |
 | [`packages/shared`](packages/shared/README.md) | `dsh-shared` | Helpers used by more than one plugin. Not installed on its own |
 | `scripts/install.mjs` | | The one installer for all plugin packages |
 
