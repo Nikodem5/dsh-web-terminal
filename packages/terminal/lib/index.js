@@ -33,6 +33,7 @@ import { POSIX_SHELLS, WINDOWS_SHELLS, defaultShellSpec, shellSpec } from './she
 import { createProcessTable } from './process-table.js'
 import { trimReplay } from './replay.js'
 import { createSubagents } from './subagents.js'
+import { createEdits } from './edits.js'
 import { userStatusLine } from './statusline.js'
 import { OpenError, createOpener } from './open.js'
 import { MAX_CANDIDATES, linuxCwd, resolveCandidates } from './paths.js'
@@ -120,6 +121,8 @@ const DEFAULTS = {
   subagentThrottleMs: 500,
   /** How often finished sub-agents are checked against the retention above. */
   subagentSweepMs: 5000,
+  /** At most one `edits` frame per terminal in this window. */
+  editThrottleMs: 300,
 }
 
 /** Read one positive number from the environment, else the default. */
@@ -141,6 +144,7 @@ function readConfig() {
     subagentRetainMs: envNumber('DSH_WT_SUBAGENT_RETAIN_MS', DEFAULTS.subagentRetainMs),
     subagentThrottleMs: envNumber('DSH_WT_SUBAGENT_THROTTLE_MS', DEFAULTS.subagentThrottleMs),
     subagentSweepMs: envNumber('DSH_WT_SUBAGENT_SWEEP_MS', DEFAULTS.subagentSweepMs),
+    editThrottleMs: envNumber('DSH_WT_EDIT_THROTTLE_MS', DEFAULTS.editThrottleMs),
     allowedOrigins: parseExtraOrigins(process.env.DSH_WT_ALLOWED_ORIGINS),
   }
 }
@@ -429,6 +433,20 @@ function apply(ctx) {
     }
   }
 
+  /** Send the changed-file list to the attached browser, at most once per throttle window. */
+  const notifyEdits = (session) => {
+    if (session.editTimer) return
+    const wait = session.editSentAt + config.editThrottleMs - Date.now()
+    const flush = () => {
+      session.editTimer = null
+      session.editSentAt = Date.now()
+      send(session.ws, { type: 'edits', files: session.edits.list() })
+    }
+    if (wait <= 0) return flush()
+    session.editTimer = setTimeout(flush, wait)
+    session.editTimer.unref?.()
+  }
+
   const signalServer = createServer((req, res) => {
     const reply = (status) => {
       if (res.headersSent || res.writableEnded) return
@@ -461,6 +479,11 @@ function apply(ctx) {
       if (match[1] === 'subagents') {
         // The sub-agent status line's payload: the live task list.
         if (session.subagents.ingestTasks(body)) notifySubagents(session)
+        return reply(204)
+      }
+      if (match[1] === 'claude-edit') {
+        // A file the agent changed: not an agent state.
+        if (session.edits.ingest(body)) notifyEdits(session)
         return reply(204)
       }
       if (match[1] === 'claude' && trackSubagents(session, body)) return reply(204)
@@ -511,7 +534,7 @@ function apply(ctx) {
         // SessionStart only runs command hooks, and the sub-agent status line is a command too: both need node.
         const hookScript = nodePath === undefined ? undefined : HOOK_POST_SCRIPT
         const subagentLine = nodePath === undefined ? undefined : { script: STATUSLINE_SCRIPT, url: `${base}/subagents` }
-        writeFileSync(file, `${JSON.stringify(buildClaudeSettings(`${base}/claude`, { statusLine, hookScript, subagentLine }), null, 2)}\n`)
+        writeFileSync(file, `${JSON.stringify(buildClaudeSettings(`${base}/claude`, { statusLine, hookScript, subagentLine, editUrl: `${base}/claude-edit` }), null, 2)}\n`)
         claudeSettingsPath = file
       } catch {
         statusLineReason = 'settings file could not be written'
@@ -658,6 +681,8 @@ function apply(ctx) {
     tokens.delete(session.token)
     usage.removeSession(id)
     clearTimeout(session.subTimer)
+    clearTimeout(session.editTimer)
+    session.edits.clear()
     stopDrainWatch(session)
     try { session.ws?.close(1000, 'killed') } catch {}
     safeCall(() => session.handle.terminate())
@@ -774,7 +799,7 @@ function apply(ctx) {
       session.ws = ws
       session.lastActive = Date.now()
       stopDrainWatch(session)
-      send(ws, { type: 'attached', created: false, replay: session.replay, exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list() })
+      send(ws, { type: 'attached', created: false, replay: session.replay, exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list(), edits: session.edits.list() })
       session.lastBusy = undefined
       if (cols > 0 && rows > 0 && !session.exited) resizeHandle(session.handle, cols, rows)
     } else {
@@ -814,7 +839,7 @@ function apply(ctx) {
           safeCall(() => handle.terminate())
           throw new Error('plugin unloaded')
         }
-        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, lastActive: Date.now(), congested: false, drainTimer: null }
+        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null }
         sessions.set(id, created)
         tokens.set(token, id)
         return created
@@ -856,7 +881,7 @@ function apply(ctx) {
       // The socket may have closed during the spawn: store the session detached so the sweep applies.
       if (ws.readyState !== ws.OPEN) return
       live.ws = ws
-      send(ws, { type: 'attached', created: true, replay: live.replay, exited: live.exited, exitCode: live.exitCode, agent: null, subagents: [] })
+      send(ws, { type: 'attached', created: true, replay: live.replay, exited: live.exited, exitCode: live.exitCode, agent: null, subagents: [], edits: [] })
     }
 
     const bound = session
