@@ -1,5 +1,5 @@
 // dsh-code-editor host half: confined file + git routes and a live-update WebSocket for the Monaco client.
-// The contract is API.md next to package.json. Security model: README.md.
+// The contract is docs/API.md. Security model: README.md.
 //
 // A real cordis ctx THROWS on any property that is not in `inject`, so this file touches ctx.webServer and
 // ctx.effect only.

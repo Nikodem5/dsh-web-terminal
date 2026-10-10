@@ -9,7 +9,7 @@ packages/code-editor/lib/shared/
 CLAUDE.md
 GLOSSARY.md
 HANDOFF.md
-docs/adr/
+/docs/adr/
 
 # build output
 /lib/

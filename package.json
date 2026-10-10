@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && node --test tests/*.test.mjs",
     "install:desktop": "node scripts/install.mjs desktop",
     "install:web": "node scripts/install.mjs web",
     "install:all": "node scripts/install.mjs",
