@@ -419,10 +419,7 @@ test('network failures are fast and never prompt: unreachable host, and a server
     res.writeHead(401, { 'www-authenticate': 'Basic realm="x"', 'content-length': '0' }).end()
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
-  try {
-    git(repo, 'remote', 'set-url', 'origin', `http://127.0.0.1:${server.address().port}/x.git`)
-    git(repo, 'branch', '--set-upstream-to=origin/main', 'main') // may fail without the ref; irrelevant for fetch
-  } catch {}
+  git(repo, 'remote', 'set-url', 'origin', `http://127.0.0.1:${server.address().port}/x.git`)
   try {
     for (const route of ['/git/fetch', '/git/push']) {
       const started = Date.now()

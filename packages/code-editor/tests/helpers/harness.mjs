@@ -77,6 +77,7 @@ export async function startHost(options = {}) {
     }
     route.handler(req, res)
   })
+  http.keepAliveTimeout = 0 // never close an idle keep-alive socket under the client's feet (flaky "fetch failed" on a loaded machine)
   http.on('upgrade', (req, socket, head) => {
     const route = upgrades.find((u) => u.path === new URL(req.url, 'http://x').pathname)
     if (route === undefined) return socket.destroy()
