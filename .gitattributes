@@ -1,2 +1,2 @@
 # Shell scripts run under bash: a CRLF checkout (autocrlf on Windows) would break them.
-lib/shell/*.bash text eol=lf
+packages/terminal/lib/shell/*.bash text eol=lf
