@@ -15,6 +15,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 |---|---|
 | New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or one of the harness's **Workspaces** — shown as chips under the folder field, as listed in the left sidebar), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell, as soon as its prompt is up (it has printed and gone quiet for a moment; at most 5 s) |
 | Run Claude | **✦ Claude** is the same dialog preset to `claude` (chips for `claude --resume` / `--continue`) |
+| Connect over ssh | **⇄ SSH** (or the **⇄ SSH** tab of the dialog): a terminal on another machine, see [SSH terminals](#ssh-terminals) |
 | Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder and startup command |
 | Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins), then *Open* (replaces the open terminals) or *Add* |
 
@@ -38,7 +39,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 **Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Help panel
-The book button (or **F1**) opens a panel with five sections: every keyboard shortcut (with a filter box), the mouse actions, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node` and `claude` were found, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
+The book button (or **F1**) opens a panel with six sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
 
 ### Knowing what your agents are doing
 Status comes from the agent itself, not from guessing at output.
@@ -168,6 +169,31 @@ is quiet and it has switched paste mode on, and is copied to the clipboard inste
 - **Mouse programs**: while a TUI tracks the mouse, right-click belongs to it and passes through; **Shift+right-click**
   (xterm's usual "select instead" key) opens the menu there. Without a selection right-click is unchanged.
 
+### SSH terminals
+For the laptop-to-home-PC case: **⇄ SSH** in the toolbar (next to **✦ Claude**) opens the new-terminal dialog on its SSH tab, and the
+window runs your system `ssh` client in the same PTY as any other terminal.
+
+- **Where targets come from.** The dialog lists the concrete `Host` aliases of `~/.ssh/config` (with `user@hostname:port` as the
+  subtitle; `Include` directives are followed, relative to `~/.ssh`, with `*` and `?` in the file name; wildcard hosts such as
+  `Host *` are skipped). Or type `user@host` / `user@host:2222` (IPv6 in brackets). Recent targets are kept (ten at most, newest
+  first; ★ keeps one). **Run on connect** is an optional command that runs on the remote machine, e.g. `cd ~/proj && claude`.
+- **Keys and passwords.** Login is entirely `ssh`'s: keys, the agent and your config work as they do in any terminal. A password or key
+  passphrase is typed in the terminal when ssh asks. The plugin stores no secret: a window (and its saved layout) keeps only the alias or
+  `user@host`, the port and the remote command.
+- **How it is started.** Only an argument list, never a shell string:
+  `ssh -t -o ServerAliveInterval=30 -o ServerAliveCountMax=3 [-p PORT] -- DESTINATION [REMOTE_COMMAND]`. The destination must be a plain
+  alias or `[user@]host` that does not start with `-`, the port 1-65535, and the remote command a single line of at most 2 KB; anything
+  else is refused (in the dialog and again on the host).
+- **Windows chrome.** The title bar and the list row show `⇄ user@host`; the default name is `ssh: <alias or host>`. The dot says
+  **Connected** (blue-grey) while the session is up, not **Running**: the local process is always ssh.
+- **Disconnected and Reconnect.** ssh exits with 255 when the link drops or was never made (wrong host, refused, timeout; the keepalives end
+  a dead link in about 90 s). The window then shows **Disconnected** with a **Reconnect** button and raises an alert. There is deliberately
+  no automatic retry: a password prompt would be spammed. Any other exit code means the remote session ended normally (**Exited**, ↻ to
+  start again). Reconnect reuses the stored target and remote command; a restart or a reloaded saved layout connects afresh.
+- **Limits (phase 1).** No Claude status signals over ssh (the hook settings file is local) and no `--settings` is added, so the agent
+  dots and badges stay off; Ctrl+click on file paths is off (the paths are on the remote machine); command blocks and the real-folder
+  tracking only appear if the remote shell itself emits the markers. Jump hosts work through `ProxyJump` in your ssh config.
+
 ### Safety
 - Closing a terminal that is still **working or waiting** (single close, **Close all**, replacing a layout)
   asks first. Restarting a busy shell asks too.
@@ -214,6 +240,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
+| `lib/ssh-target.js`, `lib/ssh-config.js`, `src/client/ssh.ts` | SSH: target validation and argv (pure, shared with the browser bundle), the `~/.ssh/config` host list, client labels and socket parameters |
 | `lib/paths.js`, `lib/open.js` | Clickable paths: existence check with cwd rules; opening in an editor from an argv (no shell) |
 | `src/client/paths.ts`, `path-links.ts` | Path detection (pure) and the xterm link provider |
 | `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
@@ -248,6 +275,9 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 
 `/terminal/ws?id=<session>&shell=<id>&cwd=<dir>&cols=<n>&rows=<n>` — `id` is required; if a session with that id
 exists the socket reattaches to it, otherwise a shell is spawned.
+
+For an ssh window the query is `shell=ssh&sshHost=<alias>` or `sshTarget=<[user@]host>`, plus optional `sshPort` and `sshCommand` (no `cwd`);
+an invalid request is answered with an `error` frame and no process is started.
 
 Browser → host: `{"type":"input","data"}`, `{"type":"resize","cols","rows"}`, `{"type":"signal","signal"}`,
 `{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only).
