@@ -12,6 +12,7 @@ import { pageAction } from './shortcuts.ts'
 import type { EditorStore, GitState, State, Tab } from './store.ts'
 import { injectStyles } from './styles.ts'
 import { getStore } from './instance.ts'
+import { BranchChip, BranchPicker, HistoryBody, RepoTools, useGitTools } from './git-panel.tsx' // git tools block
 import { isDarkSurface } from './theme.ts'
 import type { GitFile, RepoEntry } from './types.ts'
 
@@ -233,11 +234,11 @@ function RepoBlock({ store, repo, g, open, onToggle }: { store: EditorStore; rep
         <span className="ce-name">{repo.name}</span>
         {repo.rel !== repo.name ? <span className="ce-dim">{repo.rel}</span> : null}
         <span className="ce-grow" />
-        {g?.status?.branch ? <span className="ce-branch" title="Branch">{g.status.branch}</span> : null}
+        {g?.status ? <BranchChip store={store} repo={repo.rel} branch={g.status.branch} className="ce-chip ce-branch" /> : null}{/* git tools block */}
         {n > 0 ? <span className="ce-count">{n}</span> : null}
         {g?.loading && g.status === null ? <span className="ce-dim">...</span> : null}
       </div>
-      {open ? <div className="ce-repo-body">{g ? <RepoGroups store={store} g={g} repo={repo.rel} /> : <div className="ce-note">Loading...</div>}</div> : null}
+      {open ? <div className="ce-repo-body">{g ? <><RepoTools store={store} repo={repo.rel} g={g} /><RepoGroups store={store} g={g} repo={repo.rel} /></> : <div className="ce-note">Loading...</div>}</div> : null}
     </div>
   )
 }
@@ -248,7 +249,7 @@ function Changes({ store, s }: { store: EditorStore; s: State }): ReactElement {
   const list = s.repos.list
   if (list === null) return s.repos.error ? <div className="ce-note" data-error="true">{s.repos.error}</div> : <div className="ce-note">Loading...</div>
   if (list.length === 0) return <div className="ce-note" data-empty-repos>No git repository in this folder.</div>
-  if (list.length === 1 && list[0].rel === '') return <RepoGroups store={store} g={s.git} repo="" />
+  if (list.length === 1 && list[0].rel === '') return <><RepoTools store={store} repo="" g={s.git} /><RepoGroups store={store} g={s.git} repo="" /></> // git tools block
   return (
     <div>
       {s.repos.truncated ? <div className="ce-note">Showing the first {list.length} repositories.</div> : null}
@@ -266,6 +267,7 @@ function Sidebar({ store, s, choices }: { store: EditorStore; s: State; choices:
   const secs = useRef<HTMLDivElement | null>(null)
   useEffect(() => { if (s.changesFocus > 0) store.setLayout({ chOpen: true }) }, [s.changesFocus, store])
   const total = totalChanges(s)
+  const history = useGitTools(store).history // git tools block
   const both = exOpen && chOpen
   const grow = (open: boolean, share: number): Record<string, number | string> => (open ? { flex: `${both ? share : 1} 1 0px` } : { flex: '0 0 auto' })
   const dragSections = (y: number): void => {
@@ -288,6 +290,11 @@ function Sidebar({ store, s, choices }: { store: EditorStore; s: State; choices:
         <Section title="CHANGES" open={chOpen} onToggle={() => store.setLayout({ chOpen: !chOpen })} count={total} style={grow(chOpen, 1 - exFrac)}
           actions={<button className="ce-ibtn" title="Refresh (rescans for repositories)" data-act="refresh-git" onClick={() => void store.refreshGit(true)}>&#x21BB;</button>}>
           <Changes store={store} s={s} />
+        </Section>
+        {/* git tools block: HISTORY */}
+        <Section title="HISTORY" open={history.open} onToggle={() => void store.gitTools.setHistoryOpen(!history.open)} style={grow(history.open, 1)}
+          actions={<button className="ce-ibtn" title="Reload history" data-act="refresh-history" onClick={() => void store.gitTools.setHistoryOpen(true).then(() => store.gitTools.loadHistory(true))}>&#x21BB;</button>}>
+          <HistoryBody store={store} />
         </Section>
       </div>
     </aside>
@@ -337,7 +344,10 @@ function Crumb({ store, s, tab }: { store: EditorStore; s: State; tab: Tab }): R
         </span>
       ) : null}
       {tab.kind === 'diff' ? <button className="ce-btn" data-act="open-file" onClick={() => void store.openFile(tab.path)}>Open file</button> : null}
-      {tab.kind === 'compare' ? (
+      {/* git tools block */}
+      {tab.kind === 'file' || tab.kind === 'diff' || (tab.kind === 'compare' && tab.of === null) ? <button className="ce-btn" data-act="file-history" title="Show the commits that changed this file" onClick={() => void store.gitTools.fileHistory(tab.path)}>History</button> : null}
+      {tab.kind === 'compare' && tab.of === null ? <span className="ce-dim" data-readonly>Read-only</span> : null}
+      {tab.kind === 'compare' && tab.of !== null ? (
         <>
           <button className="ce-btn" data-act="keep-mine" data-primary="true" onClick={() => void store.resolveCompare(tab.id, 'mine')}>Keep mine (overwrite)</button>
           <button className="ce-btn" data-act="use-disk" onClick={() => void store.resolveCompare(tab.id, 'disk')}>Use disk version</button>
@@ -452,14 +462,14 @@ function QuickOpen({ store, s }: { store: EditorStore; s: State }): ReactElement
 
 // ---- status bar ---------------------------------------------------------------------------------------------------
 
-function StatusBar({ s, tab }: { s: State; tab: Tab | undefined }): ReactElement {
+function StatusBar({ store, s, tab }: { store: EditorStore; s: State; tab: Tab | undefined }): ReactElement {
   const st = s.git.status
   const liveLabel = s.live === 'live' ? 'Live updates on' : s.live === 'connecting' ? 'Connecting...' : 'Live updates off (reconnecting)'
   const nested = s.repos.list !== null && s.repos.list.length > 0 && !s.repos.list.some((r) => r.rel === '')
   const branch = st?.branch ?? (nested ? `${s.repos.list?.length} repositories` : s.git.notGit ? 'no git' : '-')
   return (
     <div className="ce-status" data-statusbar>
-      <span title={liveLabel}><span className="ce-live" data-s={s.live} />{branch}</span>
+      <span title={liveLabel}><span className="ce-live" data-s={s.live} />{st ? <BranchChip store={store} repo="" branch={st.branch} className="ce-chip ce-chip-bar" /> : branch}</span>{/* git tools block */}
       {st && (st.ahead > 0 || st.behind > 0) ? <span title="Ahead / behind upstream">{`↑${st.ahead} ↓${st.behind}`}</span> : null}
       <span title={s.root ?? ''}>{s.root ?? 'no folder'}</span>
       <span className="ce-grow" />
@@ -541,8 +551,9 @@ export function CodeEditorPage({ store, useWorkspaces }: PageProps): ReactElemen
           <EditorArea store={store} s={s} tab={tab} />
         </main>
       </div>
-      <StatusBar s={s} tab={tab} />
+      <StatusBar store={store} s={s} tab={tab} />
       <QuickOpen store={store} s={s} />
+      <BranchPicker store={store} />{/* git tools block */}
       {s.notice ? (
         <div className="ce-notice" role="status" data-level={s.notice.level}>
           <span>{s.notice.text}</span>

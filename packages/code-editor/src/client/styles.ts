@@ -131,6 +131,62 @@ export const VIEW_CSS = `
 .ce-notice { position: absolute; right: 12px; bottom: 30px; z-index: 50; max-width: 420px; display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 0.5px solid var(--ce-line); background: var(--ce-surface); box-shadow: 0 6px 24px #0005; }
 .ce-notice[data-level="error"] { border-color: var(--ce-danger); }
 .ce-notice span { white-space: pre-wrap; word-break: break-word; }
+/* git tools block: sync bar, commit box, branch picker, history */
+.ce-tools { padding: 4px 8px 6px 10px; border-bottom: 0.5px solid var(--ce-line); display: flex; flex-direction: column; gap: 6px; }
+.ce-sync-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ce-sync-row .ce-grow { flex: 1; }
+.ce-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; height: 20px; padding: 0 6px; border: 0.5px solid var(--ce-line); border-radius: 10px; background: transparent; color: var(--ce-text); cursor: pointer; font-size: 11.5px; }
+.ce-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ce-chip:hover { border-color: var(--ce-accent); }
+.ce-repo-h .ce-chip.ce-branch { color: var(--ce-dim); }
+.ce-chip-bar { height: 18px; border-color: transparent; padding: 0 4px; color: inherit; font-size: 12px; }
+.ce-chip-bar:hover { border-color: var(--ce-line); }
+.ce-ab { color: var(--ce-dim); font-size: 11.5px; white-space: nowrap; }
+.ce-tbtn { width: auto; padding: 0 6px; font-size: 11.5px; border: 0.5px solid var(--ce-line); }
+.ce-tbtn:disabled { opacity: 0.45; cursor: default; }
+.ce-sync-msg { font-size: 11.5px; white-space: pre-wrap; word-break: break-word; color: var(--ce-dim); display: flex; align-items: center; gap: 6px; }
+.ce-sync-msg[data-error="true"] { color: var(--ce-danger); }
+.ce-sync-msg[data-warn="true"] { color: var(--ce-warn); }
+.ce-sync-msg[data-info="true"] { color: var(--ce-ok); }
+.ce-spin { width: 11px; height: 11px; flex: none; border: 1.5px solid var(--ce-line); border-top-color: var(--ce-accent); border-radius: 50%; display: inline-block; animation: ce-spin 0.8s linear infinite; }
+@keyframes ce-spin { to { transform: rotate(360deg); } }
+.ce-commit { display: flex; flex-direction: column; gap: 5px; }
+.ce-msg { width: 100%; resize: vertical; min-height: 54px; max-height: 200px; padding: 5px 8px; border: 0.5px solid var(--ce-line); border-radius: 6px; background: var(--ce-field); outline: none; font: inherit; }
+.ce-msg:focus { border-color: var(--ce-accent); }
+.ce-commit-row { display: flex; align-items: center; gap: 6px; }
+.ce-commit-row .ce-grow { flex: 1; }
+.ce-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ce-dim); cursor: pointer; user-select: none; }
+.ce-hint { font-size: 11px; color: var(--ce-dim); }
+.ce-hint[data-long="true"] { color: var(--ce-warn); }
+.ce-commit > .ce-btn { justify-content: center; }
+.ce-bp { max-height: 75%; }
+.ce-bp-h { padding: 8px 12px 0; font-weight: 600; }
+.ce-bp-h .ce-dim { color: var(--ce-dim); font-weight: 400; margin-left: 6px; }
+.ce-bp .ce-sync-msg { padding: 2px 12px; }
+.ce-bp .ce-qo-note { font-size: 11.5px; }
+.ce-bp .ce-plus { width: 12px; text-align: center; color: var(--ce-ok); font-weight: 700; }
+.ce-bp .ce-qo-item[data-current="true"] { color: var(--ce-dim); cursor: default; }
+.ce-hbar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; }
+.ce-hbar .ce-select { height: 24px; }
+.ce-hc { border-bottom: 0.5px solid var(--ce-line); }
+.ce-hrow { padding: 3px 8px 3px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.ce-hrow:hover { background: var(--ce-hover); }
+.ce-hc[data-open="true"] > .ce-hrow { background: var(--ce-sel); }
+.ce-hsub { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ce-hs { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.ce-ref { flex: none; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--ce-accent) 22%, transparent); color: var(--ce-text); }
+.ce-ref[data-tag="true"] { background: color-mix(in srgb, var(--ce-warn) 25%, transparent); }
+.ce-hmeta { display: flex; gap: 8px; font-size: 11px; color: var(--ce-dim); white-space: nowrap; overflow: hidden; }
+.ce-hmeta code { font-family: var(--ds-font-family-mono, ui-monospace, monospace); }
+.ce-hmeta span { overflow: hidden; text-overflow: ellipsis; }
+.ce-hdetail { padding: 2px 0 4px 10px; background: var(--ce-deep); }
+.ce-hmsg { margin: 2px 8px 4px 0; white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 12px; color: var(--ce-dim); max-height: 140px; overflow: auto; }
+.ce-hbadge { margin-left: auto; width: 14px; text-align: center; font-size: 11px; font-weight: 700; flex: none; }
+.ce-hbadge[data-k="M"], .ce-hbadge[data-k="R"], .ce-hbadge[data-k="C"], .ce-hbadge[data-k="T"] { color: var(--ce-warn); }
+.ce-hbadge[data-k="A"] { color: var(--ce-ok); }
+.ce-hbadge[data-k="D"] { color: var(--ce-danger); }
+.ce-more { padding: 6px 10px; display: flex; justify-content: center; }
+.ce-note[data-busy="true"] { display: flex; align-items: center; gap: 6px; }
 `
 
 let injected = false
