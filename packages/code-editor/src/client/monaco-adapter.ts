@@ -139,7 +139,9 @@ class MonacoHost implements EditorHost {
       const { KeyMod, KeyCode } = monaco
       ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => this.keyCb('save'))
       ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyP, () => this.keyCb('quickOpen'))
-      ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyW, () => this.keyCb('closeTab'))
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyE, () => this.keyCb('quickOpen'))
+      // Ctrl+W is the desktop app's window accelerator (it never reaches the page); Ctrl+F4 is VS Code's alternative.
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.F4, () => this.keyCb('closeTab'))
     }
     bind(this.editor)
     bind(this.diff.getModifiedEditor())

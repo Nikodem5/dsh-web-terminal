@@ -60,6 +60,8 @@ const { CodeEditorPage, EditorStore, createApi } = window.__ce_smoke__
 // mocked host API
 const fs = { 'a.txt': { content: 'hello\n', mtime: 1 }, 'src/b.ts': { content: 'export {}\n', mtime: 1 } }
 const puts = []
+const statusCalls = []
+const stageCalls = []
 const status = {
   ok: true, branch: 'main', ahead: 1, behind: 0,
   files: [
@@ -89,7 +91,20 @@ window.fetch = (url, init = {}) => {
     fs[body.path] = { content: body.content, mtime: (f?.mtime ?? 0) + 1 }
     return json(200, { ok: true, mtime: fs[body.path].mtime, size: body.content.length })
   }
-  if (route === '/git/status') return json(200, status)
+  if (route === '/git/repos') {
+    const r = u.searchParams.get('root')
+    if (r === '/w/multi') return json(200, { ok: true, inside: false, truncated: false, repos: [{ path: '/w/multi/alpha', rel: 'alpha', name: 'alpha' }, { path: '/w/multi/pk/beta', rel: 'pk/beta', name: 'beta' }] })
+    if (r === '/w/plain') return json(200, { ok: true, inside: false, truncated: false, repos: [] })
+    return json(200, { ok: true, inside: true, truncated: false, repos: [{ path: r, rel: '', name: 'proj' }] })
+  }
+  if (route === '/git/status') {
+    const r = u.searchParams.get('root')
+    statusCalls.push(r)
+    if (r === '/w/multi/alpha') return json(200, { ok: true, branch: 'dev', ahead: 0, behind: 0, files: [{ path: 'x.ts', index: ' ', worktree: 'M', staged: false, unstaged: true, untracked: false, conflicted: false }] })
+    if (r === '/w/multi/pk/beta') return json(200, { ok: true, branch: 'main', ahead: 0, behind: 0, files: [] })
+    return json(200, status)
+  }
+  if (route === '/git/stage') { stageCalls.push(body); return json(200, { ok: true }) }
   if (route === '/git/diff') return json(200, { ok: true, original: 'a', modified: 'b', binary: false, tooLarge: false })
   return json(200, { ok: true })
 }
@@ -111,7 +126,11 @@ const host = {
   onChange(f) { cb.change = f }, onCursor() {}, onKey(f) { cb.key = f }, dispose() {},
 }
 
-const store = new EditorStore({ api: createApi(), storage: null, confirm: () => true, gitDelayMs: 1 })
+const picks = ['/w/picked', null]
+const picker = { available: () => true, pick: async () => picks.shift() ?? null }
+const mem = new Map()
+const storage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)) } }
+const store = new EditorStore({ api: createApi(), storage, confirm: () => true, gitDelayMs: 1, picker })
 store.attachHost(host)
 const props = { store, useWorkspaces: (sel) => sel({ items: [{ path: '/w/proj', title: 'proj' }] }) }
 const root = ReactDOMClient.createRoot(window.document.getElementById('root'))
@@ -169,6 +188,100 @@ await until(() => qa('.ce-qo-item').length === 2, 'quick open items')
 check(qa('.ce-qo-item').length === 2, 'Ctrl+P opens quick open listing files')
 key(q('[data-ce-quick] input'), { key: 'Escape' })
 check(await until(() => !q('[data-ce-quick]'), 'quick open closed'), 'Escape closes quick open')
+
+// Ctrl+E / Ctrl+P from INSIDE the editor element and from the page body (focus outside the Code view)
+const editorEl = host.element
+check(editorEl.isConnected, 'the fake editor element is mounted in the page')
+const quick = () => !!q('[data-ce-quick]')
+const closeQuick = async () => { if (quick()) { key(q('[data-ce-quick] input'), { key: 'Escape' }); await until(() => !quick(), 'quick open closed') } }
+key(editorEl, { key: 'p', ctrlKey: true })
+check(await until(quick, 'quick open from the editor'), 'Ctrl+P dispatched inside the editor element opens quick open')
+await closeQuick()
+key(editorEl, { key: 'e', ctrlKey: true })
+check(await until(quick, 'quick open Ctrl+E'), 'Ctrl+E inside the editor element opens quick open')
+await closeQuick()
+key(doc.body, { key: 'e', ctrlKey: true })
+check(await until(quick, 'quick open from body'), 'Ctrl+E with focus on the page body (outside the view) opens quick open')
+key(q('[data-ce-quick] input'), { key: 'e', ctrlKey: true })
+check(await until(() => !quick(), 'toggled closed'), 'the key toggles quick open closed from its own input')
+key(editorEl, { key: 'w', ctrlKey: true })
+check(!quick(), 'Ctrl+W is not bound')
+click(q('[data-act=quick-open]'))
+check(await until(quick, 'search button'), 'the Search files button opens quick open')
+await closeQuick()
+check(q('[data-act=quick-open]').textContent.includes('Ctrl+E'), 'the search button shows its shortcut')
+
+// closing the active tab with Ctrl+F4
+const tabsBefore = qa('.ce-tab').length
+key(editorEl, { key: 'F4', ctrlKey: true })
+check(await until(() => qa('.ce-tab').length === tabsBefore - 1, 'tab closed'), 'Ctrl+F4 closes the active tab')
+
+// splitters: drag, clamp, persist, double-click reset, keyboard
+const side = q('.ce-side')
+const mouse = (el, type, init) => el.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init }))
+const saved = () => JSON.parse(mem.get('dsh-code-editor:v1:global')).layout
+check(side.style.width === '280px', 'default sidebar width is 280px')
+const bar = q('[data-split=sidebar]')
+mouse(bar, 'mousedown', { clientX: 280 })
+mouse(doc, 'mousemove', { clientX: 400 })
+check(await until(() => side.style.width === '400px', 'drag width'), 'dragging the splitter resizes the sidebar')
+mouse(doc, 'mousemove', { clientX: 50 })
+check(await until(() => side.style.width === '200px', 'min width'), 'the width is clamped to the minimum')
+mouse(doc, 'mouseup', {})
+mouse(doc, 'mousemove', { clientX: 500 })
+check(side.style.width === '200px', 'moves after mouseup are ignored')
+mouse(bar, 'mousedown', { clientX: 200 }); mouse(doc, 'mousemove', { clientX: 333 }); mouse(doc, 'mouseup', {})
+check(await until(() => saved().sidebar === 333, 'persisted width'), 'the width is persisted')
+bar.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }))
+check(await until(() => side.style.width === '280px', 'reset'), 'double-click resets the sidebar width')
+bar.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+check(await until(() => side.style.width === '296px', 'nudge'), 'ArrowRight nudges the splitter')
+const hbar = q('[data-split=sections]')
+check(!!hbar, 'a splitter sits between EXPLORER and CHANGES')
+hbar.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+check(await until(() => saved().exFrac === 0.54, 'frac'), 'the explorer/changes split is persisted')
+hbar.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }))
+check(await until(() => saved().exFrac === 0.5, 'frac reset'), 'double-click resets the split')
+click(q('[data-sec=EXPLORER] .ce-sec-h'))
+check(await until(() => q('[data-sec=EXPLORER]').dataset.open === 'false' && !q('[data-split=sections]'), 'collapsed'), 'sections collapse (and the inner splitter goes away)')
+click(q('[data-sec=EXPLORER] .ce-sec-h'))
+await until(() => q('[data-sec=EXPLORER]').dataset.open === 'true', 'expanded')
+
+// file icons in explorer and tabs
+check(q('[role=treeitem][data-path="a.txt"] svg[data-icon]')?.dataset.icon === 'text', 'explorer rows have a file-type icon')
+const dirRow = q('[role=treeitem][data-path="src"]')
+check(dirRow.querySelector('svg.ce-folder')?.dataset.icon === (dirRow.getAttribute('aria-expanded') === 'true' ? 'folder-open' : 'folder'), 'folders have an open / closed icon matching their state')
+check(!!q('.ce-tab svg[data-icon]'), 'tabs have an icon')
+
+// Browse...: the native picker, then POST /roots and select
+check(!!q('[data-act=browse]'), 'Browse... shows when the picker exists')
+click(q('[data-act=browse]'))
+check(await until(() => q('.ce-select').value === '/w/picked', 'picked root'), 'Browse... selects the folder the picker returned')
+click(q('[data-act=browse]'))
+await sleep(30)
+check(q('.ce-select').value === '/w/picked', 'cancelling the picker changes nothing')
+
+// root without repos
+await store.openFolder('/w/plain')
+check(await until(() => q('[data-empty-repos]'), 'no repos note'), 'a folder without repositories says so')
+check(text('[data-sec=CHANGES]').includes('No git repository in this folder'), 'empty state text')
+
+// root that only CONTAINS repositories: a collapsible block per repo with its own groups and actions
+await store.openFolder('/w/multi')
+await until(() => qa('.ce-repo').length === 2, 'repo blocks')
+check(qa('.ce-repo').map((e) => e.dataset.repo).join() === 'alpha,pk/beta', 'one block per nested repository')
+await until(() => q('.ce-repo[data-repo=alpha]')?.dataset.open === 'true', 'alpha open (has changes)')
+check(statusCalls.includes('/w/multi/alpha') && statusCalls.includes('/w/multi/pk/beta'), 'each repository gets its own status request')
+check(q('.ce-repo[data-repo="pk/beta"]').dataset.open === 'false', 'a repository without changes starts collapsed')
+check(q('[data-sec=CHANGES] .ce-count')?.textContent === '1', 'the section count adds up the repositories')
+click(q('.ce-repo[data-repo=alpha] [data-act=stage]'))
+check(await until(() => stageCalls.length === 1, 'stage'), 'per-repo stage hits the API')
+check(stageCalls[0].root === '/w/multi/alpha' && stageCalls[0].paths.join() === 'x.ts', 'stage uses the repository path as root and a repo-relative path')
+click(q('.ce-repo[data-repo=alpha] .ce-row'))
+await until(() => host.diff && host.diff.id === 'diff:w:alpha/x.ts', 'nested diff')
+check(host.diff?.id === 'diff:w:alpha/x.ts', 'a nested change opens a diff tab keyed by its root-relative path')
+click(q('.ce-repo[data-repo=alpha] .ce-repo-h'))
+check(await until(() => q('.ce-repo[data-repo=alpha]').dataset.open === 'false', 'collapse repo'), 'a repository block collapses')
 
 root.unmount()
 store.dispose()

@@ -4,13 +4,14 @@
 // A real cordis ctx THROWS on any property that is not in `inject`, so this file touches ctx.webServer and
 // ctx.effect only.
 import { promises as fsp } from 'node:fs'
-import { dirname, isAbsolute, join, resolve as resolvePath } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve as resolvePath } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { EditorError, fromFsError } from './errors.js'
 import { splitRelative } from './confine.js'
 import { createRoots, dataDir, validateRoot } from './roots.js'
 import { MAX_LIST_FILES, MAX_WRITE_BYTES, listTree, readFile, walkFiles, writeFile } from './files.js'
 import * as gitOps from './git.js'
+import { findRepos } from './repos.js'
 import { createWatchers } from './watcher.js'
 import { originAllowed, parseExtraOrigins } from './shared/origin.js'
 import { safeCall } from './shared/safe-call.js'
@@ -26,6 +27,8 @@ const WS_PATH = '/code-editor/ws'
 const JSON_BODY_LIMIT = 256 * 1024
 const MAX_SOCKETS = 64
 const HEARTBEAT_MS = 30_000
+const REPOS_TTL_MS = 10_000
+const REPOS_CACHE_MAX = 32
 
 function writeJson(res, status, body) {
   res.writeHead(status, {
@@ -137,6 +140,9 @@ function apply(ctx, options) {
       }),
     )
 
+  /** real root -> { at, value }: nested-repo scans are cheap but not free, and the sidebar asks often. */
+  const repoCache = new Map()
+
   const param = (url, key) => url.searchParams.get(key) ?? ''
   const gitReady = (body) => rootOf(body?.root)
 
@@ -228,6 +234,25 @@ function apply(ctx, options) {
       },
       MAX_WRITE_BYTES + 64 * 1024,
     ),
+    // Repositories for the CHANGES view: the repo the root is inside of, else the repos nested below it.
+    route('/git/repos', {
+      GET: async ({ url }) => {
+        const root = await rootOf(param(url, 'root'))
+        const hit = repoCache.get(root.real)
+        if (param(url, 'fresh') !== '1' && hit !== undefined && Date.now() - hit.at < REPOS_TTL_MS) return hit.value
+        let value
+        if ((await gitOps.repoInfo(root.path)).inside) {
+          // Inside a work tree: that repo, scoped to the root (the root is never widened to the work tree top).
+          value = { inside: true, truncated: false, repos: [{ path: root.path, rel: '', name: basename(root.path) }] }
+        } else {
+          const found = await findRepos(root.path)
+          value = { inside: false, truncated: found.truncated, repos: found.repos }
+        }
+        if (repoCache.size >= REPOS_CACHE_MAX) repoCache.delete(repoCache.keys().next().value)
+        repoCache.set(root.real, { at: Date.now(), value })
+        return value
+      },
+    }),
     route('/git/status', {
       GET: async ({ url }) => {
         const root = await rootOf(param(url, 'root'))

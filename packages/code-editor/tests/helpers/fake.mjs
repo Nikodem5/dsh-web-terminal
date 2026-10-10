@@ -80,8 +80,17 @@ export function makeApi(opts = {}) {
       fs.set(path, { content, mtime })
       return { mtime, size: content.length }
     },
+    // opts.repos: root -> RepoList (nested repositories); default: the root itself is the repository (opts.notGit: none).
+    async gitRepos(root, fresh) {
+      calls.push(['gitRepos', root, fresh === true])
+      if (failNext.gitRepos) { const e = failNext.gitRepos; failNext.gitRepos = null; throw e }
+      if (opts.repos?.[root]) return JSON.parse(JSON.stringify(opts.repos[root]))
+      if (opts.notGit) return { inside: false, truncated: false, repos: [] }
+      return { inside: true, truncated: false, repos: [{ path: root, rel: '', name: root.split('/').pop() }] }
+    },
     async gitStatus(root) {
       calls.push(['gitStatus', root])
+      if (opts.statusByRoot?.[root]) return JSON.parse(JSON.stringify(opts.statusByRoot[root]))
       if (opts.notGit) throw new ApiError('not a git repository', 409, 'not-git')
       return JSON.parse(JSON.stringify(status))
     },

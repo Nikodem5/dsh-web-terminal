@@ -6,9 +6,13 @@ import type { EditorHost, AdapterFactory } from './adapter.ts'
 import { ApiError, type Api } from './api.ts'
 import { groupChanges, planDiscard } from './changes.ts'
 import { baseName, dirName, findRoot, joinRel, languageFor, normKey, relativeTo, sameRoot } from './paths.ts'
-import { defaultStorage, loadGlobal, loadRootState, saveGlobal, saveRootState, type StorageLike } from './persist.ts'
-import type { GitFile, GitStatus, OpenRequest, RootInfo, TreeEntry, WsFrame } from './types.ts'
+import { DEFAULT_LAYOUT, defaultStorage, loadGlobal, loadRootState, sanitizeLayout, saveGlobal, saveRootState, type Layout, type StorageLike } from './persist.ts'
+import type { GitFile, GitStatus, OpenRequest, RepoEntry, RepoList, RootInfo, TreeEntry, WsFrame } from './types.ts'
 import { openLive, type LiveState, type SocketCtor } from './ws.ts'
+
+export interface GitState { status: GitStatus | null; notGit: boolean; error: string | null; loading: boolean }
+/** The repositories of the CHANGES view; `list === null` until the first discovery finished. */
+export interface RepoState { list: RepoEntry[] | null; loading: boolean; truncated: boolean; error: string | null }
 
 export interface TreeNode { entries: TreeEntry[] | null; loading: boolean; error: string | null }
 
@@ -18,6 +22,8 @@ export interface Tab {
   path: string
   /** Diff tabs: the staged (HEAD vs index) or unstaged (index vs work tree) side. */
   staged: boolean
+  /** Diff tabs: root-relative folder of the repository the diff belongs to ('' = the root itself). `path` stays root-relative. */
+  repo: string
   title: string
   language: string
   loaded: boolean
@@ -51,7 +57,15 @@ export interface State {
   root: string | null
   tree: Record<string, TreeNode>
   expanded: string[]
-  git: { status: GitStatus | null; notGit: boolean; error: string | null; loading: boolean }
+  /** Status of the root's own repository (the root is inside a work tree). */
+  git: GitState
+  /** Discovered repositories (root inside a repo: that one; else the ones nested below it). */
+  repos: RepoState
+  /** Status per nested repository, keyed by `RepoEntry.rel` (only when the root is not itself in a work tree). */
+  repoGit: Record<string, GitState>
+  /** Folders the user opened by hand (kept in the folder list even when nested in a workspace). */
+  folders: string[]
+  layout: Layout
   tabs: Tab[]
   active: string | null
   inline: boolean
@@ -76,6 +90,8 @@ export interface Deps {
   Socket?: SocketCtor
   /** Switch the harness to the Code page (best effort). */
   selectPanel?: () => void
+  /** Native folder chooser (the desktop app's `__DSH_DIRECTORY_PICKER__`); absent = typed path only. */
+  picker?: { available(): boolean; pick(): Promise<string | null> }
   /** Coalescing delay for git refreshes after a `changed` frame, ms. */
   gitDelayMs?: number
   /** Reconnect delay override (tests). */
@@ -87,8 +103,8 @@ const diffId = (path: string, staged: boolean): string => `diff:${staged ? 's' :
 const compareId = (path: string): string => `cmp:${path}`
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
-const blankTab = (id: string, kind: Tab['kind'], path: string, staged = false): Tab => ({
-  id, kind, path, staged, title: baseName(path), language: languageFor(path), loaded: false, loading: false, error: null, mtime: null, saved: '', initial: null,
+const blankTab = (id: string, kind: Tab['kind'], path: string, staged = false, repo = ''): Tab => ({
+  id, kind, path, staged, repo, title: baseName(path), language: languageFor(path), loaded: false, loading: false, error: null, mtime: null, saved: '', initial: null,
   dirty: false, eol: 'lf', binary: false, tooLarge: false, conflict: null, saving: false, diff: null, of: null, diskMtime: null,
 })
 
@@ -102,6 +118,7 @@ export class EditorStore {
   private filesStale = true
   private gitInflight: Promise<void> | null = null
   private gitAgain = false
+  private gitFresh = false
   private gitTimer: ReturnType<typeof setTimeout> | null = null
   private pendingReveal: { id: string; line: number; col: number } | null = null
   private generation = 0
@@ -116,6 +133,7 @@ export class EditorStore {
     this.folders = g.folders
     this.s = {
       workspaces: [], roots: [], root: null, tree: {}, expanded: [], git: { status: null, notGit: false, error: null, loading: false },
+      repos: { list: null, loading: false, truncated: false, error: null }, repoGit: {}, folders: g.folders, layout: g.layout ?? DEFAULT_LAYOUT,
       tabs: [], active: null, inline: false, cursor: null, live: 'down', quickOpen: false, changesFocus: 0, notice: null, hostReady: false, recent: [],
     }
   }
@@ -194,13 +212,43 @@ export class EditorStore {
       if (!info || !info.exists) { this.notify(`Folder not found: ${p}`); return false }
       if (!this.folders.some((f) => sameRoot(f, info.path)) && !this.s.workspaces.some((w) => sameRoot(w, info.path))) {
         this.folders = [info.path, ...this.folders].slice(0, 30)
-        saveGlobal(this.storage, { lastRoot: this.s.root, folders: this.folders })
+        this.set({ folders: this.folders })
+        this.saveG(this.s.root)
       }
       return await this.selectRoot(info.path)
     } catch (e) {
       this.notify(`Could not open folder: ${errText(e)}`)
       return false
     }
+  }
+
+  /** Persist the global part (last root, picked folders, sidebar layout). */
+  private saveG(lastRoot: string | null): void {
+    saveGlobal(this.storage, { lastRoot, folders: this.folders, layout: this.s.layout })
+  }
+
+  /** The desktop app offers a native folder chooser. */
+  canBrowse(): boolean { return this.deps.picker?.available() === true }
+
+  /** "Browse...": ask the OS for a folder, then register + select it like a typed path. False when cancelled. */
+  async browse(): Promise<boolean> {
+    const picker = this.deps.picker
+    if (!picker || !picker.available()) return false
+    let picked: string | null = null
+    try { picked = await picker.pick() } catch { picked = null }
+    if (typeof picked !== 'string' || picked.trim().length === 0) return false
+    return this.openFolder(picked)
+  }
+
+  // ---- layout -----------------------------------------------------------------------------------------------------
+
+  /** Change the sidebar geometry / section state (clamped) and remember it. */
+  setLayout(patch: Partial<Layout>): void {
+    const layout = sanitizeLayout({ ...this.s.layout, ...patch })
+    const a = this.s.layout
+    if (a.sidebar === layout.sidebar && a.exFrac === layout.exFrac && a.exOpen === layout.exOpen && a.chOpen === layout.chOpen) return
+    this.set({ layout })
+    this.saveG(this.s.root)
   }
 
   /** Switch the explorer / changes / tabs to another registered root. False when the user cancelled (unsaved edits). */
@@ -217,16 +265,16 @@ export class EditorStore {
     this.filesStale = true
     this.set({
       root, tree: {}, expanded: st.expanded, tabs: [], active: null, inline: st.inline, cursor: null, quickOpen: false, notice: null,
-      git: { status: null, notGit: false, error: null, loading: false }, recent: [],
+      git: { status: null, notGit: false, error: null, loading: false }, repos: { list: null, loading: false, truncated: false, error: null }, repoGit: {}, recent: [],
     })
     this.host?.showNone()
-    saveGlobal(this.storage, { lastRoot: root, folders: this.folders })
+    this.saveG(root)
     this.openLiveSocket(root)
     void this.loadDir('')
     for (const d of st.expanded) void this.loadDir(d)
     void this.refreshGit()
     // Restore tabs (the active one loads first; the rest load when activated).
-    for (const t of st.tabs) this.addTab(t.kind === 'diff' ? blankTab(diffId(t.path, t.staged === true), 'diff', t.path, t.staged === true) : blankTab(fileId(t.path), 'file', t.path))
+    for (const t of st.tabs) this.addTab(t.kind === 'diff' ? blankTab(diffId(t.path, t.staged === true), 'diff', t.path, t.staged === true, t.repo ?? '') : blankTab(fileId(t.path), 'file', t.path))
     const want = st.active !== null && this.tab(st.active) ? st.active : this.s.tabs[0]?.id ?? null
     if (gen === this.generation && want !== null) await this.activate(want)
     return true
@@ -240,7 +288,7 @@ export class EditorStore {
     const root = this.s.root
     if (root === null) return
     saveRootState(this.storage, root, {
-      tabs: this.s.tabs.filter((t) => t.kind !== 'compare').map((t) => (t.kind === 'diff' ? { kind: 'diff' as const, path: t.path, staged: t.staged } : { kind: 'file' as const, path: t.path })),
+      tabs: this.s.tabs.filter((t) => t.kind !== 'compare').map((t) => (t.kind === 'diff' ? { kind: 'diff' as const, path: t.path, staged: t.staged, repo: t.repo } : { kind: 'file' as const, path: t.path })),
       active: this.tab(this.s.active)?.kind === 'compare' ? null : this.s.active,
       expanded: this.s.expanded,
       inline: this.s.inline,
@@ -323,9 +371,10 @@ export class EditorStore {
     void this.reveal(path)
   }
 
-  async openDiff(path: string, staged: boolean): Promise<void> {
+  /** Open the diff of a changed file. `path` is relative to the root; `repo` is the root-relative folder of its repository. */
+  async openDiff(path: string, staged: boolean, repo = ''): Promise<void> {
     const id = diffId(path, staged)
-    this.addTab(blankTab(id, 'diff', path, staged))
+    this.addTab(blankTab(id, 'diff', path, staged, repo))
     this.patchTab(id, { title: `${baseName(path)} (${staged ? 'staged' : 'changes'})` })
     await this.activate(id)
   }
@@ -367,7 +416,10 @@ export class EditorStore {
     if (root === null || !t) return
     this.patchTab(id, { loading: true, error: null })
     try {
-      const r = await this.deps.api.gitDiff(root, t.path, t.staged)
+      if (t.repo !== '' && this.s.repos.list === null) await this.refreshGit()
+      const where = this.diffTarget(t)
+      if (where === null) throw new Error('This repository is no longer part of the folder.')
+      const r = await this.deps.api.gitDiff(where.root, where.path, t.staged)
       if (this.s.root !== root || !this.tab(id)) return
       const skip = r.binary || r.tooLarge
       this.patchTab(id, { loading: false, loaded: true, binary: r.binary, tooLarge: r.tooLarge, diff: skip ? null : { original: r.original ?? '', modified: r.modified ?? '' } })
@@ -375,6 +427,15 @@ export class EditorStore {
       if (this.s.root !== root || !this.tab(id)) return
       this.patchTab(id, { loading: false, error: errText(e) })
     }
+  }
+
+  /** The git root and repo-relative path a diff tab asks the host for. */
+  private diffTarget(t: Tab): { root: string; path: string } | null {
+    const root = this.s.root
+    if (root === null) return null
+    if (t.repo === '') return { root, path: t.path }
+    const repo = this.repoPath(t.repo)
+    return repo === null ? null : { root: repo, path: t.path.slice(t.repo.length + 1) }
   }
 
   /** Push the active tab to the editor. */
@@ -582,19 +643,35 @@ export class EditorStore {
 
   // ---- git ----------------------------------------------------------------------------------------------------------
 
-  refreshGit(): Promise<void> {
+  /** Absolute path of a discovered repository (`rel` '' = the root, which is the repo when the root is inside a work tree). */
+  repoPath(rel: string): string | null {
+    if (rel === '') return this.s.root
+    return this.s.repos.list?.find((r) => r.rel === rel)?.path ?? null
+  }
+
+  /** Git state of one repository: the root's own (`rel` '') or a nested one. */
+  gitOf(rel: string): GitState | undefined { return rel === '' ? this.s.git : this.s.repoGit[rel] }
+
+  /** Total number of changed entries over every shown repository. */
+  changeCount(): number {
+    let n = this.s.git.status?.files.length ?? 0
+    for (const g of Object.values(this.s.repoGit)) n += g.status?.files.length ?? 0
+    return n
+  }
+
+  /**
+   * Refresh the CHANGES data: discover the repositories (first time, after a root switch, or `fresh`) and load their
+   * status. Overlapping calls coalesce into one extra round.
+   */
+  refreshGit(fresh = false): Promise<void> {
+    if (fresh) this.gitFresh = true
     if (this.gitInflight) { this.gitAgain = true; return this.gitInflight }
     const root = this.s.root
     if (root === null) return Promise.resolve()
     this.set({ git: { ...this.s.git, loading: true } })
     this.gitInflight = (async () => {
       try {
-        const status = await this.deps.api.gitStatus(root)
-        if (this.s.root === root) this.set({ git: { status, notGit: false, error: null, loading: false } })
-      } catch (e) {
-        if (this.s.root !== root) return
-        if (e instanceof ApiError && e.code === 'not-git') this.set({ git: { status: null, notGit: true, error: null, loading: false } })
-        else this.set({ git: { status: this.s.git.status, notGit: false, error: errText(e), loading: false } })
+        await this.loadGit(root)
       } finally {
         this.gitInflight = null
         if (this.gitAgain) { this.gitAgain = false; void this.refreshGit() }
@@ -603,49 +680,121 @@ export class EditorStore {
     return this.gitInflight
   }
 
+  private async loadGit(root: string): Promise<void> {
+    const fresh = this.gitFresh
+    this.gitFresh = false
+    if (this.s.repos.list === null || fresh) {
+      this.set({ repos: { ...this.s.repos, loading: true } })
+      let found: RepoList
+      try {
+        found = await this.deps.api.gitRepos(root, fresh)
+      } catch (e) {
+        if (this.s.root !== root) return
+        if (e instanceof ApiError && (e.status === 404 || e.status === 405)) {
+          // A host without /git/repos: treat the root as the repository, like before.
+          found = { inside: true, truncated: false, repos: [{ path: root, rel: '', name: baseName(root) }] }
+        } else {
+          this.set({ repos: { ...this.s.repos, loading: false, error: errText(e) }, git: { ...this.s.git, loading: false, error: errText(e) } })
+          return
+        }
+      }
+      if (this.s.root !== root) return
+      const nested = found.repos.filter((r) => r.rel !== '')
+      // Nested repositories lie inside the registered root: register them so the git routes accept them as `root`.
+      if (nested.length > 0) {
+        try { await this.register(nested.map((r) => r.path)) } catch (e) { this.notify(`Could not register repositories: ${errText(e)}`) }
+        if (this.s.root !== root) return
+      }
+      const keep: Record<string, GitState> = {}
+      for (const r of nested) if (this.s.repoGit[r.rel]) keep[r.rel] = this.s.repoGit[r.rel]
+      this.set({ repos: { list: found.repos, loading: false, truncated: found.truncated, error: null }, repoGit: keep })
+    }
+    const list = this.s.repos.list ?? []
+    if (list.length === 0) {
+      this.set({ git: { status: null, notGit: true, error: null, loading: false }, repoGit: {} })
+      return
+    }
+    if (list.some((r) => r.rel === '')) {
+      try {
+        const status = await this.deps.api.gitStatus(root)
+        if (this.s.root === root) this.set({ git: { status, notGit: false, error: null, loading: false } })
+      } catch (e) {
+        if (this.s.root !== root) return
+        if (e instanceof ApiError && e.code === 'not-git') this.set({ git: { status: null, notGit: true, error: null, loading: false } })
+        else this.set({ git: { status: this.s.git.status, notGit: false, error: errText(e), loading: false } })
+      }
+      return
+    }
+    this.set({ git: { status: null, notGit: false, error: null, loading: false } })
+    const queue = list.map((r) => r.rel)
+    const worker = async (): Promise<void> => { for (let rel = queue.shift(); rel !== undefined; rel = queue.shift()) await this.loadRepoStatus(rel) }
+    await Promise.all([worker(), worker(), worker(), worker()])
+  }
+
+  private async loadRepoStatus(rel: string): Promise<void> {
+    const root = this.s.root
+    const abs = this.repoPath(rel)
+    if (root === null || abs === null || rel === '') return
+    const prev = this.s.repoGit[rel]
+    this.set({ repoGit: { ...this.s.repoGit, [rel]: { status: prev?.status ?? null, notGit: false, error: null, loading: true } } })
+    const put = (g: GitState): void => { if (this.s.root === root && this.s.repos.list?.some((r) => r.rel === rel)) this.set({ repoGit: { ...this.s.repoGit, [rel]: g } }) }
+    try {
+      put({ status: await this.deps.api.gitStatus(abs), notGit: false, error: null, loading: false })
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'not-git') put({ status: null, notGit: true, error: null, loading: false })
+      else put({ status: prev?.status ?? null, notGit: false, error: errText(e), loading: false })
+    }
+  }
+
+  /** Refresh one repository's status (`rel` '' = the root repository). */
+  private refreshRepo(rel: string): Promise<void> { return rel === '' ? this.refreshGit() : this.loadRepoStatus(rel) }
+
   private scheduleGit(): void {
     if (this.gitTimer !== null) return
     this.gitTimer = setTimeout(() => { this.gitTimer = null; void this.refreshGit(); void this.refreshDiffTabs() }, this.deps.gitDelayMs ?? 250)
   }
 
-  private async gitOp(fn: (root: string) => Promise<void>, what: string): Promise<boolean> {
-    const root = this.s.root
-    if (root === null) return false
+  private async gitOp(fn: (repoRoot: string) => Promise<void>, what: string, repo = ''): Promise<boolean> {
+    const abs = this.repoPath(repo)
+    if (this.s.root === null || abs === null) return false
     try {
-      await fn(root)
-      await this.refreshGit()
+      await fn(abs)
+      await this.refreshRepo(repo)
       await this.refreshDiffTabs()
       return true
     } catch (e) {
       this.notify(`${what} failed: ${errText(e)}`)
-      void this.refreshGit()
+      void this.refreshRepo(repo)
       return false
     }
   }
 
-  stage(paths: string[]): Promise<boolean> { return this.gitOp((r) => this.deps.api.stage(r, paths), 'Stage') }
-  unstage(paths: string[]): Promise<boolean> { return this.gitOp((r) => this.deps.api.unstage(r, paths), 'Unstage') }
+  /** Stage / unstage / discard take paths relative to the repository `repo` (root-relative folder, '' = the root). */
+  stage(paths: string[], repo = ''): Promise<boolean> { return this.gitOp((r) => this.deps.api.stage(r, paths), 'Stage', repo) }
+  unstage(paths: string[], repo = ''): Promise<boolean> { return this.gitOp((r) => this.deps.api.unstage(r, paths), 'Unstage', repo) }
 
   /** Discard asks first and lists the untracked files that will be deleted. False when cancelled or failed. */
-  async discard(files: GitFile[]): Promise<boolean> {
+  async discard(files: GitFile[], repo = ''): Promise<boolean> {
     if (files.length === 0) return false
     const plan = planDiscard(files)
     if (!this.confirm(plan.message)) return false
-    return this.gitOp((r) => this.deps.api.discard(r, plan.paths, plan.untracked), 'Discard')
+    return this.gitOp((r) => this.deps.api.discard(r, plan.paths, plan.untracked), 'Discard', repo)
   }
 
-  stageAll(): Promise<boolean> {
-    const g = groupChanges(this.s.git.status)
-    return this.stage([...g.changes, ...g.untracked].map((f) => f.path))
+  stageAll(repo = ''): Promise<boolean> {
+    const g = groupChanges(this.gitOf(repo)?.status)
+    return this.stage([...g.changes, ...g.untracked].map((f) => f.path), repo)
   }
-  unstageAll(): Promise<boolean> { return this.unstage(groupChanges(this.s.git.status).staged.map((f) => f.path)) }
+  unstageAll(repo = ''): Promise<boolean> { return this.unstage(groupChanges(this.gitOf(repo)?.status).staged.map((f) => f.path), repo) }
 
   private async refreshDiffTabs(): Promise<void> {
     const root = this.s.root
     if (root === null) return
     for (const t of this.s.tabs.filter((x) => x.kind === 'diff' && x.loaded)) {
       try {
-        const r = await this.deps.api.gitDiff(root, t.path, t.staged)
+        const where = this.diffTarget(t)
+        if (where === null) continue
+        const r = await this.deps.api.gitDiff(where.root, where.path, t.staged)
         if (this.s.root !== root || !this.tab(t.id) || r.binary || r.tooLarge) continue
         const diff = { original: r.original ?? '', modified: r.modified ?? '' }
         if (t.diff && t.diff.original === diff.original && t.diff.modified === diff.modified) continue
@@ -747,7 +896,8 @@ export class EditorStore {
           root = info?.exists ? info.path : null
         }
       } else {
-        root = findRoot(this.knownRoots(), abs)
+        // The folder already open wins: nested repositories are registered roots too and must not steal the page.
+        root = this.s.root !== null && relativeTo(this.s.root, abs) !== null ? this.s.root : findRoot(this.knownRoots(), abs)
         if (root === null) {
           const resolved = await this.deps.api.resolve(abs)
           const candidate = resolved?.root ?? abs.replace(/[\\/][^\\/]*$/, '')
@@ -764,12 +914,12 @@ export class EditorStore {
       if (d.review === true && (rel === '' || (await this.isDirectory(root, rel)))) {
         // A folder: show the CHANGES view of the root (the folder only matters for choosing the root).
         this.set({ changesFocus: this.s.changesFocus + 1 })
-        await this.refreshGit()
+        this.setLayout({ chOpen: true })
+        await this.refreshGit(true)
       } else if (d.review === true) {
-        await this.refreshGit()
-        const f = this.s.git.status?.files.find((x) => x.path === rel)
-        if (f && !f.untracked) await this.openDiff(rel, !f.unstaged && f.staged)
-        else if (f && f.untracked) await this.openDiff(rel, false)
+        await this.refreshGit(true)
+        const hit = this.changeFor(rel)
+        if (hit) await this.openDiff(rel, !hit.file.unstaged && hit.file.staged, hit.repo)
         else await this.openFile(rel, { line, col })
       } else {
         await this.openFile(rel, { line, col })
@@ -780,6 +930,22 @@ export class EditorStore {
       this.notify(`Cannot open ${abs}: ${errText(e)}`)
       return false
     }
+  }
+
+  /** The status entry for a root-relative file, with the root-relative folder of its repository. */
+  private changeFor(rel: string): { repo: string; file: GitFile } | null {
+    const lookup = (repo: string, status: GitStatus | null | undefined): { repo: string; file: GitFile } | null => {
+      const inner = repo === '' ? rel : rel.startsWith(`${repo}/`) ? rel.slice(repo.length + 1) : null
+      const file = inner === null ? undefined : status?.files.find((x) => x.path === inner)
+      return file ? { repo, file } : null
+    }
+    const own = lookup('', this.s.git.status)
+    if (own) return own
+    for (const [repo, g] of Object.entries(this.s.repoGit)) {
+      const hit = lookup(repo, g.status)
+      if (hit) return hit
+    }
+    return null
   }
 
   /** True when `rel` (below `root`) lists as a folder. */

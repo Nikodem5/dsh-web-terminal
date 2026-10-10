@@ -1,6 +1,6 @@
 // dsh-code-editor - typed wrapper over the host routes in API.md. Nothing else talks to the host.
 
-import type { FileData, GitDiff, GitStatus, RootInfo, TreeEntry } from './types.ts'
+import type { FileData, GitDiff, GitStatus, RepoList, RootInfo, TreeEntry } from './types.ts'
 
 export const API_BASE = '/api/dsh-code-editor'
 
@@ -30,6 +30,8 @@ export interface Api {
   files(root: string): Promise<{ files: string[]; truncated: boolean }>
   readFile(root: string, path: string): Promise<FileData>
   writeFile(root: string, path: string, content: string, expectedMtime: number | null): Promise<{ mtime: number; size: number }>
+  /** `GET /git/repos`: the repositories to show for a root (`fresh` bypasses the host's 10 s cache). */
+  gitRepos(root: string, fresh?: boolean): Promise<RepoList>
   gitStatus(root: string): Promise<GitStatus>
   gitDiff(root: string, path: string, staged: boolean): Promise<GitDiff>
   stage(root: string, paths: string[]): Promise<void>
@@ -82,6 +84,10 @@ export function createApi(fetchImpl?: FetchLike): Api {
     },
     readFile: (root, path) => call<FileData>(`/file?${q({ root, path })}`),
     writeFile: (root, path, content, expectedMtime) => call(`/file`, { method: 'PUT', body: { root, path, content, expectedMtime } }),
+    gitRepos: async (root, fresh) => {
+      const r = await call<Partial<RepoList>>(`/git/repos?${q(fresh ? { root, fresh: '1' } : { root })}`)
+      return { inside: r.inside === true, truncated: r.truncated === true, repos: Array.isArray(r.repos) ? r.repos : [] }
+    },
     gitStatus: (root) => call<GitStatus>(`/git/status?${q({ root })}`),
     gitDiff: (root, path, staged) => call<GitDiff>(`/git/diff?${q({ root, path, staged: staged ? '1' : '0' })}`),
     stage: async (root, paths) => { await post('/git/stage', { root, paths }) },
