@@ -18,7 +18,7 @@ export function SideTabs({ store }: { store: EditorStore }): ReactElement {
   return (
     <div className="ce-sidetabs" role="tablist" aria-label="Sidebar view">
       <button role="tab" className="ce-sidetab" data-act="view-files" aria-selected={s.view === 'files'} data-on={s.view === 'files'} onClick={() => store.search.showFiles()} title="Explorer and changes">
-        Files
+        Explorer
       </button>
       <button role="tab" className="ce-sidetab" data-act="view-search" aria-selected={s.view === 'search'} data-on={s.view === 'search'} onClick={() => store.search.show()} title="Search in files (Ctrl+Shift+F)">
         Search{s.total > 0 ? <span className="ce-count">{s.total > 999 ? '999+' : s.total}</span> : null}

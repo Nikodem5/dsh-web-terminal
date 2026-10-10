@@ -11,6 +11,7 @@ import { splitRelative } from './confine.js'
 import { createRoots, dataDir, validateRoot } from './roots.js'
 import { MAX_LIST_FILES, MAX_WRITE_BYTES, listTree, readFile, walkFiles, writeFile } from './files.js'
 import * as gitOps from './git.js'
+import { gitToolRoutes } from './git-tools.js' // git tools block: commit, branches, history, sync
 import { findRepos } from './repos.js'
 import { createWatchers } from './watcher.js'
 import { RAW, searchRoutes } from './search-routes.js'
@@ -304,6 +305,8 @@ function apply(ctx, options) {
         return {}
       },
     }),
+    // git tools block: commit, branches, history, sync (lib/git-tools.js)
+    ...gitToolRoutes({ route, rootOf, changed: (root) => safeCall(() => watchers.notifyGit(root.real)) }),
   ]
 
   // WebSocket: connection listener first, upgrade route registered last (an upgrade must never reach a server

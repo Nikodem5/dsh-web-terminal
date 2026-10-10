@@ -1,5 +1,6 @@
 // dsh-code-editor - typed wrapper over the host routes in API.md. Nothing else talks to the host.
 
+import { gitToolsApi, type GitToolsApi } from './git-api.ts'
 import type { FileData, GitDiff, GitStatus, RepoList, RootInfo, SearchQuery, SearchResponse, TreeEntry } from './types.ts'
 
 export const API_BASE = '/api/dsh-code-editor'
@@ -24,7 +25,7 @@ type FetchLike = (url: string, init?: { method?: string; headers?: Record<string
   ok: boolean; status: number; json(): Promise<unknown>; blob?(): Promise<Blob>
 }>
 
-export interface Api {
+export interface Api extends GitToolsApi {
   roots(roots: string[]): Promise<{ roots: RootInfo[]; rejected: Array<{ path: string; reason: string }> }>
   tree(root: string, dir: string): Promise<TreeEntry[]>
   files(root: string): Promise<{ files: string[]; truncated: boolean }>
@@ -78,6 +79,7 @@ export function createApi(fetchImpl?: FetchLike): Api {
   }
   const post = <T>(path: string, body: unknown): Promise<T> => call<T>(path, { method: 'POST', body })
   return {
+    ...gitToolsApi(call), // git tools block (git-api.ts)
     roots: async (roots) => {
       const r = await post<{ roots: RootInfo[]; rejected?: Array<{ path: string; reason: string }> }>('/roots', { roots })
       return { roots: r.roots ?? [], rejected: Array.isArray(r.rejected) ? r.rejected : [] }

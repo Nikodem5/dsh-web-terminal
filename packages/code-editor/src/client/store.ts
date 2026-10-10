@@ -5,6 +5,7 @@
 import type { EditorHost, AdapterFactory } from './adapter.ts'
 import { ApiError, type Api } from './api.ts'
 import { groupChanges, planDiscard } from './changes.ts'
+import { GitTools } from './git-tools.ts' // git tools block
 import { baseName, dirName, findRoot, joinRel, languageFor, normKey, relativeTo, sameRoot } from './paths.ts'
 import { DEFAULT_LAYOUT, defaultStorage, loadGlobal, loadRootState, sanitizeLayout, saveGlobal, saveRootState, type Layout, type StorageLike } from './persist.ts'
 import type { GitFile, GitStatus, OpenRequest, RepoEntry, RepoList, RootInfo, TreeEntry, WsFrame } from './types.ts'
@@ -131,6 +132,8 @@ export class EditorStore {
   // --- search in files + markdown preview (ce-search-md): logic lives in search-state.ts / md-state.ts ---
   readonly search: SearchController
   readonly md: MarkdownController
+  /** git tools block: commit / branches / history / sync (git-tools.ts). */
+  readonly gitTools: GitTools
 
   constructor(deps: Deps) {
     this.deps = deps
@@ -146,6 +149,22 @@ export class EditorStore {
       api: deps.api, root: () => this.s.root, open: (path, match) => this.openSearchMatch(path, match), clearHighlight: () => this.host?.clearHighlight?.(),
     })
     this.md = new MarkdownController({ getText: (id) => this.host?.getValue(id) ?? this.tab(id)?.initial ?? null, active: () => this.s.active })
+    // git tools block
+    this.gitTools = new GitTools({
+      api: deps.api,
+      root: () => this.s.root,
+      repoPath: (rel) => this.repoPath(rel),
+      repos: () => (this.s.repos.list ?? []).map((r) => ({ rel: r.rel, name: r.name })),
+      status: (rel) => this.gitOf(rel)?.status,
+      confirm: (m) => this.confirm(m),
+      notify: (t, level) => this.notify(t, level),
+      refresh: async (rel, everything) => {
+        await this.refreshRepo(rel)
+        await this.refreshDiffTabs()
+        if (everything) await this.refreshAll()
+      },
+      openStaticDiff: (d) => this.openStaticDiff(d),
+    })
   }
 
   // ---- store plumbing -------------------------------------------------------------------------------------------
@@ -279,6 +298,7 @@ export class EditorStore {
       root, tree: {}, expanded: st.expanded, tabs: [], active: null, inline: st.inline, cursor: null, quickOpen: false, notice: null,
       git: { status: null, notGit: false, error: null, loading: false }, repos: { list: null, loading: false, truncated: false, error: null }, repoGit: {}, recent: [],
     })
+    this.gitTools.reset() // git tools block
     this.host?.showNone()
     this.saveG(root)
     this.openLiveSocket(root)
@@ -389,6 +409,12 @@ export class EditorStore {
     this.addTab(blankTab(id, 'diff', path, staged, repo))
     this.patchTab(id, { title: `${baseName(path)} (${staged ? 'staged' : 'changes'})` })
     await this.activate(id)
+  }
+
+  // git tools block: a read-only diff of text the page already has (a file of a history commit). Not persisted (compare tabs never are).
+  async openStaticDiff(d: { id: string; path: string; title: string; original: string; modified: string }): Promise<void> {
+    this.addTab({ ...blankTab(d.id, 'compare', d.path), title: d.title, loaded: true, of: null, diff: { original: d.original, modified: d.modified } })
+    await this.activate(d.id)
   }
 
   async activate(id: string): Promise<void> {

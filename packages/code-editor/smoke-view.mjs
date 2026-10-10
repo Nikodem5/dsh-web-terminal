@@ -66,6 +66,7 @@ const searchCalls = []
 const puts = []
 const statusCalls = []
 const stageCalls = []
+const gitPosts = []
 const status = {
   ok: true, branch: 'main', ahead: 1, behind: 0,
   files: [
@@ -113,6 +114,14 @@ window.fetch = (url, init = {}) => {
     return json(200, { ok: true, results: [{ path: 'a.txt', matches: [{ line: 1, col: 1, length: 5, preview: 'hello', at: 0 }] }, { path: 'src/b.ts', matches: [{ line: 1, col: 8, length: 2, preview: 'export {}', at: 7 }] }], truncated: false, took: 3 })
   }
   if (route === '/raw') return Promise.resolve({ ok: true, status: 200, json: async () => ({}), blob: async () => new window.Blob(['png']) })
+  // git tools block
+  if (route === '/git/branches') return json(200, { ok: true, current: 'main', detached: false, head: null, upstream: 'origin/main', upstreamRemote: 'origin', ahead: 1, behind: 0, remotes: ['origin'], local: [{ name: 'main', hash: 'abc', upstream: 'origin/main', upstreamRemote: 'origin', current: true }, { name: 'dev', hash: 'abd', upstream: null, upstreamRemote: null, current: false }], remote: [{ name: 'origin/topic', remote: 'origin', short: 'topic', hash: 'abe', local: false }] })
+  if (route === '/git/checkout') { gitPosts.push(['checkout', body]); return json(200, { ok: true, branch: body.branch }) }
+  if (route === '/git/commit' && init.method === 'POST') { gitPosts.push(['commit', body]); return json(200, { ok: true, hash: 'abcdef1234', summary: 'done' }) }
+  if (route === '/git/commit') return json(200, { ok: true, hash: u.searchParams.get('hash'), author: 'A', email: 'a@x', date: Date.now(), message: 'first\n\nbody', parent: null, files: [{ status: 'M', path: 'a.txt' }], truncated: false })
+  if (route === '/git/log') return json(200, { ok: true, hasMore: false, commits: [{ hash: 'a'.repeat(40), short: 'aaaaaaa', author: 'Ann', email: 'a@x', date: Date.now() - 7200_000, subject: 'first', refs: ['main'] }, { hash: 'b'.repeat(40), short: 'bbbbbbb', author: 'Bob', email: 'b@x', date: Date.now() - 86400_000 * 3, subject: 'second', refs: [] }] })
+  if (route === '/git/show') return json(200, { ok: true, original: 'old', modified: 'new', binary: false, tooLarge: false })
+  if (route === '/git/pull' || route === '/git/push' || route === '/git/fetch') { gitPosts.push([route, body]); return json(200, { ok: true, summary: 'ok', setUpstream: false, remote: null, branch: 'main' }) }
   if (route === '/git/stage') { stageCalls.push(body); return json(200, { ok: true }) }
   if (route === '/git/diff') return json(200, { ok: true, original: 'a', modified: 'b', binary: false, tooLarge: false })
   return json(200, { ok: true })
@@ -200,6 +209,29 @@ check(qa('.ce-qo-item').length === 2, 'Ctrl+P opens quick open listing files')
 key(q('[data-ce-quick] input'), { key: 'Escape' })
 check(await until(() => !q('[data-ce-quick]'), 'quick open closed'), 'Escape closes quick open')
 
+// "changed by agent" marks from a fake Terminals plugin (window.__dshTerminals)
+{
+  const subs = new Set()
+  let terminals = [{ terminalId: 't1', name: 'api', files: [{ path: '/w/proj/a.txt', at: Date.now(), tool: 'Edit' }, { path: '/w/proj/src/deep/x.ts', at: Date.now(), tool: 'Write' }, { path: '/elsewhere/z.ts', at: 1, tool: 'Edit' }] }]
+  window.__dshTerminals = { version: 1, listEdits: () => terminals, subscribe: (f) => { subs.add(f); return () => subs.delete(f) } }
+  window.dispatchEvent(new window.Event('dsh-terminals:edits'))
+  const rowMark = (p) => q(`[role=treeitem][data-path="${p}"] [data-agent-mark]`)
+  check(await until(() => rowMark('a.txt'), 'explorer mark'), 'an explorer row of a file an agent changed gets a mark')
+  check(/Changed by Claude · api · .*(Edit)/.test(rowMark('a.txt').title), 'the mark names the terminal, time and tool')
+  check(rowMark('src')?.dataset.agentMark === 'dir', 'a collapsed folder above a changed file gets a faint dot')
+  check(!!q('.ce-tab [data-agent-mark=file]'), 'the tab of a changed file is marked')
+  check(qa('.ce-row[data-group] [data-agent-mark=file]').length >= 1, 'the CHANGES entry of a changed file is marked')
+  key(q('.ce-sec-h'), { key: 'p', ctrlKey: true })
+  await until(() => qa('.ce-qo-item').length === 2, 'quick open items (marks)')
+  check(!!q('.ce-qo-item[data-path="a.txt"] [data-agent-mark=file]') && !q('.ce-qo-item[data-path="src/b.ts"] [data-agent-mark=file]'), 'quick open marks only the changed file')
+  key(q('[data-ce-quick] input'), { key: 'Escape' })
+  await until(() => !q('[data-ce-quick]'), 'quick open closed (marks)')
+  terminals = []
+  for (const f of subs) f()
+  check(await until(() => !q('[data-agent-mark]'), 'marks removed'), 'the marks disappear when the terminal no longer reports the files (closed)')
+  delete window.__dshTerminals
+}
+
 // Ctrl+E / Ctrl+P from INSIDE the editor element and from the page body (focus outside the Code view)
 const editorEl = host.element
 check(editorEl.isConnected, 'the fake editor element is mounted in the page')
@@ -264,6 +296,34 @@ const dirRow = q('[role=treeitem][data-path="src"]')
 check(dirRow.querySelector('svg.ce-folder')?.dataset.icon === (dirRow.getAttribute('aria-expanded') === 'true' ? 'folder-open' : 'folder'), 'folders have an open / closed icon matching their state')
 check(!!q('.ce-tab svg[data-icon]'), 'tabs have an icon')
 
+// git tools: sync bar + commit box, branch picker, history, read-only history diff
+check(!!q('[data-commit-box] textarea') && ['fetch', 'pull', 'push'].every((a) => q(`[data-repo-tools] [data-act=${a}]`)), 'CHANGES shows the sync bar and the commit box')
+check(q('[data-repo-tools] [data-ab]')?.textContent === '↑1 ↓0', 'the sync bar shows ahead/behind')
+const setValue = (el, v) => { Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, v); el.dispatchEvent(new window.Event('input', { bubbles: true })) }
+click(q('[data-repo-tools] [data-act=branch]'))
+check(await until(() => qa('[data-branch-picker] .ce-qo-item').length === 3, 'branch rows'), 'the branch chip opens the picker with local and remote branches')
+check(qa('[data-branch-picker] .ce-qo-item').map((e) => e.dataset.kind).join() === 'local,local,remote', 'picker lists local then remote-only branches')
+setValue(q('[data-branch-picker] input'), 'feat/new')
+check(await until(() => q('[data-branch-picker] [data-kind=create]'), 'create row'), 'typing an unknown name offers to create it')
+key(q('[data-branch-picker] input'), { key: 'Enter' })
+check(await until(() => gitPosts.some((p) => p[0] === 'checkout' && p[1].branch === 'feat/new' && p[1].create === true), 'create posted'), 'Enter creates the branch from HEAD')
+check(await until(() => !q('[data-branch-picker]'), 'picker closed'), 'the picker closes after switching')
+setValue(q('[data-commit-box] textarea'), 'my message')
+await until(() => q('[data-act=commit]') && !q('[data-act=commit]').disabled, 'commit enabled')
+click(q('[data-act=commit]'))
+check(await until(() => gitPosts.some((p) => p[0] === 'commit' && p[1].message === 'my message' && p[1].all === false && p[1].amend === false), 'commit posted'), 'Commit posts the staged commit')
+click(q('[data-repo-tools] [data-act=pull]'))
+check(await until(() => gitPosts.some((p) => p[0] === '/git/pull'), 'pull'), 'Pull goes through the confirm and posts')
+click(q('[data-sec=HISTORY] .ce-sec-h'))
+check(await until(() => qa('.ce-hc').length === 2, 'history rows'), 'HISTORY lists commits')
+check(q('.ce-hc .ce-ref')?.textContent === 'main' && q('.ce-hc .ce-hmeta').textContent.includes('Ann') && q('.ce-hc .ce-hmeta').textContent.includes('2 hours ago'), 'a history row shows refs, author and relative date')
+click(q('.ce-hc .ce-hrow'))
+check(await until(() => qa('.ce-hfiles .ce-row').length === 1, 'commit files'), 'selecting a commit lists its files')
+click(q('.ce-hfiles .ce-row'))
+check(await until(() => host.diff && host.diff.id.startsWith('hist:'), 'history diff'), 'a commit file opens a diff')
+check(host.diff.o === 'old' && host.diff.m === 'new', 'the history diff shows parent vs commit')
+check(!q('[data-act=keep-mine]') && !!q('[data-readonly]'), 'the history diff tab is read-only')
+
 // Browse...: the native picker, then POST /roots and select
 check(!!q('[data-act=browse]'), 'Browse... shows when the picker exists')
 click(q('[data-act=browse]'))
@@ -302,9 +362,9 @@ window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F', code: 'KeyF
 await until(() => q('[data-search-panel]'), 'search panel')
 check(q('.ce-secs').hidden === true && q('[data-act=view-search]').dataset.on === 'true', 'Ctrl+Shift+F shows the SEARCH view')
 const input = q('[aria-label="Search in files"]')
-const setValue = (el, v) => { Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new window.Event('input', { bubbles: true })) }
-setValue(input, 'hel')
-setValue(input, 'hello')
+const setField = (el, v) => { Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new window.Event('input', { bubbles: true })) }
+setField(input, 'hel')
+setField(input, 'hello')
 await until(() => searchCalls.length === 1, 'debounced search')
 check(searchCalls[0].q === 'hello' && searchCalls[0].root === '/w/proj' && searchCalls[0].regex === '0', 'typing sends ONE debounced /search request')
 await until(() => qa('.ce-smatch').length === 2, 'result rows')

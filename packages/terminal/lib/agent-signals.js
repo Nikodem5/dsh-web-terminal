@@ -10,6 +10,8 @@
 // future provider adds one function to ADAPTERS and, if it can call an HTTP endpoint,
 // nothing else.
 //
+import { EDIT_MATCHER } from './edits.js'
+
 // Pure functions only: no I/O, so the mapping is unit-tested without a host.
 
 /**
@@ -153,12 +155,13 @@ export const TOKEN_HEADER = 'x-dsh-wt-token'
  * silently ignored), so it runs `hook-post.js`, which forwards the payload. Without `hookScript`
  * (no `node`) it is left out.
  * @param options.hookScript - absolute path of lib/hook-post.js, for the SessionStart command hook.
+ * @param options.editUrl - the "files the agent changed" endpoint: adds a second PostToolUse group, matched to the editing tools (Edit|Write|MultiEdit|NotebookEdit), that posts there. It is not an agent-state signal.
  * @param options.subagentLine - {script, url}: install the sub-agent status-line wrapper (`script` = lib/statusline.js, `url` = the sub-agents endpoint).
  * @param options.statusLine - {script, url, refreshInterval}: also install the status-line wrapper
  *   (`script` = absolute path of lib/statusline.js, `url` = the usage endpoint). Omitted when
  *   `node` cannot be found, so the user's own status line keeps working untouched.
  */
-export function buildClaudeSettings(url, { statusLine, hookScript, subagentLine } = {}) {
+export function buildClaudeSettings(url, { statusLine, hookScript, subagentLine, editUrl } = {}) {
   const hook = {
     type: 'http',
     url,
@@ -171,6 +174,8 @@ export function buildClaudeSettings(url, { statusLine, hookScript, subagentLine 
     if (event !== 'SessionStart') hooks[event] = [{ hooks: [hook] }]
     else if (hookScript !== undefined) hooks[event] = [{ hooks: [{ type: 'command', command: `node "${hookScript.replaceAll('\\', '/')}" ${url}`, timeout: 5 }] }]
   }
+  // Files the agent changed: a second PostToolUse group (the first, unmatched one drives agent state).
+  if (editUrl !== undefined) hooks.PostToolUse = [...hooks.PostToolUse, { matcher: EDIT_MATCHER, hooks: [{ ...hook, url: editUrl }] }]
   const settings = { hooks }
   if (statusLine !== undefined) {
     // `statusLine` replaces the user's own; the wrapper runs theirs and relays its output.
