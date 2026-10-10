@@ -1,6 +1,8 @@
 // dsh-web-terminal — remembered folders, favourites and simple on/off preferences.
 
 import { emit, persistSoon, prefs } from './state.ts'
+import { sshKey } from './ssh.ts'
+import type { SshTarget } from './types.ts'
 
 /** Remember a folder as recent and as the next default. */
 export function noteFolder(cwd: string, shell?: string): void {
@@ -19,6 +21,26 @@ export function toggleFavourite(cwd: string): void {
 
 export function forgetRecent(cwd: string): void {
   prefs.recents = prefs.recents.filter((p) => p !== cwd)
+  emit()
+  persistSoon()
+}
+
+/** Remember an SSH target as recent (newest first, ten at most). The target holds no secrets. */
+export function noteSsh(ssh: SshTarget): void {
+  const key = sshKey(ssh)
+  prefs.sshRecents = [ssh, ...prefs.sshRecents.filter((s) => sshKey(s) !== key)].slice(0, 10)
+}
+
+export function toggleSshFavourite(ssh: SshTarget): void {
+  const key = sshKey(ssh)
+  prefs.sshFavourites = prefs.sshFavourites.some((s) => sshKey(s) === key) ? prefs.sshFavourites.filter((s) => sshKey(s) !== key) : [...prefs.sshFavourites, ssh]
+  emit()
+  persistSoon()
+}
+
+export function forgetSsh(ssh: SshTarget): void {
+  const key = sshKey(ssh)
+  prefs.sshRecents = prefs.sshRecents.filter((s) => sshKey(s) !== key)
   emit()
   persistSoon()
 }

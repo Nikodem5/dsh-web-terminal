@@ -14,9 +14,11 @@ export const ACTIVITY_TITLE: Record<Activity, string> = {
   idle: 'Idle — nothing is running',
   exited: 'The process exited',
   offline: 'Not connected',
+  connected: 'Connected — the ssh session is up (ssh windows only)',
+  disconnected: 'Disconnected — the ssh connection was lost or could not be made; use Reconnect (ssh windows only)',
 }
 
-export const ACTIVITY_ORDER: readonly Activity[] = ['working', 'needs-you', 'finished', 'running', 'idle', 'exited', 'offline']
+export const ACTIVITY_ORDER: readonly Activity[] = ['working', 'needs-you', 'finished', 'running', 'idle', 'exited', 'offline', 'connected', 'disconnected']
 
 export interface MouseAction {
   how: string
@@ -39,6 +41,15 @@ export const MOUSE_ACTIONS: readonly MouseAction[] = [
   { how: 'Click a terminal in the list', what: 'Focus it; drag to reorder, double-click the name to rename, hover for duplicate / close' },
   { how: 'Click a minimized chip', what: 'Restore that window (chips are in the toolbar)' },
   { how: 'Click a tile in the overview', what: 'Open that terminal' },
+]
+
+/** What the ⇄ SSH tab does and where it stops (README: SSH terminals). Each line is checked against new-dialog.tsx / runtime.ts / path-links.ts. */
+export const SSH_HELP: readonly MouseAction[] = [
+  { how: '⇄ SSH button, or New terminal → ⇄ SSH', what: 'Pick a host from ~/.ssh/config, type user@host[:port], or reuse a recent target (★ keeps it); "Run on connect" runs a command on the remote machine' },
+  { how: 'Keys and passwords', what: 'The system ssh client does the login. A password or key passphrase is typed in the terminal; the plugin stores no secrets, only the host, port and command' },
+  { how: 'Dot: Connected / Disconnected', what: 'Connected while the ssh session is up. Disconnected (ssh exit 255) means the link dropped or was never made: click Reconnect. There is no automatic retry' },
+  { how: 'Other exit codes', what: 'The remote session ended normally (Exited); ↻ starts a new connection' },
+  { how: 'Not available over ssh yet', what: 'Ctrl+click on file paths (they live on the remote machine), Claude status and agent badges' },
 ]
 
 export interface AttentionLegend {
@@ -112,6 +123,8 @@ export interface DiagnosticsInput {
   platform: string | undefined
   node: { available?: boolean; path?: string | null } | undefined
   claude: { available?: boolean; path?: string | null } | undefined
+  /** The ssh client and how many hosts ~/.ssh/config lists; undefined for a host that predates ssh support. */
+  ssh: { available?: boolean; path?: string | null; hosts?: unknown[] } | undefined
   /** From /stats; undefined until the first answer. */
   statusLine: { enabled: boolean; reason: string | null } | undefined
   /** The "mark commands" preference. */
@@ -148,6 +161,8 @@ export function diagnosticRows(d: DiagnosticsInput): DiagnosticRow[] {
     { label: 'Platform', value: d.platform ?? 'unknown' },
     { label: 'node', value: found(d.node), bad: d.node?.available === false },
     { label: 'claude', value: found(d.claude), bad: d.claude?.available === false },
+    { label: 'ssh', value: found(d.ssh) },
+    { label: 'ssh config hosts', value: d.ssh?.hosts === undefined ? 'unknown (host has not answered)' : String(d.ssh.hosts.length) },
     { label: 'Status-line wrapper', value: wrapper, bad: d.statusLine?.enabled === false },
     { label: 'Shell integration', value: `${d.shellIntegration ? 'on' : 'off'} (setting); ${markers}` },
     { label: 'Terminals', value: `${c.live} live, ${c.connecting} connecting, ${c.offline} offline${c.exited > 0 ? `, ${c.exited} exited` : ''}`, bad: c.offline > 0 },

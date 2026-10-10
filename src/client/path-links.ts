@@ -182,6 +182,8 @@ export async function openPath(rt: Runtime, path: string, line?: number, col?: n
 
 /** Register the path link provider on a terminal that has been opened. */
 export function registerPathLinks(rt: Runtime): void {
+  // An ssh window's paths are on the remote machine; the host would look them up on its own disk and open the wrong file.
+  if (rt.ssh) return
   const term = rt.term
   const check = createChecker(() => {
     const win = store.wins.find((w) => w.id === rt.id)

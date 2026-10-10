@@ -9,7 +9,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { emit, hostInfo, hostInfoReady, prefs, refreshHostInfo, runtimes, store, updateWin } from './state.ts'
 import { cleanTitle, displayName } from './names.ts'
-import { noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
+import { SSH_LOST, noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
 import { applySubagents } from './subagent-state.ts'
 import { startupTiming, startupWait } from './prompt-ready.ts'
@@ -17,6 +17,7 @@ import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
 import { registerPathLinks } from './path-links.ts'
 import { createBlocks } from './blocks.ts'
+import { sshParams } from './ssh.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
 import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
@@ -132,6 +133,7 @@ export function ensureRuntime(win: WinState): Runtime {
     searchIndex: 0,
     searchCount: 0,
     socket: null,
+    ssh: win.ssh !== undefined,
     conn: 'connecting',
     detail: '',
     title: '',
@@ -244,6 +246,7 @@ export function ensureRuntime(win: WinState): Runtime {
     const params = new URLSearchParams({ id: `${rt.id}-${current.gen ?? 0}`, shell: current.shell })
     if (current.cwd.length > 0) params.set('cwd', current.cwd)
     if (!prefs.shellIntegration) params.set('integration', '0')
+    if (current.ssh !== undefined) for (const [key, value] of Object.entries(sshParams(current.ssh))) params.set(key, value)
     // Always explicit: before the page opens there is no fit, and the xterm grid is what the host must match.
     const fitted = rt.opened && dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)
     params.set('cols', String(fitted ? dims.cols : term.cols))
@@ -301,12 +304,14 @@ export function ensureRuntime(win: WinState): Runtime {
         if ((frame.replay ?? '').length > 0) term.write(frame.replay as string, () => rebaseUnread(rt))
         else rebaseUnread(rt)
         if (frame.exited === true) {
+          rt.exitCode = frame.exitCode
           setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
         } else {
           setConn(rt, 'live')
           rt.lastCols = 0
           sizeToHost(rt)
-          const startup = store.wins.find((w) => w.id === rt.id)?.startup
+          // An ssh window has no startup typing: its remote command went to ssh as an argument.
+          const startup = rt.ssh ? undefined : store.wins.find((w) => w.id === rt.id)?.startup
           if (frame.created === true && startup !== undefined && startup.trim().length > 0) {
             // Wait for the host probe first: it names the agent-hook settings file, and on a cold app
             // start it can answer after the shell is already up.
@@ -369,7 +374,9 @@ export function ensureRuntime(win: WinState): Runtime {
         if (rt.hostLost) return
         setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
         noteExit(rt, frame.exitCode)
-        term.write('\r\n\x1b[2m[process exited — close or restart this window]\x1b[0m\r\n')
+        term.write(rt.ssh && frame.exitCode === SSH_LOST
+          ? '\r\n\x1b[2m[ssh connection lost or not made (exit 255) — use Reconnect]\x1b[0m\r\n'
+          : '\r\n\x1b[2m[process exited — close or restart this window]\x1b[0m\r\n')
       } else if (frame.type === 'error') {
         setConn(rt, 'failed', frame.message ?? 'error')
         term.write(`\x1b[31m${frame.message ?? 'error'}\x1b[0m\r\n`)

@@ -11,6 +11,7 @@ import {
   ATTENTION_LEGEND,
   GUTTER_LEGEND,
   MOUSE_ACTIONS,
+  SSH_HELP,
   STATS_LEGEND,
   buildDiagnostics,
   countConns,
@@ -53,6 +54,7 @@ function readDiagnostics(now: number): DiagnosticsInput {
     platform: hostInfo.platform,
     node: hostInfo.node,
     claude: hostInfo.claude,
+    ssh: hostInfo.ssh,
     statusLine,
     shellIntegration: getPrefs().shellIntegration,
     focused: focused === undefined ? null : { name: displayName(focused), markersSeen: integrationSeen(focused.id) === true },
@@ -137,6 +139,15 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
 
         <Section title="Mouse">
           {MOUSE_ACTIONS.map((m) => (
+            <div key={m.how} className="wt-help-row">
+              <span className="wt-help-how">{m.how}</span>
+              <span>{m.what}</span>
+            </div>
+          ))}
+        </Section>
+
+        <Section title="SSH terminals">
+          {SSH_HELP.map((m) => (
             <div key={m.how} className="wt-help-row">
               <span className="wt-help-how">{m.how}</span>
               <span>{m.what}</span>

@@ -13,6 +13,7 @@ import {
   getBroadcast,
   getRuntime,
   moveWin,
+  sshLabel,
   renameWin,
   setBroadcastTargets,
   toggleBroadcastTarget,
@@ -28,6 +29,8 @@ const LABEL: Record<Activity, string> = {
   idle: 'Idle',
   exited: 'Exited',
   offline: 'Offline',
+  connected: 'Connected',
+  disconnected: 'Disconnected',
 }
 
 interface Props {
@@ -100,7 +103,7 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
                 focusWin(win.id)
                 getRuntime(win.id)?.term.focus()
               }}
-              title={rt !== undefined && rt.attentionReason.length > 0 ? rt.attentionReason : win.cwd}
+              title={rt !== undefined && rt.attentionReason.length > 0 ? rt.attentionReason : win.ssh !== undefined ? `ssh ${sshLabel(win.ssh)}` : win.cwd}
             >
               {broadcast.on ? (
                 <input type="checkbox" checked={broadcast.ids.has(win.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleBroadcastTarget(win.id)} />
@@ -136,7 +139,7 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
                   </span>
                 )}
                 <span className="wt-li-sub">
-                  {LABEL[activity]} · {baseName(win.cwd) || win.cwd}
+                  {LABEL[activity]} · {win.ssh !== undefined ? `⇄ ${sshLabel(win.ssh)}` : baseName(win.cwd) || win.cwd}
                   {win.pinned ? ' · pinned' : ''}
                 </span>
               </span>

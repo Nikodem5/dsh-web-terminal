@@ -14,6 +14,20 @@ export interface Rect {
   h: number
 }
 
+/**
+ * Where an SSH window connects. Only what `ssh` needs to be started again: an alias from ~/.ssh/config or
+ * `[user@]host`, a port and a remote command. Never a password, key or passphrase: ssh asks for those in the terminal.
+ */
+export interface SshTarget {
+  /** A ~/.ssh/config alias. */
+  host?: string
+  /** `[user@]host`, IPv6 in brackets. Exactly one of `host` and `target` is set. */
+  target?: string
+  port?: number
+  /** Runs on the remote machine instead of its login shell's prompt. */
+  command?: string
+}
+
 /** One terminal window's persisted description. */
 export interface WinState extends Rect {
   id: string
@@ -27,6 +41,8 @@ export interface WinState extends Rect {
   cwd: string
   /** Command typed into a freshly spawned shell (e.g. `claude`). */
   startup?: string
+  /** Set for an SSH window (then `shell` is `ssh` and `cwd` is empty: it is a folder on this machine). */
+  ssh?: SshTarget
   z: number
   pinned: boolean
   maximized: boolean
@@ -46,7 +62,7 @@ export interface WinState extends Rect {
 export type Conn = 'connecting' | 'live' | 'exited' | 'lost' | 'failed'
 
 /** What the terminal is doing right now, for the status dot and list. */
-export type Activity = 'working' | 'needs-you' | 'finished' | 'running' | 'idle' | 'exited' | 'offline'
+export type Activity = 'working' | 'needs-you' | 'finished' | 'running' | 'idle' | 'exited' | 'offline' | 'connected' | 'disconnected'
 
 /** What an agent reports about itself (see lib/agent-signals.js on the host). */
 export type AgentState = 'idle' | 'working' | 'needs-you' | 'finished' | 'failed' | 'ended'
@@ -87,6 +103,10 @@ export interface Runtime {
   searchIndex: number
   searchCount: number
   socket: WebSocket | null
+  /** An SSH window: the local process is always `ssh`, so its dot says connected / disconnected instead. */
+  ssh: boolean
+  /** Exit code of the local process once it ended (255 from ssh = the connection was lost or never made). */
+  exitCode?: number | null
   conn: Conn
   detail: string
   /** Raw OSC title the program set. */
@@ -147,7 +167,7 @@ export interface FontPrefs {
 }
 
 /** One window inside a saved layout. */
-export type LayoutWin = Pick<WinState, 'title' | 'nameManual' | 'shell' | 'cwd' | 'startup' | 'x' | 'y' | 'w' | 'h' | 'pinned' | 'minimized'>
+export type LayoutWin = Pick<WinState, 'title' | 'nameManual' | 'shell' | 'cwd' | 'startup' | 'ssh' | 'x' | 'y' | 'w' | 'h' | 'pinned' | 'minimized'>
 
 export interface SavedLayout {
   name: string
@@ -166,9 +186,19 @@ export interface HostInfo {
   claude?: { available?: boolean; path?: string | null }
   /** `node` on the host's PATH; the status-line wrapper needs it. */
   node?: { available?: boolean; path?: string | null }
+  /** The `ssh` client on the host's PATH and the concrete aliases in its ~/.ssh/config. */
+  ssh?: { available?: boolean; path?: string | null; hosts?: SshHost[] }
   maxSessions?: number
   /** Files the host generated for agents; claudeSettings is null when it could not write one. */
   agent?: { claudeSettings?: string | null }
+}
+
+/** One alias from ~/.ssh/config, for display. */
+export interface SshHost {
+  alias: string
+  hostName: string | null
+  user: string | null
+  port: number | null
 }
 
 /** Where a Ctrl+clicked file path opens. */
@@ -186,6 +216,9 @@ export interface Prefs {
   termTheme: 'dark' | 'light' | 'auto'
   recents: string[]
   favourites: string[]
+  /** SSH targets used before (newest first, at most 10) and the starred ones. Targets only, never credentials. */
+  sshRecents: SshTarget[]
+  sshFavourites: SshTarget[]
   layouts: SavedLayout[]
   lastShell: string
   lastCwd: string
