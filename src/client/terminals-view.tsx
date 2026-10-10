@@ -48,6 +48,7 @@ import {
   refit,
   renameWin,
   restartWin,
+  sshLabel,
   runningSubagents,
   setAgentsPanel,
   runSearch,
@@ -337,7 +338,9 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     grip.addEventListener('pointercancel', up)
   }
 
-  const sub = rt.conn === 'live' ? win.cwd : rt.detail.length > 0 ? `${rt.conn} · ${rt.detail}` : rt.conn
+  // An ssh window's folder lives on the other machine: the badge names the target instead.
+  const sub = rt.conn === 'live' ? (win.ssh !== undefined ? '' : win.cwd) : rt.detail.length > 0 ? `${rt.conn} · ${rt.detail}` : rt.conn
+  const remote = win.ssh !== undefined ? sshLabel(win.ssh) : undefined
 
   return (
     <div
@@ -380,10 +383,11 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
             {name}
           </span>
         )}
+        {remote !== undefined ? <span className="wt-remote" title={`Connected over ssh to ${remote}`}>⇄ {remote}</span> : null}
         {rt.attention ? <span className="wt-badge" data-level={rt.attentionLevel ?? 'quiet'} title={rt.attentionReason}>{rt.attentionLabel || 'needs you'}</span> : null}
         <span className="wt-sub" title={win.cwd}>{sub}</span>
         {rt.conn === 'exited' || rt.conn === 'failed' ? (
-          <button type="button" className="wt-hbtn" title="Restart shell" onClick={() => restartWin(win.id)}>↻</button>
+          <button type="button" className="wt-hbtn" title={remote !== undefined ? 'Reconnect' : 'Restart shell'} onClick={() => restartWin(win.id)}>↻</button>
         ) : null}
         <button type="button" className="wt-hbtn" data-on={win.pinned} title={win.pinned ? 'Unpin (allow move/resize)' : 'Pin in place (lock position and size)'} onClick={() => updateWin(win.id, { pinned: !win.pinned })}>
           {win.pinned ? '◆' : '◇'}
@@ -398,8 +402,17 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { openSearch(win.id); setMore(false) }}>⌕ Find…  <span className="wt-state">Ctrl+F</span></button>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { duplicateWin(win.id); setMore(false) }}>⧉ Duplicate</button>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { saveLog(win.id); setMore(false) }}>⤓ Save log…</button>
-          <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'idle' || rt.activity === 'finished' || rt.activity === 'exited' || window.confirm('This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ Restart shell</button>
-          <div style={{ fontSize: 11, color: 'var(--wt-dim)', padding: '2px 8px' }}>{baseName(win.cwd) || win.cwd}{win.startup !== undefined ? ` · runs “${win.startup}”` : ''}</div>
+          <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'idle' || rt.activity === 'finished' || rt.activity === 'exited' || rt.activity === 'disconnected' || window.confirm(remote !== undefined ? 'This ssh session is still connected. Reconnect (the current one is closed)?' : 'This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ {remote !== undefined ? 'Reconnect' : 'Restart shell'}</button>
+          <div style={{ fontSize: 11, color: 'var(--wt-dim)', padding: '2px 8px' }}>
+            {remote !== undefined ? `⇄ ${remote}${win.ssh?.command !== undefined ? ` · runs “${win.ssh.command}”` : ''}` : `${baseName(win.cwd) || win.cwd}${win.startup !== undefined ? ` · runs “${win.startup}”` : ''}`}
+          </div>
+        </div>
+      ) : null}
+      {rt.activity === 'disconnected' ? (
+        // ssh exits 255 when the link drops or was never made. No automatic retry: a password prompt would be spammed.
+        <div className="wt-disc" role="alert">
+          <span className="wt-grow">Disconnected from {remote}</span>
+          <button type="button" className="wt-btn" data-variant="primary" onClick={() => restartWin(win.id)}>Reconnect</button>
         </div>
       ) : null}
       {searching ? <FindBar id={win.id} /> : null}
@@ -444,7 +457,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   const [stage, setStage] = useState<Size>({ w: 800, h: 500 })
   const [ghost, setGhost] = useState<Rect | null>(null)
   const [menu, setMenu] = useState<'layouts' | 'settings' | 'help' | null>(null)
-  const [dialog, setDialog] = useState<{ startup?: string } | null>(null)
+  const [dialog, setDialog] = useState<{ startup?: string; mode?: 'local' | 'ssh' } | null>(null)
   const [bcText, setBcText] = useState('')
   const viewRef = useRef<HTMLDivElement | null>(null)
   const [scheme, setScheme] = useState<'dark' | 'light'>('dark')
@@ -527,6 +540,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
         <div className="wt-bar-left">
           <button type="button" className="wt-btn" data-variant="primary" onClick={() => setDialog({})}>＋ New terminal</button>
           <button type="button" className="wt-btn wt-btn-claude" title="New terminal that runs `claude`" onClick={() => setDialog({ startup: 'claude' })}>✦ Claude</button>
+          <button type="button" className="wt-btn wt-btn-ssh" title="Open a terminal on another machine over ssh" onClick={() => setDialog({ mode: 'ssh' })}>⇄ SSH</button>
           <span className="wt-sep" />
           <div className="wt-seg">
             {PRESETS.map((p) => (
@@ -607,7 +621,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
       </div>
       <SendMenu />
-      {dialog !== null ? <NewTerminalDialog startup={dialog.startup} workspaces={workspaceChoices(workspaceItems)} onClose={() => setDialog(null)} /> : null}
+      {dialog !== null ? <NewTerminalDialog startup={dialog.startup} mode={dialog.mode} workspaces={workspaceChoices(workspaceItems)} onClose={() => setDialog(null)} /> : null}
     </div>
   )
 }

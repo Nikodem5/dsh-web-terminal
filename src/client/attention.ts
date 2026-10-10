@@ -13,8 +13,16 @@ import type { Activity, AgentInfo, AgentSignal, AgentState, AttentionLevel, Conn
 
 // ── pure decisions ─────────────────────────────────────────────────────────
 
+/** ssh exits with 255 when the connection fails or drops; any other code is the remote session ending. */
+export const SSH_LOST = 255
+
 /** What the status dot shows for one terminal. */
-export function deriveActivity(input: { conn: Conn; agent: AgentInfo | undefined; hostBusy: boolean | undefined }): Activity {
+export function deriveActivity(input: { conn: Conn; agent: AgentInfo | undefined; hostBusy: boolean | undefined; ssh?: boolean; exitCode?: number | null }): Activity {
+  if (input.ssh === true) {
+    // The local process is always ssh, so "running" says nothing: the facts are connected, ended, or lost.
+    if (input.conn === 'exited') return input.exitCode === SSH_LOST ? 'disconnected' : 'exited'
+    return input.conn === 'live' ? 'connected' : 'offline'
+  }
   if (input.conn === 'exited') return 'exited'
   if (input.conn !== 'live') return 'offline'
   switch (input.agent?.state) {
@@ -66,7 +74,8 @@ export function alertFor(prev: AgentState | undefined, next: AgentSignal): Alert
 }
 
 /** Alert for a shell that exited: urgent when an agent was mid-task or the exit code is non-zero. */
-export function exitAlert(agentState: AgentState | undefined, exitCode: number | null | undefined): Alert {
+export function exitAlert(agentState: AgentState | undefined, exitCode: number | null | undefined, ssh = false): Alert {
+  if (ssh && exitCode === SSH_LOST) return { level: 'urgent', label: 'disconnected', reason: 'The SSH connection was lost or could not be made (exit 255)' }
   const interrupted = agentState === 'working' || agentState === 'needs-you'
   const failed = typeof exitCode === 'number' && exitCode !== 0
   return interrupted || failed
@@ -264,7 +273,8 @@ export function noteHostBusy(rt: Runtime, busy: boolean): void {
 
 /** The shell itself exited. */
 export function noteExit(rt: Runtime, exitCode: number | null | undefined): void {
-  const alert = exitAlert(rt.agent?.state, exitCode)
+  rt.exitCode = exitCode
+  const alert = exitAlert(rt.agent?.state, exitCode, rt.ssh)
   refreshActivity(rt)
   raiseAttention(rt, alert)
   emit()
