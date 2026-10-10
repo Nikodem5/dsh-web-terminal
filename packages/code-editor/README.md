@@ -82,7 +82,11 @@ window.dispatchEvent(new CustomEvent('dsh-code-editor:open', {
 }))
 ```
 
-`path` is absolute; `line`, `col`, `review` (open the git diff of that file) and `root` are optional. The editor finds the registered root containing the path (else asks the host to resolve it, else registers the parent folder), opens the file and tries to switch to the Code page via `ctx.layout.selectPanel`. If that service is unavailable the file still opens and the user switches pages manually.
+`path` is absolute; `line`, `col`, `review` and `root` are optional. A file opens at `line`/`col`; with `review` its git diff opens (a clean file opens plain). A **folder** with `review: true` shows the CHANGES section of its root (expanded, git refreshed). The editor finds the registered root containing the path; otherwise it asks `GET /resolve` (git top-level, else the folder), registers that root with `POST /roots` and uses it.
+
+On load the editor sets `window.__dshCodeEditor = { version: 1 }` so other plugins can tell it is installed (the terminal falls back to VS Code when the marker is missing).
+
+**Switching to the Code page**: the harness `layout` service (`ctx.layout.selectPanel(id)`, provided by the app frame plugin, which the sidebar also requires) is picked up with `ctx.inject(['layout'], cb)`, so it is not a hard dependency: the plugin loads without it, and without it a request still opens the file and the user switches pages manually. The harness cordis has no `{ optional }` inject form (an object `inject` is a service-name map), and `ctx.layout` is never read directly because that throws for services not in `inject`. See `src/client/layout-link.ts`.
 
 ### Client tests
 

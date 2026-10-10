@@ -257,3 +257,12 @@ test('layout link: tolerates a ctx without inject, a throwing selectPanel and a 
   cb({ layout: {} })
   assert.equal(bare.available(), false)
 })
+
+test('plugin entry: only slots is injected, the presence marker and the open listener are wired', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../src/client/index.ts', import.meta.url), 'utf8')
+  assert.match(src, /export const inject = \['slots'\]/)
+  assert.match(src, /__dshCodeEditor = \{ version: 1 \}/)
+  assert.match(src, /addEventListener\('dsh-code-editor:open'/)
+  assert.doesNotMatch(src, /ctx\.layout|\.get\?\.\('layout'\)/, 'never reads an uninjected ctx property')
+})
