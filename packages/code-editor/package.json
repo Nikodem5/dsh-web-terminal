@@ -1,0 +1,7 @@
+{
+  "name": "dsh-code-editor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monaco-based code editor plugin for DeepSeek Harness (placeholder, coming next).",
+  "type": "module"
+}

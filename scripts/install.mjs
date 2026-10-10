@@ -1,4 +1,4 @@
-// Installs this plugin into one or more dsh profiles as a real package copy.
+// Installs the plugins of this monorepo into one or more dsh profiles as real package copies.
 //
 // Why a copy and not `dsh plugin add <path>`: that records a `link:` dependency,
 // which mounts the package through a junction in the profile's node_modules
@@ -8,30 +8,54 @@
 // browser half never reaches the client bundle graph. Copying `lib/` plus the
 // two manifests into the profile keeps the package physically inside the tree.
 //
-// Usage: node install.mjs [profile ...]      (default: desktop web)
-//        node install.mjs --remove [profile ...]
+// Usage: node scripts/install.mjs [--remove] [--dry-run] [--package <name>|all] [profile ...]
+//        (default: every built plugin package, profiles desktop and web)
+//        --dry-run prints what would be copied or removed without writing anything.
 
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const here = dirname(fileURLToPath(import.meta.url))
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const home = process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh')
+
 const args = process.argv.slice(2)
 const remove = args.includes('--remove')
-const profiles = args.filter((arg) => !arg.startsWith('--'))
+const dryRun = args.includes('--dry-run')
+const profiles = []
+let only = 'all'
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--package') only = args[++i] ?? ''
+  else if (!args[i].startsWith('--')) profiles.push(args[i])
+}
 if (profiles.length === 0) profiles.push('desktop', 'web')
 
-const pkg = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'))
-const name = pkg.name
+/** Installable plugins: packages/* whose manifest carries a `dsh` block (placeholders have none). */
+const plugins = readdirSync(join(root, 'packages'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && existsSync(join(root, 'packages', entry.name, 'package.json')))
+  .map((entry) => {
+    const dir = join(root, 'packages', entry.name)
+    return { dir, dirName: entry.name, pkg: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) }
+  })
+  .filter((plugin) => plugin.pkg.dsh !== undefined)
 
-if (!remove && !existsSync(join(here, 'lib', 'client.js'))) {
-  console.error('lib/client.js is missing — run `npm run build` first')
+const selected = only === 'all' ? plugins : plugins.filter((p) => p.pkg.name === only || p.dirName === only)
+if (selected.length === 0) {
+  console.error(`no installable package matches "${only}" (available: ${plugins.map((p) => p.pkg.name).join(', ') || 'none'})`)
   process.exit(1)
 }
 
-/** Add or drop this package in one profile manifest. */
-function reconcileManifest(profileDir) {
+if (!remove) {
+  for (const plugin of selected) {
+    if (!existsSync(join(plugin.dir, 'lib', 'client.js'))) {
+      console.error(`${plugin.pkg.name}: lib/client.js is missing — run \`npm run build\` first`)
+      process.exit(1)
+    }
+  }
+}
+
+/** Add or drop one package in one profile manifest. */
+function reconcileManifest(profileDir, name) {
   const manifestPath = join(profileDir, 'package.json')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   manifest.dependencies ??= {}
@@ -48,6 +72,7 @@ function reconcileManifest(profileDir) {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 }
 
+const prefix = dryRun ? '[dry-run] ' : ''
 for (const profile of profiles) {
   const profileDir = join(home, 'profiles', profile)
   if (!existsSync(profileDir)) {
@@ -55,22 +80,29 @@ for (const profile of profiles) {
     continue
   }
 
-  const target = join(profileDir, 'node_modules', name)
-  rmSync(target, { recursive: true, force: true })
+  for (const { dir, pkg } of selected) {
+    const name = pkg.name
+    const target = join(profileDir, 'node_modules', name)
 
-  if (remove) {
-    reconcileManifest(profileDir)
-    console.log(`removed ${name} from ${profile} — restart the GUI to unload it`)
-    continue
+    if (remove) {
+      console.log(`${prefix}remove ${target} and drop ${name} from the ${profile} manifest`)
+      if (!dryRun) {
+        rmSync(target, { recursive: true, force: true })
+        reconcileManifest(profileDir, name)
+        console.log(`removed ${name} from ${profile} — restart the GUI to unload it`)
+      }
+      continue
+    }
+
+    console.log(`${prefix}install ${name}: ${dir} -> ${target} (package.json, cordis.patch.yml, lib/)`)
+    if (dryRun) continue
+    rmSync(target, { recursive: true, force: true })
+    mkdirSync(target, { recursive: true })
+    for (const file of ['package.json', 'cordis.patch.yml']) {
+      cpSync(join(dir, file), join(target, file))
+    }
+    cpSync(join(dir, 'lib'), join(target, 'lib'), { recursive: true })
+    reconcileManifest(profileDir, name)
+    console.log(`installed ${name} -> ${target}`)
   }
-
-  mkdirSync(target, { recursive: true })
-  for (const file of ['package.json', 'cordis.patch.yml']) {
-    cpSync(join(here, file), join(target, file))
-  }
-  cpSync(join(here, 'lib'), join(target, 'lib'), { recursive: true })
-  reconcileManifest(profileDir)
-
-  const copied = existsSync(join(target, 'lib', 'client.js')) ? 'with client bundle' : 'WITHOUT client bundle'
-  console.log(`installed ${name} -> ${target} (${copied})`)
 }

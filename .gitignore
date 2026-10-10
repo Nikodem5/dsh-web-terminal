@@ -1,8 +1,9 @@
 node_modules/
-lib/client.js
+packages/terminal/lib/client.js
+packages/terminal/lib/shared/
 *.log
 CLAUDE.md
 GLOSSARY.md
 docs/adr/
 HANDOFF.md
-.test-home/
+.test-home*/
