@@ -14,7 +14,7 @@ const MIN = 60_000
 const HOUR = 60 * MIN
 
 /**
- * Per-window forecast tuning. 5h mirrors the user's statusline.ps1: pace over the last
+ * Per-window forecast tuning. 5h: pace over the last
  * hour, or since the first sample when there is under 10 min of samples, or since the
  * window start when even that is missing.
  * 7d uses a 24 h lookback: an hour of a week-long window is mostly noise (usage comes in

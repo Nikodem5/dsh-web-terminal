@@ -2,7 +2,7 @@
 // runtime map, change notification and persistence. Every other module reads and
 // mutates these; nothing here depends on them.
 //
-// The Terminals tab is a conversation *view*, so React unmounts it whenever the
+// The Terminals page is a conversation *view*, so React unmounts it whenever the
 // user flips to Chat or another session. A terminal must survive that, so the
 // xterm instance and its WebSocket live in `runtimes` at module scope and the view
 // only re-parents their DOM node. Geometry is stored as fractions of the canvas so

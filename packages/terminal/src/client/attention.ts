@@ -46,7 +46,7 @@ export interface Alert {
   level: AttentionLevel
   label: string
   reason: string
-  /** A quiet flag that still interrupts like an urgent one (a desktop notification unless the Terminals tab is showing), without the chime. */
+  /** A quiet flag that still interrupts like an urgent one (a desktop notification unless the Terminals page is showing), without the chime. */
   interrupt?: boolean
 }
 
@@ -141,7 +141,7 @@ function chime(): void {
 
 /**
  * Desktop notification. Urgent alerts interrupt whenever the user is not looking at the
- * Terminals tab; quiet ones only when the whole app is in the background.
+ * Terminals page; quiet ones only when the whole app is in the background.
  */
 function notify(win: WinState, rt: Runtime, alert: Alert): void {
   if (!prefs.notify || typeof Notification === 'undefined') return

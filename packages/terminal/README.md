@@ -169,7 +169,7 @@ header):
 - **Long-command flags.** When a command ends after at least N seconds (Aa menu: **Flag commands longer than** Off / 5 / 10 /
   30 / 60 s, default 10) and the terminal is not the one in front of you: success gives a quiet `done` badge (a desktop
   notification only while the whole app is in the background, like `finished`); a non-zero exit gives a `failed` badge and a
-  desktop notification unless the Terminals tab is showing, no chime (`npm test failed (exit 1) after 2m 03s`). Nothing for
+  desktop notification unless the Terminals page is showing, no chime (`npm test failed (exit 1) after 2m 03s`). Nothing for
   `claude`, for a terminal that has an agent state, for a command that used the alternate screen (editors, pagers, TUIs),
   or when the shell reported no exit code. Typing in the terminal clears the badge like any quiet flag.
 - **No folding.** xterm cannot hide buffer rows, and a fake (an overlay hiding the text) would break selection, search
@@ -269,11 +269,11 @@ cd <repo root>               # the monorepo root, not packages/terminal
 npm install                  # once
 npm run build                # bundles packages/terminal/src -> lib/client.js, copies shared host code into lib/shared/
 npm test                     # host (real PTY), client registration, jsdom render test
-node scripts/install.mjs desktop   # copies into ~/.dsh/profiles/desktop (or: npm run install:desktop)
+npm run install:desktop      # copies into ~/.dsh/profiles/desktop (= node scripts/install.mjs desktop)
 ```
 
 The installer takes `--dry-run` to preview, `--remove` to uninstall and `--package dsh-web-terminal` to skip other
-plugins of the repo. From this folder, `node install.mjs desktop` forwards to the root installer.
+plugins of the repo.
 
 Restart the desktop app: plugins load at boot.
 
@@ -318,8 +318,9 @@ Restart the desktop app: plugins load at boot.
 | `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet; or the shell integration's prompt-ready signal) |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
-| `build.mjs`, `install.mjs` | esbuild bundle of the client; thin wrapper around the root `scripts/install.mjs` |
-| `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs`, `probe.mjs` | Tests and a diagnostic probe |
+| `build.mjs` | esbuild bundle of the client |
+| `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs` | Tests |
+| `dev/probe.mjs` | Development only: checks a running harness answers `/api/dsh-web-terminal/info` and the PTY WebSocket (`node dev/probe.mjs <port> [token]`) |
 
 ## Wire contract
 

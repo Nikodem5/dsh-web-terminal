@@ -3,5 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "description": "Helpers shared by the DSH plugins in this repo. Not installed on its own: client/ is bundled by esbuild, host/ is copied into each plugin's lib/shared/ at build time.",
+  "author": "Nikodem Marcinkiewicz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nikodem5/dsh-web-terminal.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://github.com/Nikodem5/dsh-web-terminal#readme",
+  "bugs": {
+    "url": "https://github.com/Nikodem5/dsh-web-terminal/issues"
+  },
+  "license": "MIT",
   "type": "module"
 }

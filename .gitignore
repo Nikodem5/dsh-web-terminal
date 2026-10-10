@@ -4,8 +4,14 @@ packages/terminal/lib/shared/
 packages/code-editor/lib/client.js
 packages/code-editor/lib/shared/
 *.log
+
+# local notes
 CLAUDE.md
 GLOSSARY.md
-docs/adr/
 HANDOFF.md
+docs/adr/
+
+# build output
+/lib/
+/dist/
 .test-home*/
