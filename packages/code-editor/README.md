@@ -50,3 +50,40 @@ One watcher per root, shared by all its sockets, closed 30 s after the last sock
 ### Tests
 
 `npm test` (in this package, or from the repo root) runs `node --test` over `tests/`: confinement, roots, every route against temp dirs and a temp git repo, watcher frames in both modes, WebSocket origin policy, and a strict-ctx resilience test. The tests do not need `lib/client.js`.
+
+## Client (the Code page)
+
+Source in `src/client/`, built by `node build.mjs` into one classic script (`lib/client.js`, about 3.8 MiB: Monaco 0.52.2 lite, the editor worker and the codicon font are embedded). Monaco only runs when the Code page first opens, so a failure there shows a notice and never breaks plugin loading. Workers start from a blob URL (data: URL, then the main thread, as fallbacks). Highlighting is Monarch only (no TypeScript language service); JSON has a small built-in grammar.
+
+### Features
+
+- Sidebar: root picker (harness Workspaces, folders opened before, "Open folder..." by absolute path), EXPLORER (lazy tree, refreshed on live `changed` frames) and CHANGES (Staged / Changes / Untracked; per-file Stage, Unstage, Discard; group Stage all / Unstage all). Discard asks first and lists the untracked files it will delete.
+- Tabs with a dirty dot, middle-click close and a confirmation for unsaved tabs. Files open in Monaco; change entries open in the diff editor (staged or unstaged, side by side or inline).
+- Saving sends `expectedMtime`. A 409 (or an on-disk change under unsaved edits) shows "File changed on disk" with Reload / Overwrite / Compare (disk vs mine diff, then keep mine or take disk).
+- A clean open tab reloads silently on disk changes (cursor and scroll kept). Status bar: branch, ahead/behind, live state, root, line:col, EOL, language.
+- Per-root UI state (open tabs, active tab, expanded folders, diff layout) is kept in `localStorage`.
+
+### Shortcuts
+
+| Key | Action |
+|---|---|
+| Ctrl+P | Quick open (fuzzy over the repo files; Up/Down, Enter, Esc) |
+| Ctrl+S | Save the active file |
+| Ctrl+W | Close the active tab (asks when dirty) |
+| Ctrl+F | Find (Monaco) |
+
+Ctrl+S / Ctrl+W are not taken inside plain text inputs (folder path, quick-open box).
+
+### Opening files from other plugins
+
+```js
+window.dispatchEvent(new CustomEvent('dsh-code-editor:open', {
+  detail: { path: 'C:\work\repo\src\a.ts', line: 12, col: 3, review: false, root: 'C:\work\repo' },
+}))
+```
+
+`path` is absolute; `line`, `col`, `review` (open the git diff of that file) and `root` are optional. The editor finds the registered root containing the path (else asks the host to resolve it, else registers the parent folder), opens the file and tries to switch to the Code page via `ctx.layout.selectPanel`. If that service is unavailable the file still opens and the user switches pages manually.
+
+### Client tests
+
+`tests/client-*.test.mjs` (api wrapper, fuzzy ranking, changes grouping, discard plan, explorer rows, shortcuts, persistence, live socket, store state machine) and `smoke-view.mjs` (renders the page in jsdom with a mocked fetch and a fake editor host).
