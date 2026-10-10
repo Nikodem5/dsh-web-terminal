@@ -203,8 +203,8 @@ export interface SshHost {
   port: number | null
 }
 
-/** Where a Ctrl+clicked file path opens. */
-export type PathTarget = 'vscode' | 'cursor' | 'default' | 'custom'
+/** Where a Ctrl+clicked file path opens. `code` is the sibling Code editor plugin (an in-app event, no host call). */
+export type PathTarget = 'code' | 'vscode' | 'cursor' | 'default' | 'custom'
 
 /** Persisted user preferences. */
 export interface Prefs {

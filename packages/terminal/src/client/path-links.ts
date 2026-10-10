@@ -7,6 +7,7 @@
 import type { IBuffer, IBufferRange, ILink, ILinkDecorations } from '@xterm/xterm'
 import { emit, persistSoon, prefs, store } from './state.ts'
 import { findPaths } from './paths.ts'
+import { openInEditor } from './code-editor.ts'
 import type { PathMatch } from './paths.ts'
 import type { PathTarget, Runtime } from './types.ts'
 
@@ -164,12 +165,25 @@ function notify(rt: Runtime, text: string): void {
   setTimeout(() => el.remove(), 5000)
 }
 
-export async function openPath(rt: Runtime, path: string, line?: number, col?: number): Promise<void> {
+/**
+ * Open a path with the chosen target. "Code (this app)" dispatches an in-app event (no host call); when the
+ * editor plugin is not installed, or the path is a folder (nothing to show in an editor), it falls back to
+ * VS Code and says so.
+ */
+export async function openPath(rt: Runtime, path: string, line?: number, col?: number, isDir = false): Promise<void> {
+  let target: PathTarget = prefs.pathTarget
+  if (target === 'code') {
+    if (!isDir) {
+      if (openInEditor({ path, line, col })) return
+      notify(rt, 'The Code editor plugin is not installed: opening in VS Code')
+    }
+    target = 'vscode'
+  }
   try {
     const res = await fetch(OPEN_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ path, line, col, target: prefs.pathTarget, template: prefs.pathTemplate }),
+      body: JSON.stringify({ path, line, col, target, template: prefs.pathTemplate }),
     })
     const body = await res.json().catch(() => undefined)
     if (!res.ok || body?.ok !== true) notify(rt, typeof body?.error === 'string' ? body.error : 'Could not open the file')
@@ -218,7 +232,7 @@ export function registerPathLinks(rt: Runtime): void {
             decorations,
             activate(event) {
               if (!modifierHeld(event)) return
-              void openPath(rt, resolved, m.line, m.col)
+              void openPath(rt, resolved, m.line, m.col, hit.isDir)
             },
             hover(event) {
               sync(event)

@@ -188,6 +188,7 @@ export function SettingsMenu(): ReactElement {
 // ── clickable file paths (setting block) ──
 
 const PATH_TARGETS: Array<{ value: PathTarget; label: string }> = [
+  { value: 'code', label: 'Code (this app)' },
   { value: 'vscode', label: 'VS Code' },
   { value: 'cursor', label: 'Cursor' },
   { value: 'default', label: 'OS default app' },

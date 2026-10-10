@@ -33,6 +33,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Find in terminal | **Ctrl+F** (or `⋯` → Find…) opens a find bar over the focused terminal: highlights every match in the scrollback, `n / total` counter, **Enter** / **Shift+Enter** next/previous, match-case / whole-word / regex toggles, **Esc** closes. Pre-fills from a one-line selection |
 | Jump to new output | **Ctrl+Shift+U** scrolls to the "new since" divider (see below) |
 | Help | **F1** or the book button in the toolbar opens the help panel (see below); **Esc** closes it. F1 is not sent to the program |
+| Review changes | `⋯` → **Review changes in this folder** opens the window's folder (the shell's current folder when shell integration reports it) in the Code editor with its CHANGES view. Hidden when the editor plugin is not installed and for ssh windows |
 | Links | URLs in terminal output are underlined on hover; **Ctrl+click** (Cmd+click) opens them in your system browser (plain clicks still select text) |
 
 ### Overview (mission control)
@@ -106,7 +107,9 @@ Only paths that **exist** are linked (checked by the host, batched, cached per t
   descendant (else the shell) from `/proc`, so a `cd` is followed. On **Windows and macOS** only the folder the
   terminal was started in is known, so after a `cd` relative paths still resolve against the start folder (absolute
   ones are unaffected). Git Bash `/c/Users/...` paths are mapped to `C:\Users\...` on Windows.
-- **Aa → Clickable file paths → Open with**: `VS Code` (default, `code -g file:line:col`), `Cursor`, `OS default app`
+- **Aa → Clickable file paths → Open with**: `Code (this app)` (default for new users; an in-app event to the sibling
+  dsh-code-editor plugin, no host call; folders and a missing editor plugin fall back to VS Code with a short message;
+  users with saved preferences keep their saved target), `VS Code` (`code -g file:line:col`), `Cursor`, `OS default app`
   (Explorer / `xdg-open` / `open`; programs and scripts such as `.exe .bat .sh` are refused, since opening would run
   them) or `Custom command`, a template like `myeditor {file}:{line}:{col}`. Placeholders `{file} {line} {col} {dir}`;
   quotes group arguments; each argument is substituted separately (a path with spaces stays one argument). A missing

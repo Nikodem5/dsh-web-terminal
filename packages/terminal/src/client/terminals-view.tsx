@@ -12,6 +12,7 @@ import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { requestClose, requestCloseAll } from './actions.ts'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { SendMenu } from './send-menu.tsx'
+import { reviewFolder, showReview } from './code-editor.ts'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
 import { HelpIcon, HelpPanel } from './help-panel.tsx'
@@ -402,6 +403,9 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { openSearch(win.id); setMore(false) }}>⌕ Find…  <span className="wt-state">Ctrl+F</span></button>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { duplicateWin(win.id); setMore(false) }}>⧉ Duplicate</button>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { saveLog(win.id); setMore(false) }}>⤓ Save log…</button>
+          {showReview(win.ssh !== undefined) ? (
+            <button type="button" className="wt-item wt-link" data-act="review-changes" style={{ color: 'inherit', textAlign: 'left' }} title="Open this folder's uncommitted changes in the Code editor" onClick={() => { reviewFolder(rt.cwd || win.cwd); setMore(false) }}>± Review changes in this folder</button>
+          ) : null}
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'idle' || rt.activity === 'finished' || rt.activity === 'exited' || rt.activity === 'disconnected' || window.confirm(remote !== undefined ? 'This ssh session is still connected. Reconnect (the current one is closed)?' : 'This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ {remote !== undefined ? 'Reconnect' : 'Restart shell'}</button>
           <div style={{ fontSize: 11, color: 'var(--wt-dim)', padding: '2px 8px' }}>
             {remote !== undefined ? `⇄ ${remote}${win.ssh?.command !== undefined ? ` · runs “${win.ssh.command}”` : ''}` : `${baseName(win.cwd) || win.cwd}${win.startup !== undefined ? ` · runs “${win.startup}”` : ''}`}
