@@ -255,13 +255,17 @@ harness ends a shell.
 ## Install
 
 ```powershell
-cd <this folder>
-npm run build                # bundles src/ -> lib/client.js
-node install.mjs desktop     # copies into ~/.dsh/profiles/desktop
+cd <repo root>               # the monorepo root, not packages/terminal
+npm install                  # once
+npm run build                # bundles packages/terminal/src -> lib/client.js, copies shared host code into lib/shared/
 npm test                     # host (real PTY), client registration, jsdom render test
+node scripts/install.mjs desktop   # copies into ~/.dsh/profiles/desktop (or: npm run install:desktop)
 ```
 
-Restart the desktop app: plugins load at boot. `node install.mjs --remove desktop` uninstalls.
+The installer takes `--dry-run` to preview, `--remove` to uninstall and `--package dsh-web-terminal` to skip other
+plugins of the repo. From this folder, `node install.mjs desktop` forwards to the root installer.
+
+Restart the desktop app: plugins load at boot.
 
 > **Why a copy and not `dsh plugin add <path>`?** `dsh plugin add` records a `link:` dependency whose real path
 > lives outside the profile tree; the client-modules registry skips such packages, so the host half mounts but
@@ -281,6 +285,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `lib/hook-post.js` | Command-hook forwarder Claude runs for `SessionStart` (HTTP hooks are ignored there) |
 | `lib/statusline.js` | Status-line wrapper Claude runs: posts usage / sub-agent tasks to the host, relays the user's own line |
 | `lib/subagents.js` | Pure per-terminal sub-agent store (status-line tasks + Start/Stop hooks, retention, cap) |
+| `lib/shared/` (build output, gitignored) | Host helpers copied from `packages/shared/host` by `build.mjs`, so the installed package is self-contained |
 | `lib/post.js` | Shared loopback POST and stdin helpers of the two scripts above |
 | `lib/shells.js`, `lib/shell/integration.ps1`, `integration.bash` | Shell table and the integration injected at spawn (command blocks, real cwd) |
 | `src/client/blocks.ts`, `blocks-settings.tsx`, `blocks.css.ts` | OSC 133/633 parsing, the block model, the gutter bars, the Aa switch |
@@ -302,7 +307,8 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet; or the shell integration's prompt-ready signal) |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
-| `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs` | Tests |
+| `build.mjs`, `install.mjs` | esbuild bundle of the client; thin wrapper around the root `scripts/install.mjs` |
+| `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs`, `probe.mjs` | Tests and a diagnostic probe |
 
 ## Wire contract
 

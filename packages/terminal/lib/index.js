@@ -38,6 +38,7 @@ import { OpenError, createOpener } from './open.js'
 import { MAX_CANDIDATES, linuxCwd, resolveCandidates } from './paths.js'
 import { createTokenTotals } from './token-totals.js'
 import { createUsage } from './usage.js'
+import { safeCall } from './shared/safe-call.js'
 
 /** Stable cordis plugin name. */
 const name = 'web-terminal'
@@ -277,13 +278,6 @@ function hasRealDescendant(children, root) {
 /** Resize a PTY when the subprocess provider supports it (older hosts have no resize call). */
 function resizeHandle(handle, cols, rows) {
   if (typeof handle.resize === 'function') safeCall(() => handle.resize(cols, rows))
-}
-
-/** Run a provider call, swallowing both synchronous throws and async rejections. */
-function safeCall(fn) {
-  try {
-    Promise.resolve(fn()).catch(() => {})
-  } catch {}
 }
 
 /** Signal names a browser may forward to the foreground process. */

@@ -11,11 +11,19 @@
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const src = join(here, 'src')
 const out = join(here, 'lib', 'client.js')
+
+// Host helpers shared with the other plugins (packages/shared/host) must live inside the
+// installed package, which cannot reach packages/shared: copy them into lib/shared/ (gitignored).
+const sharedHost = join(here, '..', 'shared', 'host')
+const sharedOut = join(here, 'lib', 'shared')
+rmSync(sharedOut, { recursive: true, force: true })
+mkdirSync(sharedOut, { recursive: true })
+cpSync(sharedHost, sharedOut, { recursive: true })
 
 /** The variable name esbuild gives the bundled entry's exports in IIFE output. */
 const BUNDLED_EXPORTS = '__dsh_wt_exports__'

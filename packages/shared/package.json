@@ -1,0 +1,7 @@
+{
+  "name": "dsh-shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Helpers shared by the DSH plugins in this repo. Not installed on its own: client/ is bundled by esbuild, host/ is copied into each plugin's lib/shared/ at build time.",
+  "type": "module"
+}
