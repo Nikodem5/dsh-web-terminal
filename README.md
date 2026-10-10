@@ -25,7 +25,8 @@ Everything runs locally.
 
 - DeepSeek Harness desktop app
 - Node.js 22+ on PATH. The host runs `node` for the Claude status-line and hook helpers; without it the usage
-  stats, sub-agents panel and hook-based agent signals are unavailable (terminals themselves still work)
+  stats, the sub-agents panel and the "Idle" state of a fresh Claude terminal are unavailable (terminals and the other
+  agent states still work). The installer needs Node as well
 - Git, for the editor's git features
 - Optional: Claude Code CLI, for the agent features
 - Windows is the primary platform, Linux is supported, macOS is untested
