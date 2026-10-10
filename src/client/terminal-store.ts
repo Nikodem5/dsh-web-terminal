@@ -17,6 +17,7 @@
 //   appearance.ts   font and colour preferences
 //   theme.ts        xterm palette and surface measurement
 //   unread.ts       "new since you last looked" divider and jump
+//   shortcuts.ts    keyboard shortcut registry (handlers and the help panel read it)
 
 export * from './types.ts'
 export * from './state.ts'
@@ -41,3 +42,4 @@ export * from './unread.ts'
 export * from './theme.ts'
 export * from './blocks.ts'
 export * from './mission.ts'
+export * from './shortcuts.ts'

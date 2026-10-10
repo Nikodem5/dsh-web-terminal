@@ -6,6 +6,7 @@
 // and the selection live here.
 
 import { emit, focusWin, runtimes } from './state.ts'
+import { matchShortcut } from './shortcuts.ts'
 import type { Rect } from './types.ts'
 
 export interface MissionState {
@@ -25,7 +26,7 @@ export function isOverview(): boolean {
 
 /** Ctrl+Shift+Space toggles overview. Unused by browsers; listed in runtime's isAppShortcut so xterm never sees it. */
 export function isMissionShortcut(event: KeyboardEvent): boolean {
-  return event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey && (event.code === 'Space' || event.key === ' ')
+  return matchShortcut('overview', event)
 }
 
 export function enterOverview(focusId: string | null): void {

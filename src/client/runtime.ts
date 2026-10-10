@@ -2,6 +2,7 @@
 // window, reconnecting, sizing, restart and log export.
 
 import { isMissionShortcut, isOverview } from './mission.ts'
+import { matchShortcut } from './shortcuts.ts'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -85,7 +86,7 @@ function socketBase(): string {
 
 /** Key combinations the app handles itself, so the terminal must not swallow them. */
 function isAppShortcut(event: KeyboardEvent): boolean {
-  return (event.ctrlKey && event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) || isMissionShortcut(event)
+  return matchShortcut('cycle', event) || isMissionShortcut(event) || matchShortcut('help', event)
 }
 
 /** Build (once) the xterm + socket for a window. */
@@ -205,7 +206,7 @@ export function ensureRuntime(win: WinState): Runtime {
     emit()
   })
   // Ctrl+C copies when there is a selection (otherwise it is SIGINT); Ctrl+Shift+C/V always copy/paste;
-  // Ctrl+F opens the find bar.
+  // Ctrl+F opens the find bar. The keys come from shortcuts.ts, which the help panel lists too.
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true
     if (isAppShortcut(event)) return false
@@ -214,22 +215,21 @@ export function ensureRuntime(win: WinState): Runtime {
       jumpToUnread(rt.id)
       return false
     }
-    const mod = event.ctrlKey || event.metaKey
-    if (mod && !event.shiftKey && !event.altKey && (event.key === 'f' || event.key === 'F')) {
+    if (matchShortcut('find', event)) {
       event.preventDefault()
       openSearch(rt.id)
       return false
     }
-    if (mod && (event.key === 'c' || event.key === 'C') && (event.shiftKey || term.hasSelection())) {
+    if (matchShortcut('copy-always', event) || (term.hasSelection() && matchShortcut('copy', event))) {
       navigator.clipboard?.writeText(term.getSelection()).catch(() => {})
       return false
     }
     // Ctrl+Shift+S: send the selection to another terminal (without one it stays a plain key).
-    if (mod && event.shiftKey && !event.altKey && (event.key === 's' || event.key === 'S') && openSendMenu(rt)) {
+    if (matchShortcut('send', event) && openSendMenu(rt)) {
       event.preventDefault()
       return false
     }
-    if (mod && event.shiftKey && (event.key === 'v' || event.key === 'V')) {
+    if (matchShortcut('paste', event)) {
       navigator.clipboard?.readText().then((text) => term.paste(text)).catch(() => {})
       return false
     }
