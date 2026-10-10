@@ -65,9 +65,10 @@ async function attach(ctxParts) {
   return { frame, warnings }
 }
 
-test('an uninjected ctx property (ctx.wtSpawn) does not stop terminals', async () => {
-  const { frame } = await attach({ webServer: { register: () => () => {} } })
+test('a normal apply() with a strict ctx logs no warnings and serves terminals', async () => {
+  const { frame, warnings } = await attach({ webServer: { register: () => () => {} } })
   assert.equal(frame.type, 'attached')
+  assert.deepEqual(warnings, [])
 })
 
 test('every optional route failing to register still serves terminals', async () => {

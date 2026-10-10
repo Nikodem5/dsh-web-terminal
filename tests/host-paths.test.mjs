@@ -11,7 +11,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../lib/index.js'
 import { expand, linuxCwd, resolveCandidates } from '../lib/paths.js'
-import { OpenError, createOpener, gotoArg, splitTemplate, templateToArgv } from '../lib/open.js'
+import { OpenError, createOpener, setSpawnForTests, gotoArg, splitTemplate, templateToArgv } from '../lib/open.js'
 
 const home = mkdtempSync(join(tmpdir(), 'dsh-wt-paths-home-'))
 process.env.DSH_HOME = home
@@ -232,13 +232,13 @@ function startRoutes() {
   const routes = []
   const { spawn, calls } = fakeSpawn()
   let teardown
+  setSpawnForTests(spawn)
   apply({
     webServer: { register: (r) => { routes.push(r); return () => {} }, registerUpgrade: () => () => {} },
     subprocess: { spawnTerminal: async () => { throw new Error('unused') } },
     effect: (fn) => { teardown = fn() },
-    wtSpawn: spawn,
   })
-  teardowns.push(teardown)
+  teardowns.push(teardown, () => setSpawnForTests(undefined))
   const call = (path, method, body) =>
     new Promise((resolve) => {
       const req = new EventEmitter()
