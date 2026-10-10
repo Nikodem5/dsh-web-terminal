@@ -10,6 +10,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { requestClose, requestCloseAll } from './actions.ts'
+import { Pop } from './popover.tsx'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { SendMenu } from './send-menu.tsx'
 import { reviewFolder, showReview } from './code-editor.ts'
@@ -236,8 +237,15 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
   useEffect(() => {
     if (!more) return
     const close = () => setMore(false)
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
     window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', esc)
+    }
   }, [more])
 
   const px = toPx(win, stage)
@@ -399,7 +407,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
         <button type="button" className="wt-hbtn" data-danger="true" title="Close and end the shell" onClick={() => requestClose([win.id])}>✕</button>
       </div>
       {more ? (
-        <div className="wt-pop" data-right="true" style={{ top: 36, right: 6, minWidth: 190, zIndex: 80 }} onPointerDown={(e) => e.stopPropagation()}>
+        <Pop data-right="true" style={{ top: 36, right: 6, minWidth: 190, zIndex: 80 }} onPointerDown={(e) => e.stopPropagation()}>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { openSearch(win.id); setMore(false) }}>⌕ Find…  <span className="wt-state">Ctrl+F</span></button>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { duplicateWin(win.id); setMore(false) }}>⧉ Duplicate</button>
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { saveLog(win.id); setMore(false) }}>⤓ Save log…</button>
@@ -410,7 +418,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
           <div style={{ fontSize: 11, color: 'var(--wt-dim)', padding: '2px 8px' }}>
             {remote !== undefined ? `⇄ ${remote}${win.ssh?.command !== undefined ? ` · runs “${win.ssh.command}”` : ''}` : `${baseName(win.cwd) || win.cwd}${win.startup !== undefined ? ` · runs “${win.startup}”` : ''}`}
           </div>
-        </div>
+        </Pop>
       ) : null}
       {rt.activity === 'disconnected' ? (
         // ssh exits 255 when the link drops or was never made. No automatic retry: a password prompt would be spammed.
@@ -517,8 +525,15 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   useEffect(() => {
     if (menu === null) return
     const close = () => setMenu(null)
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && menu !== 'help') close()
+    }
     window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', esc)
+    }
   }, [menu])
 
   // Esc / ✕: close the panel and hand the keyboard back to the terminal that had it.

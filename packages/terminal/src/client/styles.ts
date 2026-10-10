@@ -61,8 +61,10 @@ const VIEW_CSS = `
 .wt-view .wt-btn.wt-btn-danger:hover:not(:disabled) { background-color: color-mix(in srgb, var(--wt-danger) 16%, transparent); border-color: var(--wt-danger); color: var(--wt-danger); }
 .wt-view .wt-btn.wt-btn-icon[data-on="true"] { background-color: color-mix(in srgb, var(--wt-text) 14%, transparent); border-color: var(--wt-text); color: var(--wt-text); }
 .wt-menu-wrap { position: relative; }
-.wt-pop { position: absolute; top: 34px; left: 0; min-width: 240px; padding: 8px; border: 0.5px solid var(--wt-line); border-radius: 12px; background: var(--wt-surface); box-shadow: 0 16px 40px rgba(0,0,0,0.45); z-index: 60; display: flex; flex-direction: column; gap: 6px; }
+.wt-pop { position: absolute; top: 34px; left: 0; min-width: 240px; padding: 8px; border: 0.5px solid var(--wt-line); border-radius: 12px; background: var(--wt-surface); box-shadow: 0 16px 40px rgba(0,0,0,0.45); z-index: 60; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; box-sizing: border-box; max-width: calc(100vw - 16px); }
 .wt-pop[data-right="true"] { left: auto; right: 0; }
+.wt-pop-title[data-section] { margin-top: 6px; padding-top: 8px; border-top: 0.5px solid var(--wt-line); }
+.wt-pop-title[data-section]:first-child { margin-top: 0; padding-top: 2px; border-top: 0; }
 .wt-pop-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--wt-dim); padding: 2px 4px; }
 .wt-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 7px; font-size: 12px; }
 .wt-item:hover { background: var(--wt-hover); }

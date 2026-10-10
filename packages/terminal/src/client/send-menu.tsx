@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import { closeSendMenu, getSendRequest, sendSelection, sendTargets, sendToNewClaude, setSendCodeBlock, subscribeSend } from './send-to.ts'
 import { getPrefs, getRuntime, getVersion, subscribe } from './terminal-store.ts'
+import { Pop } from './popover.tsx'
 
 type Item = { kind: 'copy' } | { kind: 'target'; id: string } | { kind: 'new' }
 
@@ -79,10 +80,10 @@ export function SendMenu(): ReactElement | null {
   }
 
   return (
-    <div
+    <Pop
       ref={ref}
       tabIndex={-1}
-      className="wt-pop wt-send"
+      className="wt-send"
       style={{ position: 'fixed', top: Math.min(req.y, window.innerHeight - 40 - items.length * 28), left: Math.max(4, Math.min(req.x, window.innerWidth - 260)), minWidth: 220, maxWidth: 320, zIndex: 3000 }}
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={onKeyDown}
@@ -91,7 +92,7 @@ export function SendMenu(): ReactElement | null {
       <div className="wt-pop-title">Send to…</div>
       {targets.length === 0 ? <div className="wt-item" style={{ color: 'var(--wt-dim)' }}>No other terminal is connected.</div> : null}
       {items.slice(1).map((item, i) => row(item, i + 1))}
-    </div>
+    </Pop>
   )
 }
 
@@ -100,7 +101,7 @@ export function SendSettings(): ReactElement {
   const prefs = getPrefs()
   return (
     <>
-      <div className="wt-pop-title">Send selection to another terminal</div>
+      <div className="wt-pop-title" data-section="sending">Sending</div>
       <label className="wt-item" style={{ cursor: 'pointer' }} title="Right-click a selection (or Ctrl+Shift+S) to send it. To an agent the text goes in a ``` block so it reads as quoted output; other terminals get it as is.">
         <input type="checkbox" checked={prefs.sendCodeBlock} onChange={(e) => setSendCodeBlock(e.target.checked)} />
         <span className="wt-grow">Wrap text sent to an agent in a code block</span>
