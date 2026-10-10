@@ -52,7 +52,7 @@ window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
 window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
 // The host probe is slow on a cold start (it looks shells up on PATH): answer after the terminal attaches.
 const statsPayload = { ok: true, limits: { fiveHour: { usedPct: 42, resetsAt: Date.now() + 3600e3, outAt: Date.now() + 1800e3 }, sevenDay: { usedPct: 63, resetsAt: Date.now() + 86400e3, outAt: null }, sampledAt: Date.now() }, cost: { totalUsd: 12.34, terminals: 2 }, tokens: { total: 2_500_000_000, input: 1, output: 2, cacheRead: 3, cacheCreation: 4, asOf: Date.now() }, statusLine: { enabled: true, reason: null } }
-const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
+const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ version: '9.9.9', node: { available: true, path: 'C:\node\node.exe' }, shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
 window.fetch = (url) => (String(url).endsWith('/stats') ? Promise.resolve({ ok: true, json: async () => statsPayload }) : infoFetch())
 window.confirm = () => true
 window.__DSH_TRANSPORT__ = { streamBaseUrl: 'http://127.0.0.1:19387' }
@@ -622,6 +622,39 @@ await sleep(20)
   check(resizes() === resizeBefore, 'overview never resized a terminal')
   click(byText('.wt-chip', otherName))
   await sleep(30)
+}
+
+// help panel: the book button, sections, filter, Esc, F1
+{
+  const btn = q('.wt-bar-right button[title="Help"]')
+  check(btn !== null && btn.querySelector('svg') !== null && btn.closest('.wt-bar-right') === btn.closest('.wt-bar').querySelector('.wt-bar-right'), 'the Help button (book icon) sits in the right-hand toolbar group')
+  check(q('.wt-help') === null, 'the help panel starts closed')
+  click(btn)
+  await sleep(40)
+  check(q('.wt-help') !== null, 'the Help button opens the panel')
+  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|Status colours|Stats bar|Diagnostics', 'all five sections render')
+  const total = qa('.wt-help [data-shortcut]').length
+  check(total >= 15 && qa('.wt-help-group').length >= 7, 'shortcuts are listed in groups')
+  check(qa('.wt-help .wt-dot').map((d) => d.dataset.a).join(',') === 'working,needs-you,finished,running,idle,exited,offline', 'the legend draws every status dot with the real .wt-dot classes')
+  check(q('.wt-help .wt-badge[data-level="urgent"]') !== null && q('.wt-help .wt-badge[data-level="quiet"]') !== null && qa('.wt-help .wt-gutter-swatch').length === 4, 'badge and command-bar legends render')
+  const diag = q('.wt-help-sec:last-child').textContent
+  check(diag.includes('9.9.9') && diag.includes('C:\node\node.exe') && /Terminals.*live/.test(diag) && diag.includes('Status-line wrapper'), 'diagnostics show the live version, node path and terminal counts')
+  setValue(q('.wt-help input'), 'unread')
+  await sleep(30)
+  const left = qa('.wt-help [data-shortcut]').map((r) => r.dataset.shortcut)
+  check(left.length === 1 && left[0] === 'unread', 'the filter narrows the shortcut list')
+  setValue(q('.wt-help input'), 'zzzz')
+  await sleep(30)
+  check(qa('.wt-help [data-shortcut]').length === 0 && q('.wt-help').textContent.includes('No shortcut matches'), 'an unmatched filter says so')
+  doc.defaultView.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  await sleep(30)
+  check(q('.wt-help') === null, 'Esc closes the help panel')
+  doc.defaultView.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F1', bubbles: true, cancelable: true }))
+  await sleep(30)
+  check(q('.wt-help') !== null, 'F1 opens the help panel')
+  doc.defaultView.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F1', bubbles: true, cancelable: true }))
+  await sleep(30)
+  check(q('.wt-help') === null, 'F1 again closes it')
 }
 
 const busyWindow = () => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === 'Agent A')

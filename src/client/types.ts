@@ -157,11 +157,15 @@ export interface SavedLayout {
 
 /** Host probe results shared with the view. */
 export interface HostInfo {
+  /** Plugin version from the host's package.json (null when it could not be read). */
+  version?: string | null
   platform?: string
   shell?: string
   shells?: { id: string; label: string }[]
   cwd?: string
   claude?: { available?: boolean; path?: string | null }
+  /** `node` on the host's PATH; the status-line wrapper needs it. */
+  node?: { available?: boolean; path?: string | null }
   maxSessions?: number
   /** Files the host generated for agents; claudeSettings is null when it could not write one. */
   agent?: { claudeSettings?: string | null }

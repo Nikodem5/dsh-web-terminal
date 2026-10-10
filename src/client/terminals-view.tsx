@@ -14,11 +14,14 @@ import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { SendMenu } from './send-menu.tsx'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
+import { HelpIcon, HelpPanel } from './help-panel.tsx'
+import { ACTIVITY_TITLE } from './help-data.ts'
 import { MissionOverlay, missionPlan, useMissionControl } from './mission-view.tsx'
 import type { MissionPlan } from './mission-view.tsx'
 import { Sidebar } from './sidebar.tsx'
 import { StatsBar } from './stats-bar.tsx'
 import { ensureStyles } from './styles.ts'
+import { matchShortcut } from './shortcuts.ts'
 import {
   arrange,
   baseName,
@@ -138,16 +141,6 @@ function zoneFor(px: number, py: number, s: Size): Rect | null {
 
 type Dir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 const DIRS: Dir[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
-
-const ACTIVITY_TITLE: Record<Activity, string> = {
-  working: 'Working — the agent is on a turn',
-  'needs-you': 'Needs you — the agent is blocked on a permission, a question or an error',
-  finished: 'Finished — the agent is waiting for your next prompt',
-  running: 'Running — a program is running in the shell',
-  idle: 'Idle — nothing is running',
-  exited: 'The process exited',
-  offline: 'Not connected',
-}
 
 /** Find-in-terminal bar (Ctrl+F): Enter/Shift+Enter step through matches, Esc closes. */
 function FindBar({ id }: { id: string }): ReactElement {
@@ -450,7 +443,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const [stage, setStage] = useState<Size>({ w: 800, h: 500 })
   const [ghost, setGhost] = useState<Rect | null>(null)
-  const [menu, setMenu] = useState<'layouts' | 'settings' | null>(null)
+  const [menu, setMenu] = useState<'layouts' | 'settings' | 'help' | null>(null)
   const [dialog, setDialog] = useState<{ startup?: string } | null>(null)
   const [bcText, setBcText] = useState('')
   const viewRef = useRef<HTMLDivElement | null>(null)
@@ -476,10 +469,16 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     return () => setViewMounted(false)
   }, [])
 
-  // Ctrl+Alt+←/→ cycles terminals. Capture phase so it wins over the page and the focused xterm.
+  // Ctrl+Alt+←/→ cycles terminals, F1 toggles the help. Capture phase so they win over the page and the focused xterm.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey && e.altKey) || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
+      if (matchShortcut('help', e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenu((m) => (m === 'help' ? null : 'help'))
+        return
+      }
+      if (!matchShortcut('cycle', e)) return
       e.preventDefault()
       e.stopPropagation()
       cycleFocus(e.key === 'ArrowRight' ? 1 : -1)
@@ -504,6 +503,12 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     window.addEventListener('pointerdown', close)
     return () => window.removeEventListener('pointerdown', close)
   }, [menu])
+
+  // Esc / ✕: close the panel and hand the keyboard back to the terminal that had it.
+  const closeHelp = () => {
+    setMenu(null)
+    if (focusId !== null) getRuntime(focusId)?.term.focus()
+  }
 
   const minimized = wins.filter((w) => w.minimized)
   const visibleCount = wins.length - minimized.length
@@ -552,6 +557,10 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           <div className="wt-menu-wrap" onPointerDown={(e) => e.stopPropagation()}>
             <button type="button" className="wt-btn wt-btn-icon" data-on={menu === 'settings'} title="Font and notification settings" onClick={() => setMenu(menu === 'settings' ? null : 'settings')}>Aa</button>
             {menu === 'settings' ? <SettingsMenu /> : null}
+          </div>
+          <div className="wt-menu-wrap" onPointerDown={(e) => e.stopPropagation()}>
+            <button type="button" className="wt-btn wt-btn-icon" data-on={menu === 'help'} title="Help" aria-label="Help" onClick={() => setMenu(menu === 'help' ? null : 'help')}><HelpIcon /></button>
+            {menu === 'help' ? <HelpPanel onClose={closeHelp} /> : null}
           </div>
           <button type="button" className="wt-btn wt-btn-overview" data-on={plan !== null} title="Overview of every terminal (Ctrl+Shift+Space)" disabled={wins.length === 0} onClick={() => toggleOverview(focusId)}>▦ Overview</button>
           <button type="button" className="wt-btn wt-btn-agents" data-on={prefs.agentsPanel} title={prefs.agentsPanel ? 'Hide the sub-agents panel' : 'Show the sub-agents panel'} onClick={() => setAgentsPanel(!prefs.agentsPanel)}>

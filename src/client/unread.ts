@@ -10,6 +10,7 @@ import type { IDecoration, IMarker } from '@xterm/xterm'
 import { emit, store, subscribe } from './state.ts'
 import { unattended } from './attention.ts'
 import { mission } from './mission.ts'
+import { matchShortcut } from './shortcuts.ts'
 import type { Runtime } from './types.ts'
 
 // ── pure helpers ───────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ export const pillText = (lines: number): string => `↓ ${lines} new ${lines ===
 
 /** Ctrl+Shift+U (Cmd on macOS) jumps to the divider. */
 export function isUnreadJump(event: KeyboardEvent): boolean {
-  return (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && (event.key === 'u' || event.key === 'U')
+  return matchShortcut('unread', event)
 }
 
 // ── per-terminal state ─────────────────────────────────────────────────────

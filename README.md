@@ -31,10 +31,14 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste |
 | Find in terminal | **Ctrl+F** (or `⋯` → Find…) opens a find bar over the focused terminal: highlights every match in the scrollback, `n / total` counter, **Enter** / **Shift+Enter** next/previous, match-case / whole-word / regex toggles, **Esc** closes. Pre-fills from a one-line selection |
 | Jump to new output | **Ctrl+Shift+U** scrolls to the "new since" divider (see below) |
+| Help | **F1** or the book button in the toolbar opens the help panel (see below); **Esc** closes it. F1 is not sent to the program |
 | Links | URLs in terminal output are underlined on hover; **Ctrl+click** (Cmd+click) opens them in your system browser (plain clicks still select text) |
 
 ### Overview (mission control)
 **Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
+
+### Help panel
+The book button (or **F1**) opens a panel with five sections: every keyboard shortcut (with a filter box), the mouse actions, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node` and `claude` were found, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
 
 ### Knowing what your agents are doing
 Status comes from the agent itself, not from guessing at output.
@@ -223,6 +227,8 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `src/client/start.ts` | Plugin start: reconnects every saved terminal before the page is opened |
 | `src/client/index.ts` | Registers the sidebar entry (`sidebar.panellist`), the page (`main`) and the header stats bar; injects the session's folder into the bar |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
+| `src/client/shortcuts.ts` | The keyboard shortcut registry: the key handlers match with it and the help panel lists it |
+| `src/client/help-panel.tsx`, `help-data.ts` | The help popover and its content (mouse actions, legends, diagnostics report) |
 | `src/client/sidebar.tsx` | Right-hand terminal list |
 | `src/client/new-dialog.tsx` | New-terminal dialog |
 | `src/client/menus.tsx` | Layouts and settings popovers |
