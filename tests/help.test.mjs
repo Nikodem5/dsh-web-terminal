@@ -24,6 +24,7 @@ const base = () => ({
   platform: 'win32',
   node: { available: true, path: 'C:\\node\\node.exe' },
   claude: { available: true, path: 'C:\\bin\\claude.exe' },
+  ssh: { available: true, path: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', hosts: [{}, {}, {}] },
   statusLine: { enabled: true, reason: null },
   shellIntegration: true,
   focused: { name: 'api', markersSeen: true },
@@ -38,11 +39,13 @@ test('buildDiagnostics: one plain line per fact', () => {
   assert.ok(lines.includes('Plugin version: 0.1.0'))
   assert.ok(lines.includes('node: found (C:\\node\\node.exe)'))
   assert.ok(lines.includes('claude: found (C:\\bin\\claude.exe)'))
+  assert.ok(lines.includes('ssh: found (C:\\Windows\\System32\\OpenSSH\\ssh.exe)'))
+  assert.ok(lines.includes('ssh config hosts: 3'))
   assert.ok(lines.includes('Status-line wrapper: enabled'))
   assert.ok(lines.includes('Shell integration: on (setting); markers seen in "api"'))
   assert.ok(lines.includes('Terminals: 3 live, 1 connecting, 0 offline'))
   assert.ok(lines.some((l) => l.startsWith('Stats sample: 2m ago (')))
-  assert.equal(lines.length, 9)
+  assert.equal(lines.length, 11)
 })
 
 test('buildDiagnostics: problems are spelled out', () => {
@@ -75,6 +78,16 @@ test('buildDiagnostics: an old host or no answer yet shows "unknown", never a fa
   assert.ok(h.diagnosticRows(d).every((r) => !r.bad))
 })
 
+test('buildDiagnostics: ssh missing is reported but is not a problem; an old host says unknown', () => {
+  const missing = { ...base(), ssh: { available: false, path: null, hosts: [] } }
+  assert.match(h.buildDiagnostics(missing), /^ssh: not found$/m)
+  assert.match(h.buildDiagnostics(missing), /^ssh config hosts: 0$/m)
+  assert.ok(!h.diagnosticRows(missing).some((r) => r.bad && r.label.startsWith('ssh')))
+  const old = { ...base(), ssh: undefined }
+  assert.match(h.buildDiagnostics(old), /^ssh: unknown/m)
+  assert.match(h.buildDiagnostics(old), /^ssh config hosts: unknown/m)
+})
+
 test('the report holds no secrets: only the facts above, whatever the inputs carry', () => {
   const d = { ...base(), token: 'DSH_WT_TOKEN=abc123', env: { DSH_WT_TOKEN: 'abc123' } }
   assert.doesNotMatch(h.buildDiagnostics(d), /TOKEN|abc123/)
@@ -99,4 +112,15 @@ test('the badge and gutter legends match the stylesheets', () => {
   const swatch = new Set([...css('blocks.css.ts').matchAll(/\.wt-gutter-swatch\[data-state="(\w+)"\]/g)].map((m) => m[1]))
   assert.deepEqual([...swatch].sort(), [...gutter].sort(), 'the legend swatch is drawn by the same rules')
   assert.deepEqual(h.ATTENTION_LEGEND.map((a) => a.level).sort(), ['quiet', 'urgent'])
+})
+
+test('the command-header and alert legends describe what the code has', () => {
+  const bar = css('block-bar.ts')
+  const glyphs = [...bar.matchAll(/glyph: '([^']+)'/g)].map((m) => m[1])
+  assert.equal(glyphs.length, 5)
+  const described = h.BLOCK_ACTIONS.map((a) => a.how).join('\n')
+  for (const g of glyphs) assert.ok(described.includes(g), `the help describes the ${g} button`)
+  const notify = css('block-notify.ts')
+  for (const a of h.COMMAND_ALERT_LEGEND) assert.ok(notify.includes(`label: '${a.badge}'`), `${a.badge} is a label block-notify.ts raises`)
+  assert.equal(h.COMMAND_ALERT_LEGEND.length, 2)
 })

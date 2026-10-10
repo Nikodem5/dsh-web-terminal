@@ -18,6 +18,7 @@
 //   theme.ts        xterm palette and surface measurement
 //   unread.ts       "new since you last looked" divider and jump
 //   shortcuts.ts    keyboard shortcut registry (handlers and the help panel read it)
+//   ssh.ts          SSH targets: validation, labels and socket parameters
 
 export * from './types.ts'
 export * from './state.ts'
@@ -41,5 +42,10 @@ export * from './send-to.ts'
 export * from './unread.ts'
 export * from './theme.ts'
 export * from './blocks.ts'
+export * from './block-text.ts'
+export * from './block-actions.ts'
+export * from './block-bar.ts'
+export * from './block-notify.ts'
 export * from './mission.ts'
 export * from './shortcuts.ts'
+export * from './ssh.ts'

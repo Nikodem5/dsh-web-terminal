@@ -15,6 +15,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 |---|---|
 | New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or one of the harness's **Workspaces** — shown as chips under the folder field, as listed in the left sidebar), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell, as soon as its prompt is up (it has printed and gone quiet for a moment; at most 5 s) |
 | Run Claude | **✦ Claude** is the same dialog preset to `claude` (chips for `claude --resume` / `--continue`) |
+| Connect over ssh | **⇄ SSH** (or the **⇄ SSH** tab of the dialog): a terminal on another machine, see [SSH terminals](#ssh-terminals) |
 | Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder and startup command |
 | Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins), then *Open* (replaces the open terminals) or *Add* |
 
@@ -38,7 +39,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 **Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Help panel
-The book button (or **F1**) opens a panel with five sections: every keyboard shortcut (with a filter box), the mouse actions, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node` and `claude` were found, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
+The book button (or **F1**) opens a panel with six sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
 
 ### Knowing what your agents are doing
 Status comes from the agent itself, not from guessing at output.
@@ -126,10 +127,43 @@ A shell that cooperates tells the terminal where each prompt, command and output
 every command becomes a **block**. Phase 1 draws a thin bar in the left padding of the terminal: pulsing accent while
 the command runs, green when it succeeded, red when it failed (grey if the shell reported no exit code). The model
 (command, exit code, duration, folder, xterm markers for prompt / input / output / end; up to 500 per terminal) is
-kept for the next steps (hover actions, jumping between blocks, failed-command alerts). The shell also reports its
+used by the phase 2 features below. The shell also reports its
 **real current folder**, which Ctrl+click on a relative path now resolves against, even on Windows where a `cd` was
 invisible before. When it is active, the startup command is typed the moment the first prompt is ready instead of after
 a quiet period.
+
+**Phase 2 builds on that model** (all of it needs the integration to be active; a shell without it has no blocks and no
+header):
+
+- **Hover header.** Pointing at a command's lines or at its bar shows a compact header at the right edge, on the block's
+  first row (a block that starts above the window keeps it at the top edge; if the prompt text is long enough to reach it,
+  it drops one row): the command, `✓` / `✗ <code>` / `running`, duration and start time, and five buttons.
+  - `⧉` **Copy output**: the rows between the output start and end markers, wrapped lines joined back, line ends and
+    trailing blank lines trimmed. Off when the first output row has already left the scrollback (it would copy only part).
+    On a running command it copies what is there now.
+  - `⌘` **Copy command**. `▭` **Select output** selects those rows, so Ctrl+C and Ctrl+Shift+S work on them.
+  - `↻` **Rerun** types the command and Enter, but only while the shell sits at a prompt (the newest block is not
+    running, no program under the shell, not on the alternate screen) and only for a one-line command; otherwise it is
+    disabled and the tooltip says why. It does not look at what is already typed at the prompt.
+  - `➤` **Send to…** opens the Send menu with the output.
+- **Navigation.** **Ctrl+Shift+Up / Down** scroll to the previous / next command's prompt (the row flashes);
+  past the last command Down goes to the bottom. **Ctrl+Shift+E** jumps to the newest failed command, again to the one
+  before it, then wraps. They only act on the normal screen of a terminal that has finished or running blocks; in a
+  full-screen program, with no blocks (or no failed one, for E) the key goes to the program as before. Neither combination
+  is bound by PSReadLine (checked in 2.0 with `Get-PSReadLineKeyHandler -Bound`), bash/readline or the other shortcuts here.
+  Ctrl+Shift+E is sent to programs as the same byte as Ctrl+E (xterm ignores Shift on letters), so it shadows
+  readline's end-of-line only while a failed command exists to jump to.
+- **Sticky bar.** While the top row of the window is inside a command's output (its prompt scrolled above), a slim bar
+  `▸ <command>  ✓ 1.2s` is pinned there; click it to jump to the prompt. Hidden when the prompt is visible and on the
+  alternate screen. A running command ticks.
+- **Long-command flags.** When a command ends after at least N seconds (Aa menu: **Flag commands longer than** Off / 5 / 10 /
+  30 / 60 s, default 10) and the terminal is not the one in front of you: success gives a quiet `done` badge (a desktop
+  notification only while the whole app is in the background, like `finished`); a non-zero exit gives a `failed` badge and a
+  desktop notification unless the Terminals tab is showing, no chime (`npm test failed (exit 1) after 2m 03s`). Nothing for
+  `claude`, for a terminal that has an agent state, for a command that used the alternate screen (editors, pagers, TUIs),
+  or when the shell reported no exit code. Typing in the terminal clears the badge like any quiet flag.
+- **No folding.** xterm cannot hide buffer rows, and a fake (an overlay hiding the text) would break selection, search
+  and copy, so collapsing a command's output is deliberately not offered.
 
 - **How**: invisible OSC sequences, VS Code's convention: `133;A` prompt start, `133;B` prompt end, `133;C` output
   start, `133;D;<exit>` finished, `633;E;<command>` the command line (`\`, `\x3b` for `;` and `\xNN` for control
@@ -167,6 +201,31 @@ is quiet and it has switched paste mode on, and is copied to the clipboard inste
   reads it as quoted output. Other terminals get the plain text.
 - **Mouse programs**: while a TUI tracks the mouse, right-click belongs to it and passes through; **Shift+right-click**
   (xterm's usual "select instead" key) opens the menu there. Without a selection right-click is unchanged.
+
+### SSH terminals
+For the laptop-to-home-PC case: **⇄ SSH** in the toolbar (next to **✦ Claude**) opens the new-terminal dialog on its SSH tab, and the
+window runs your system `ssh` client in the same PTY as any other terminal.
+
+- **Where targets come from.** The dialog lists the concrete `Host` aliases of `~/.ssh/config` (with `user@hostname:port` as the
+  subtitle; `Include` directives are followed, relative to `~/.ssh`, with `*` and `?` in the file name; wildcard hosts such as
+  `Host *` are skipped). Or type `user@host` / `user@host:2222` (IPv6 in brackets). Recent targets are kept (ten at most, newest
+  first; ★ keeps one). **Run on connect** is an optional command that runs on the remote machine, e.g. `cd ~/proj && claude`.
+- **Keys and passwords.** Login is entirely `ssh`'s: keys, the agent and your config work as they do in any terminal. A password or key
+  passphrase is typed in the terminal when ssh asks. The plugin stores no secret: a window (and its saved layout) keeps only the alias or
+  `user@host`, the port and the remote command.
+- **How it is started.** Only an argument list, never a shell string:
+  `ssh -t -o ServerAliveInterval=30 -o ServerAliveCountMax=3 [-p PORT] -- DESTINATION [REMOTE_COMMAND]`. The destination must be a plain
+  alias or `[user@]host` that does not start with `-`, the port 1-65535, and the remote command a single line of at most 2 KB; anything
+  else is refused (in the dialog and again on the host).
+- **Windows chrome.** The title bar and the list row show `⇄ user@host`; the default name is `ssh: <alias or host>`. The dot says
+  **Connected** (blue-grey) while the session is up, not **Running**: the local process is always ssh.
+- **Disconnected and Reconnect.** ssh exits with 255 when the link drops or was never made (wrong host, refused, timeout; the keepalives end
+  a dead link in about 90 s). The window then shows **Disconnected** with a **Reconnect** button and raises an alert. There is deliberately
+  no automatic retry: a password prompt would be spammed. Any other exit code means the remote session ended normally (**Exited**, ↻ to
+  start again). Reconnect reuses the stored target and remote command; a restart or a reloaded saved layout connects afresh.
+- **Limits (phase 1).** No Claude status signals over ssh (the hook settings file is local) and no `--settings` is added, so the agent
+  dots and badges stay off; Ctrl+click on file paths is off (the paths are on the remote machine); command blocks and the real-folder
+  tracking only appear if the remote shell itself emits the markers. Jump hosts work through `ProxyJump` in your ssh config.
 
 ### Safety
 - Closing a terminal that is still **working or waiting** (single close, **Close all**, replacing a layout)
@@ -214,6 +273,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
+| `lib/ssh-target.js`, `lib/ssh-config.js`, `src/client/ssh.ts` | SSH: target validation and argv (pure, shared with the browser bundle), the `~/.ssh/config` host list, client labels and socket parameters |
 | `lib/paths.js`, `lib/open.js` | Clickable paths: existence check with cwd rules; opening in an editor from an argv (no shell) |
 | `src/client/paths.ts`, `path-links.ts` | Path detection (pure) and the xterm link provider |
 | `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
@@ -248,6 +308,9 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 
 `/terminal/ws?id=<session>&shell=<id>&cwd=<dir>&cols=<n>&rows=<n>` — `id` is required; if a session with that id
 exists the socket reattaches to it, otherwise a shell is spawned.
+
+For an ssh window the query is `shell=ssh&sshHost=<alias>` or `sshTarget=<[user@]host>`, plus optional `sshPort` and `sshCommand` (no `cwd`);
+an invalid request is answered with an `error` frame and no process is started.
 
 Browser → host: `{"type":"input","data"}`, `{"type":"resize","cols","rows"}`, `{"type":"signal","signal"}`,
 `{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only).

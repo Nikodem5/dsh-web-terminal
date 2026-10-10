@@ -169,10 +169,16 @@ export const getSendRequest = (): SendRequest | null => request
 
 /** Open the picker for a terminal's current selection; false when there is nothing selected. */
 export function openSendMenu(rt: Runtime, at?: { x: number; y: number }): boolean {
+  if (!rt.term.hasSelection()) return false
+  return openSendText(rt, rt.term.getSelection(), at)
+}
+
+/** Open the picker for any text of `rt` (a command's output, say); false when there is none. */
+export function openSendText(rt: Runtime, text: string, at?: { x: number; y: number }): boolean {
   // Not under the mission-control overview, whose windows are thumbnails.
-  if (isOverview() || !rt.term.hasSelection()) return false
+  if (isOverview() || text.length === 0) return false
   const box = rt.holder.getBoundingClientRect()
-  request = { sourceId: rt.id, text: rt.term.getSelection(), x: at?.x ?? box.left + box.width / 2 - 100, y: at?.y ?? box.top + 40 }
+  request = { sourceId: rt.id, text, x: at?.x ?? box.left + box.width / 2 - 100, y: at?.y ?? box.top + 40 }
   notify()
   return true
 }

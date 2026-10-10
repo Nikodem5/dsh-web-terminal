@@ -8,6 +8,7 @@
 // only re-parents their DOM node. Geometry is stored as fractions of the canvas so
 // a layout follows window resizes and sidebar toggles.
 
+import { cleanSsh, cleanSshList } from './ssh.ts'
 import type { FontPrefs, HostInfo, LayoutWin, Prefs, Rect, Runtime, SavedLayout, Store, WinState } from './types.ts'
 
 // ── persistence ────────────────────────────────────────────────────────────
@@ -40,6 +41,8 @@ export const prefs: Prefs = {
   termTheme: 'dark',
   recents: [],
   favourites: [],
+  sshRecents: [],
+  sshFavourites: [],
   layouts: [],
   lastShell: 'default',
   lastCwd: '',
@@ -53,6 +56,7 @@ export const prefs: Prefs = {
   pathTemplate: '',
   shellIntegration: true,
   sendCodeBlock: true,
+  commandNotifySec: 10,
 }
 
 export const store: Store = { wins: [], zTop: 1, focusId: null, searchId: null, version: 0, broadcast: { on: false, live: false, ids: new Set() } }
@@ -101,14 +105,17 @@ const isGrid = (v: unknown): v is number => typeof v === 'number' && Number.isIn
 
 function cleanWin(raw: unknown, index: number): WinState | undefined {
   if (!isObj(raw) || typeof raw.id !== 'string' || raw.id.length === 0 || !isRect(raw)) return undefined
+  // Re-validated on load: a hand-edited or damaged target is dropped rather than handed to ssh.
+  const ssh = cleanSsh(raw.ssh)
   return {
     id: raw.id,
     title: str(raw.title, 'Terminal'),
     nameManual: raw.nameManual === true,
     autoName: typeof raw.autoName === 'string' ? raw.autoName : undefined,
-    shell: str(raw.shell, 'default'),
+    shell: ssh !== undefined ? 'ssh' : raw.shell === 'ssh' ? 'default' : str(raw.shell, 'default'),
     cwd: str(raw.cwd, ''),
     startup: typeof raw.startup === 'string' ? raw.startup : undefined,
+    ssh,
     x: raw.x,
     y: raw.y,
     w: raw.w,
@@ -131,12 +138,14 @@ function cleanLayout(raw: unknown): SavedLayout | undefined {
   const wins: LayoutWin[] = []
   for (const w of raw.wins) {
     if (!isObj(w) || !isRect(w)) continue
+    const ssh = cleanSsh(w.ssh)
     wins.push({
       title: str(w.title, 'Terminal'),
       nameManual: w.nameManual === true,
-      shell: str(w.shell, 'default'),
+      shell: ssh !== undefined ? 'ssh' : w.shell === 'ssh' ? 'default' : str(w.shell, 'default'),
       cwd: str(w.cwd, ''),
       startup: typeof w.startup === 'string' ? w.startup : undefined,
+      ssh,
       x: w.x,
       y: w.y,
       w: w.w,
@@ -152,6 +161,8 @@ function cleanLayout(raw: unknown): SavedLayout | undefined {
 function applyPrefs(p: Record<string, unknown>): void {
   if (Array.isArray(p.recents)) prefs.recents = p.recents.filter((v): v is string => typeof v === 'string').slice(0, 12)
   if (Array.isArray(p.favourites)) prefs.favourites = p.favourites.filter((v): v is string => typeof v === 'string')
+  if (Array.isArray(p.sshRecents)) prefs.sshRecents = cleanSshList(p.sshRecents).slice(0, 10)
+  if (Array.isArray(p.sshFavourites)) prefs.sshFavourites = cleanSshList(p.sshFavourites)
   if (Array.isArray(p.layouts)) prefs.layouts = p.layouts.map(cleanLayout).filter((l): l is SavedLayout => l !== undefined)
   if (typeof p.lastShell === 'string') prefs.lastShell = p.lastShell
   if (typeof p.lastCwd === 'string') prefs.lastCwd = p.lastCwd
@@ -163,6 +174,7 @@ function applyPrefs(p: Record<string, unknown>): void {
   if (typeof p.sendCodeBlock === 'boolean') prefs.sendCodeBlock = p.sendCodeBlock
   if (typeof p.pathTemplate === 'string') prefs.pathTemplate = p.pathTemplate.slice(0, 500)
   if (typeof p.shellIntegration === 'boolean') prefs.shellIntegration = p.shellIntegration
+  if (p.commandNotifySec === 0 || p.commandNotifySec === 5 || p.commandNotifySec === 10 || p.commandNotifySec === 30 || p.commandNotifySec === 60) prefs.commandNotifySec = p.commandNotifySec
   if (p.termTheme === 'dark' || p.termTheme === 'light' || p.termTheme === 'auto') prefs.termTheme = p.termTheme
   const font = isObj(p.font) ? p.font : {}
   // "Reset font" and any edit set fontCustom, so a stored font equal to the old default is also treated as unchosen.

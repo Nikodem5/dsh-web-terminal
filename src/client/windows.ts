@@ -3,9 +3,10 @@
 
 import { emit, focusWin, hostInfo, nextZ, persistSoon, prefs, runtimes, store, updateWin } from './state.ts'
 import { displayName } from './names.ts'
-import { noteFolder } from './preferences.ts'
+import { noteFolder, noteSsh } from './preferences.ts'
 import { disposeRuntime } from './runtime.ts'
-import type { Rect, WinState } from './types.ts'
+import { sshTitle } from './ssh.ts'
+import type { Rect, SshTarget, WinState } from './types.ts'
 
 // ── window operations ──────────────────────────────────────────────────────
 
@@ -19,6 +20,8 @@ export interface OpenOptions {
   shell?: string
   title?: string
   startup?: string
+  /** Connect to a remote machine over ssh instead of starting a local shell (shell, cwd and startup are then ignored). */
+  ssh?: SshTarget
   cwd?: string
   nameManual?: boolean
   rect?: Rect
@@ -30,14 +33,17 @@ export interface OpenOptions {
 export function openTerminal(options: OpenOptions = {}): string {
   const visible = store.wins.filter((w) => !w.minimized).length
   const step = (visible % 8) * 0.035
-  const cwd = options.cwd ?? prefs.lastCwd
+  const ssh = options.ssh
+  // An ssh window has no local folder; its remote command is passed to ssh, never typed into a shell.
+  const cwd = ssh !== undefined ? '' : (options.cwd ?? prefs.lastCwd)
   const win: WinState = {
     id: newId(),
-    title: options.title ?? `Terminal ${store.wins.length + 1}`,
+    title: options.title ?? (ssh !== undefined ? sshTitle(ssh) : `Terminal ${store.wins.length + 1}`),
     nameManual: options.nameManual ?? options.title !== undefined,
-    shell: options.shell ?? 'default',
-    cwd: cwd.length > 0 ? cwd : (hostInfo.cwd ?? ''),
-    startup: options.startup,
+    shell: ssh !== undefined ? 'ssh' : (options.shell ?? 'default'),
+    cwd: cwd.length > 0 || ssh !== undefined ? cwd : (hostInfo.cwd ?? ''),
+    startup: ssh !== undefined ? undefined : options.startup,
+    ssh,
     ...(options.rect ?? { x: 0.04 + step, y: 0.04 + step, w: 0.5, h: 0.55 }),
     z: nextZ(),
     pinned: options.pinned ?? false,
@@ -48,6 +54,7 @@ export function openTerminal(options: OpenOptions = {}): string {
   store.wins = [win, ...store.wins]
   store.focusId = win.id
   noteFolder(win.cwd, win.shell)
+  if (ssh !== undefined) noteSsh(ssh)
   emit()
   persistSoon()
   return win.id
@@ -57,7 +64,7 @@ export function openTerminal(options: OpenOptions = {}): string {
 export function duplicateWin(id: string): void {
   const win = store.wins.find((w) => w.id === id)
   if (win === undefined) return
-  openTerminal({ shell: win.shell, cwd: win.cwd, startup: win.startup, title: `${displayName(win)} copy`, nameManual: true })
+  openTerminal({ shell: win.shell, cwd: win.cwd, startup: win.startup, ssh: win.ssh, title: `${displayName(win)} copy`, nameManual: true })
 }
 
 /** Rename; an empty name hands control back to the program-derived name. */

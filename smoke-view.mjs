@@ -52,7 +52,7 @@ window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
 window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
 // The host probe is slow on a cold start (it looks shells up on PATH): answer after the terminal attaches.
 const statsPayload = { ok: true, limits: { fiveHour: { usedPct: 42, resetsAt: Date.now() + 3600e3, outAt: Date.now() + 1800e3 }, sevenDay: { usedPct: 63, resetsAt: Date.now() + 86400e3, outAt: null }, sampledAt: Date.now() }, cost: { totalUsd: 12.34, terminals: 2 }, tokens: { total: 2_500_000_000, input: 1, output: 2, cacheRead: 3, cacheCreation: 4, asOf: Date.now() }, statusLine: { enabled: true, reason: null } }
-const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ version: '9.9.9', node: { available: true, path: 'C:\node\node.exe' }, shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
+const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ version: '9.9.9', node: { available: true, path: 'C:\node\node.exe' }, shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, ssh: { available: true, path: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', hosts: [{ alias: 'homepc', hostName: '192.168.1.20', user: 'me', port: 2222 }, { alias: 'nas', hostName: null, user: null, port: null }] }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
 window.fetch = (url) => (String(url).endsWith('/stats') ? Promise.resolve({ ok: true, json: async () => statsPayload }) : infoFetch())
 window.confirm = () => true
 window.__DSH_TRANSPORT__ = { streamBaseUrl: 'http://127.0.0.1:19387' }
@@ -624,6 +624,37 @@ await sleep(20)
   await sleep(30)
 }
 
+// command blocks: hovering a command shows its header, and Copy output copies the output text
+{
+  const E = String.fromCharCode(27)
+  const o = (body) => `${E}]${body}\x07`
+  sock.push({ type: 'data', data: `\r\n${o('133;A')}$ ${o('133;B')}echo hi\r\n${o('633;E;echo hi')}${o('133;C')}hello world\r\n${o('133;D;0')}${o('133;A')}$ ${o('133;B')}` })
+  await sleep(80)
+  const copied = []
+  Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: async (t) => void copied.push(t) }, configurable: true })
+  // jsdom has no layout: give every terminal's screen 20 px rows, then sweep the pointer down the first holder that reacts.
+  let header = null
+  for (const holder of qa('.wt-holder')) {
+    const screen = holder.querySelector('.xterm-screen')
+    const rows = holder.querySelectorAll('.xterm-rows > div').length
+    if (screen === null || rows === 0) continue
+    screen.getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: rows * 20, width: 400, height: rows * 20 })
+    for (let r = 0; r < rows && header === null; r++) {
+      holder.dispatchEvent(new window.MouseEvent('mousemove', { clientX: 40, clientY: r * 20 + 5, bubbles: true }))
+      const h = holder.querySelector('.wt-bh')
+      if (h !== null && !h.hidden && h.textContent.includes('echo hi')) header = h
+    }
+    if (header !== null) break
+  }
+  check(header !== null, 'hovering a command shows its header with the command text')
+  check(header?.querySelector('.wt-bh-exit')?.textContent === '✓' && header.querySelector('[data-action="copy-output"]') !== null, 'the header shows the exit mark and a Copy output button')
+  header?.querySelector('[data-action="copy-output"]')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  await sleep(40)
+  check(copied.length === 1 && copied[0] === 'hello world', `Copy output puts the command's output on the clipboard (got ${JSON.stringify(copied)})`)
+  header?.parentElement?.dispatchEvent(new window.MouseEvent('mouseleave'))
+  check(header?.hidden === true, 'the header goes away when the pointer leaves')
+}
+
 // help panel: the book button, sections, filter, Esc, F1
 {
   const btn = q('.wt-bar-right button[title="Help"]')
@@ -632,13 +663,14 @@ await sleep(20)
   click(btn)
   await sleep(40)
   check(q('.wt-help') !== null, 'the Help button opens the panel')
-  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|Status colours|Stats bar|Diagnostics', 'all five sections render')
+  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Status colours|Stats bar|Diagnostics', 'all six sections render')
   const total = qa('.wt-help [data-shortcut]').length
   check(total >= 15 && qa('.wt-help-group').length >= 7, 'shortcuts are listed in groups')
-  check(qa('.wt-help .wt-dot').map((d) => d.dataset.a).join(',') === 'working,needs-you,finished,running,idle,exited,offline', 'the legend draws every status dot with the real .wt-dot classes')
+  check(qa('.wt-help .wt-dot').map((d) => d.dataset.a).join(',') === 'working,needs-you,finished,running,idle,exited,offline,connected,disconnected', 'the legend draws every status dot with the real .wt-dot classes')
   check(q('.wt-help .wt-badge[data-level="urgent"]') !== null && q('.wt-help .wt-badge[data-level="quiet"]') !== null && qa('.wt-help .wt-gutter-swatch').length === 4, 'badge and command-bar legends render')
   const diag = q('.wt-help-sec:last-child').textContent
   check(diag.includes('9.9.9') && diag.includes('C:\node\node.exe') && /Terminals.*live/.test(diag) && diag.includes('Status-line wrapper'), 'diagnostics show the live version, node path and terminal counts')
+  check(diag.includes('ssh') && diag.includes('OpenSSH\\ssh.exe') && /ssh config hosts2/.test(diag), 'diagnostics show where ssh was found and how many config hosts there are')
   setValue(q('.wt-help input'), 'unread')
   await sleep(30)
   const left = qa('.wt-help [data-shortcut]').map((r) => r.dataset.shortcut)
@@ -655,6 +687,72 @@ await sleep(20)
   doc.defaultView.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F1', bubbles: true, cancelable: true }))
   await sleep(30)
   check(q('.wt-help') === null, 'F1 again closes it')
+}
+
+// ── SSH terminals ──
+{
+  const sshBtn = byText('.wt-bar button', 'SSH')
+  check(sshBtn !== undefined && sshBtn.classList.contains('wt-btn-ssh') && sshBtn.previousElementSibling === byText('.wt-bar button', 'Claude'), 'the toolbar has an SSH button right after Claude')
+  const before = qa('.wt-win').length
+  click(sshBtn)
+  await sleep(30)
+  const tab = qa('.wt-dialog [role="tab"]').find((t) => t.getAttribute('aria-selected') === 'true')
+  check(q('.wt-dialog') !== null && tab?.textContent.includes('SSH'), 'the SSH button opens the dialog in SSH mode')
+  const rows = qa('.wt-dialog .wt-host')
+  check(rows.length === 2 && rows[0].textContent.includes('homepc') && rows[0].textContent.includes('me@192.168.1.20:2222') && rows[1].textContent.includes('nas'), 'hosts from /info are listed with user@hostname:port')
+  const quick = () => q('.wt-dialog input')
+  const connect = () => click(byText('.wt-dialog button', 'Connect'))
+  setValue(quick(), '-oProxyCommand=calc')
+  await sleep(20)
+  check(q('.wt-dialog .wt-error') !== null, 'an option-like target shows an inline error')
+  connect()
+  await sleep(40)
+  check(qa('.wt-win').length === before && q('.wt-dialog') !== null, 'an invalid target opens nothing')
+  setValue(quick(), 'me@host.lan:2200')
+  await sleep(20)
+  check(q('.wt-dialog .wt-error') === null, 'a valid target clears the error')
+  setValue(qa('.wt-dialog input')[1], 'cd ~/proj && claude')
+  connect()
+  await sleep(120)
+  check(qa('.wt-win').length === before + 1 && q('.wt-dialog') === null, 'Connect opens an ssh window')
+  const sshWin = () => qa('.wt-win').find((w) => w.querySelector('.wt-remote') !== null)
+  const s1 = sockets[sockets.length - 1]
+  const params = new URL(s1.url).searchParams
+  check(params.get('shell') === 'ssh' && params.get('sshTarget') === 'me@host.lan' && params.get('sshPort') === '2200' && params.get('sshCommand') === 'cd ~/proj && claude' && !params.has('cwd') && !params.has('sshHost'), 'the socket URL carries the ssh target, port and remote command (and no local folder)')
+  check(sshWin().querySelector('.wt-name').textContent === 'ssh: host.lan' && sshWin().querySelector('.wt-remote').textContent.includes('me@host.lan:2200'), 'default name is ssh: <host> with a remote badge in the title bar')
+  check(qa('.wt-li').some((li) => li.textContent.includes('⇄ me@host.lan:2200')), 'the list row carries the remote badge')
+  s1.push({ type: 'attached', created: true, replay: '', exited: false, exitCode: null })
+  s1.push({ type: 'activity', busy: true })
+  await sleep(1500)
+  check(sshWin().querySelector('.wt-dot').dataset.a === 'connected' && !s1.sent.some((f) => f.type === 'input' && f.data !== undefined && /claude/.test(f.data)), 'a live ssh window shows Connected, not Running, and types nothing into the session')
+  s1.push({ type: 'exit', exitCode: 255 })
+  await sleep(60)
+  check(sshWin().querySelector('.wt-dot').dataset.a === 'disconnected' && sshWin().querySelector('.wt-disc') !== null, 'exit 255 shows Disconnected with a Reconnect bar')
+  const count = sockets.length
+  click(sshWin().querySelector('.wt-disc button'))
+  await sleep(120)
+  const s2 = sockets[sockets.length - 1]
+  check(sockets.length === count + 1 && s2.url !== s1.url && new URL(s2.url).searchParams.get('sshTarget') === 'me@host.lan' && new URL(s2.url).searchParams.get('sshCommand') === 'cd ~/proj && claude', 'Reconnect starts a new connection to the same target (no automatic loop before it)')
+  s2.push({ type: 'attached', created: true, replay: '', exited: false, exitCode: null })
+  s2.push({ type: 'exit', exitCode: 0 })
+  await sleep(60)
+  check(sshWin().querySelector('.wt-dot').dataset.a === 'exited' && sshWin().querySelector('.wt-disc') === null, 'any other exit code is a normal end: Exited, no Disconnected bar')
+  // the target is remembered, and can be starred
+  click(sshBtn)
+  await sleep(30)
+  const recent = qa('.wt-dialog .wt-folder').find((r) => r.textContent.includes('me@host.lan:2200'))
+  check(recent !== undefined && recent.textContent.includes('cd ~/proj && claude'), 'the target is offered again under recents')
+  click(recent.querySelector('.wt-star'))
+  await sleep(20)
+  await sleep(300)
+  const saved = JSON.parse(window.localStorage.getItem('dsh.web-terminal.prefs.v1'))
+  check(qa('.wt-dialog .wt-folder .wt-star').some((s) => s.textContent === '★') && saved.sshFavourites.length === 1 && JSON.stringify(saved).search(/password|passphrase|secret/i) === -1, 'the star keeps the target as a favourite, and the stored prefs hold no secrets')
+  click(byText('.wt-dialog button', 'Cancel'))
+  await sleep(20)
+  const win = sshWin()
+  click(win.querySelector('.wt-hbtn[data-danger="true"]'))
+  await sleep(30)
+  check(qa('.wt-win').length === before, 'the ssh window closes without a confirmation')
 }
 
 const busyWindow = () => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === 'Agent A')

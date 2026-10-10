@@ -6,10 +6,10 @@
 // instead of testing keys themselves. Entries without one are keys that only mean something inside
 // a widget (find bar, send menu, overview): they are documented here but handled by that widget.
 
-export type ShortcutGroup = 'Windows' | 'Overview' | 'Unread' | 'Send selection' | 'Find' | 'Copy & paste' | 'Help' | 'Others'
+export type ShortcutGroup = 'Windows' | 'Overview' | 'Unread' | 'Send selection' | 'Command blocks' | 'Find' | 'Copy & paste' | 'Help' | 'Others'
 
 /** Display order of the groups in the help panel. */
-export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Windows', 'Overview', 'Unread', 'Send selection', 'Find', 'Copy & paste', 'Help', 'Others']
+export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Windows', 'Overview', 'Unread', 'Send selection', 'Command blocks', 'Find', 'Copy & paste', 'Help', 'Others']
 
 /** How a modifier must be: held, not held (the default), or either. */
 type Mod = boolean | 'any'
@@ -37,6 +37,8 @@ export interface Shortcut {
   keys?: string
   /** The handler only acts while the terminal has a selection (so the key is a plain key otherwise). */
   needsSelection?: boolean
+  /** The handler only acts while the terminal shows its normal screen and has command blocks to go to (otherwise the program gets the key). */
+  needsBlocks?: boolean
 }
 
 export const SHORTCUTS: readonly Shortcut[] = [
@@ -49,6 +51,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'unread', group: 'Unread', desc: 'Jump to the "new since you last looked" divider', chord: { key: ['u'], mod: 'mod', shift: true } },
   { id: 'send', group: 'Send selection', desc: 'Send the selected text to another terminal', chord: { key: ['s'], mod: 'mod', shift: true }, needsSelection: true },
   { id: 'send-pick', group: 'Send selection', desc: 'Pick a target in the send menu, confirm, cancel', keys: '↑ ↓ · Enter · Esc' },
+  { id: 'block-nav', group: 'Command blocks', desc: 'Jump to the previous / next command (needs shell integration)', chord: { key: ['ArrowUp', 'ArrowDown'], mod: 'mod', shift: true }, needsBlocks: true },
+  { id: 'block-failed', group: 'Command blocks', desc: 'Jump to the last failed command; again for the one before', chord: { key: ['e'], mod: 'mod', shift: true }, needsBlocks: true },
   { id: 'find', group: 'Find', desc: 'Find in the terminal output', chord: { key: ['f'], mod: 'mod' } },
   { id: 'find-step', group: 'Find', desc: 'Next / previous match (in the find bar)', keys: 'Enter · Shift+Enter' },
   { id: 'find-close', group: 'Find', desc: 'Close the find bar', keys: 'Esc' },
