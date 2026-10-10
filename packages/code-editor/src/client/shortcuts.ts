@@ -1,34 +1,43 @@
 // dsh-code-editor - which keyboard shortcut an event is, and whether it may fire where the user is typing.
+//
+// Bindings (Ctrl, or Cmd on macOS; no Shift / Alt):
+//   Ctrl+E   search files (quick open) - VS Code's alias of Ctrl+P; the desktop app does not own it
+//   Ctrl+P   search files too, where the app lets the page have it (the desktop app binds Mod+P to its own file page)
+//   Ctrl+S   save
+//   Ctrl+F4  close the tab (Ctrl+W is the desktop app's window accelerator and never reaches the page)
 
 export type ShortcutAction = 'quickOpen' | 'save' | 'closeTab'
 
-export interface KeyLike { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }
+export interface KeyLike { key: string; code?: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }
 export interface TargetInfo {
   /** The event target is an input, textarea, select or contenteditable. */
   editable: boolean
-  /** ...and it is the text area of Monaco itself (a code editor, where Ctrl+S/W are ours). */
+  /** ...and it is the text area of Monaco itself (a code editor, where Ctrl+S / Ctrl+F4 are ours). */
   inMonaco: boolean
-  /** ...and it is the quick-open input (Ctrl+P toggles it closed). */
+  /** ...and it is the quick-open input (the quick-open key toggles it closed). */
   inQuickOpen: boolean
 }
 
-/** Ctrl (Cmd on macOS) + P / S / W, with no Shift or Alt. */
+/** The shortcut an event is, with no regard to where it happened. The physical key is the fallback for non-Latin layouts. */
 export function matchShortcut(e: KeyLike): ShortcutAction | null {
   if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return null
   const k = e.key.toLowerCase()
-  return k === 'p' ? 'quickOpen' : k === 's' ? 'save' : k === 'w' ? 'closeTab' : null
+  if (k === 'f4') return 'closeTab'
+  const latin = k.length === 1 && k >= 'a' && k <= 'z'
+  const c = latin ? k : e.code === 'KeyP' ? 'p' : e.code === 'KeyE' ? 'e' : e.code === 'KeyS' ? 's' : ''
+  return c === 'p' || c === 'e' ? 'quickOpen' : c === 's' ? 'save' : null
 }
 
 /**
- * The action to run for this key at this target, or null to let the key through. Plain inputs (root path,
- * filters) keep Ctrl+S / Ctrl+W for themselves; only Monaco and non-editable surfaces trigger save/close.
+ * The action to run for this key at this target, or null to let the key through. Search files works from anywhere
+ * (it would otherwise reach the browser, e.g. print). Plain inputs (root path, filters) keep Ctrl+S for themselves;
+ * only Monaco and non-editable surfaces trigger save / close.
  */
 export function actionFor(e: KeyLike, t: TargetInfo): ShortcutAction | null {
   const a = matchShortcut(e)
   if (a === null) return null
-  if (!t.editable || t.inMonaco) return a
-  if (a === 'quickOpen' && t.inQuickOpen) return a
-  return null
+  if (a === 'quickOpen') return a
+  return !t.editable || t.inMonaco ? a : null
 }
 
 /** Describe an event target for `actionFor` (DOM only). */
@@ -38,4 +47,18 @@ export function describeTarget(target: EventTarget | null): TargetInfo {
   const tag = el.tagName
   const editable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true
   return { editable, inMonaco: editable && el.closest('.monaco-editor') !== null, inQuickOpen: el.closest('[data-ce-quick]') !== null }
+}
+
+interface KeyEventLike extends KeyLike { target: EventTarget | null; defaultPrevented?: boolean }
+
+/**
+ * The action for a keydown seen anywhere on the page (window capture phase). A key typed into an editable thing
+ * OUTSIDE the Code view (another plugin's input) is not ours; everything else on the page is.
+ * @param view - the Code page's root element (`contains` is all that is used).
+ */
+export function pageAction(e: KeyEventLike, view: { contains(n: unknown): boolean } | null): ShortcutAction | null {
+  if (e.defaultPrevented) return null
+  const info = describeTarget(e.target)
+  if (info.editable && (view === null || !view.contains(e.target))) return null
+  return actionFor(e, info)
 }
