@@ -57,7 +57,10 @@ Source in `src/client/`, built by `node build.mjs` into one classic script (`lib
 
 ### Features
 
-- Sidebar: root picker (harness Workspaces, folders opened before, "Open folder..." by absolute path), EXPLORER (lazy tree, refreshed on live `changed` frames) and CHANGES (Staged / Changes / Untracked; per-file Stage, Unstage, Discard; group Stage all / Unstage all). Discard asks first and lists the untracked files it will delete.
+- Sidebar: root picker (harness Workspaces, folders opened before), **Browse...** (the desktop app's native folder dialog, `__DSH_DIRECTORY_PICKER__`; without it a typed absolute path via "Open folder..."), a **Search files** button (same as the shortcut), EXPLORER (lazy tree with file-type icons, refreshed on live `changed` frames) and CHANGES (Staged / Changes / Untracked; per-file Stage, Unstage, Discard; group Stage all / Unstage all). Discard asks first and lists the untracked files it will delete.
+- **Nested repositories** (like VS Code): when the open folder is inside a git work tree, CHANGES shows that repository. When it is NOT a repository but contains some (e.g. a monorepo-of-repos), CHANGES lists every repository found up to 4 levels down (`GET /git/repos`, cap 50, `node_modules` and hidden folders skipped), each collapsible with its branch, count, status groups and actions; repositories without changes start collapsed. The refresh button rescans. No repository at all: "No git repository in this folder."
+- **Layout**: drag the bar between the sidebar and the editor (200-640 px, default 280) and the bar between EXPLORER and CHANGES; arrow keys on a focused bar nudge it, double-click resets. Both sections collapse. Sizes and collapsed state are remembered (`localStorage`, global). 13 px UI text, 24 px rows, 35 px tab bar, 22 px status bar.
+- File-type icons (explorer, tabs, quick open, changes): small inline SVG badges chosen by extension or well-known name (`src/client/file-icons.ts`), no icon font.
 - Tabs with a dirty dot, middle-click close and a confirmation for unsaved tabs. Files open in Monaco; change entries open in the diff editor (staged or unstaged, side by side or inline).
 - Saving sends `expectedMtime`. A 409 (or an on-disk change under unsaved edits) shows "File changed on disk" with Reload / Overwrite / Compare (disk vs mine diff, then keep mine or take disk).
 - A clean open tab reloads silently on disk changes (cursor and scroll kept). Status bar: branch, ahead/behind, live state, root, line:col, EOL, language.
@@ -67,12 +70,13 @@ Source in `src/client/`, built by `node build.mjs` into one classic script (`lib
 
 | Key | Action |
 |---|---|
-| Ctrl+P | Quick open (fuzzy over the repo files; Up/Down, Enter, Esc) |
+| Ctrl+E | Search files (quick open: fuzzy over the repo files; Up/Down, Enter, Esc). Also the "Search files" button |
+| Ctrl+P | Same, where the app lets the page have it (see below) |
 | Ctrl+S | Save the active file |
-| Ctrl+W | Close the active tab (asks when dirty) |
+| Ctrl+F4 | Close the active tab (asks when dirty); also middle-click or the tab's x |
 | Ctrl+F | Find (Monaco) |
 
-Ctrl+S / Ctrl+W are not taken inside plain text inputs (folder path, quick-open box).
+**Why these keys.** The desktop app owns some accelerators and handles them before the page: Ctrl+W (it minimises the window, so closing a tab is Ctrl+F4 instead) and Ctrl+P (its own file page, `Mod+P`; so search files defaults to Ctrl+E, VS Code's alias of Quick Open). Ctrl+T, Ctrl+K and Ctrl+B are the app's too. The keys are caught on `window` in the capture phase while the Code page is mounted (so they work with the focus anywhere on the page, not only inside the page's own elements) and again as Monaco commands in the editor. Ctrl+S / Ctrl+F4 are not taken inside plain text inputs (folder path, quick-open box); the search key works everywhere.
 
 ### Opening files from other plugins
 

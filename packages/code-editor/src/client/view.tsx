@@ -1,17 +1,19 @@
-// dsh-code-editor - the Code page: sidebar (root picker, EXPLORER, CHANGES), tabs, editor, status bar, quick open.
+// dsh-code-editor - the Code page: sidebar (root picker, search, EXPLORER, CHANGES), tabs, editor, status bar, quick open.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react'
 import { groupChanges, statusLetter, type GroupName } from './changes.ts'
 import { flattenTree, workspaceChoices } from './explorer.ts'
+import { FileIcon, FolderIcon } from './file-icon.tsx'
 import { rankFiles } from './fuzzy.ts'
-import { baseName } from './paths.ts'
-import { actionFor, describeTarget } from './shortcuts.ts'
-import type { EditorStore, State, Tab } from './store.ts'
+import { baseName, joinRel, sameRoot } from './paths.ts'
+import { FRAC_DEFAULT, FRAC_MAX, FRAC_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from './persist.ts'
+import { pageAction } from './shortcuts.ts'
+import type { EditorStore, GitState, State, Tab } from './store.ts'
 import { injectStyles } from './styles.ts'
 import { getStore } from './instance.ts'
 import { isDarkSurface } from './theme.ts'
-import type { GitFile } from './types.ts'
+import type { GitFile, RepoEntry } from './types.ts'
 
 function useStore(store: EditorStore): State {
   return useSyncExternalStore(store.subscribe, store.getState, store.getState)
@@ -22,12 +24,57 @@ const Chevron = ({ open }: { open: boolean }): ReactElement => (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 1.5L7 5L3.5 8.5" /></svg>
   </span>
 )
-const FileGlyph = (): ReactElement => (
-  <svg className="ce-ficon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><path d="M4 1.8h5l3 3V14.2H4z" /><path d="M9 1.8v3h3" /></svg>
+const SearchGlyph = (): ReactElement => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.3" /><path d="M10 10l4 4" /></svg>
 )
-const FolderGlyph = (): ReactElement => (
-  <svg className="ce-ficon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><path d="M1.8 4h4l1.4 1.6h7V13H1.8z" /></svg>
-)
+
+/** Total changed entries over every shown repository. */
+function totalChanges(s: State): number {
+  let n = s.git.status?.files.length ?? 0
+  for (const g of Object.values(s.repoGit)) n += g.status?.files.length ?? 0
+  return n
+}
+
+// ---- splitters ----------------------------------------------------------------------------------------------
+
+/**
+ * A draggable separator. `onMove` gets the pointer position (clientX for a vertical bar, clientY for a horizontal one)
+ * while dragging; arrow keys call `onNudge(+1 | -1)`; a double click calls `onReset`.
+ */
+function Splitter({ vertical, label, value, min, max, onMove, onNudge, onReset }: {
+  vertical: boolean; label: string; value: number; min: number; max: number
+  onMove(pos: number): void; onNudge(dir: 1 | -1): void; onReset(): void
+}): ReactElement {
+  const [drag, setDrag] = useState(false)
+  const start = (e: ReactMouseEvent): void => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    setDrag(true)
+    const move = (ev: MouseEvent): void => onMove(vertical ? ev.clientX : ev.clientY)
+    const up = (): void => {
+      setDrag(false)
+      document.removeEventListener('mousemove', move)
+      document.removeEventListener('mouseup', up)
+    }
+    document.addEventListener('mousemove', move)
+    document.addEventListener('mouseup', up)
+  }
+  const key = (e: ReactKeyboardEvent): void => {
+    const back = vertical ? 'ArrowLeft' : 'ArrowUp'
+    const fwd = vertical ? 'ArrowRight' : 'ArrowDown'
+    if (e.key === back) { e.preventDefault(); onNudge(-1) }
+    else if (e.key === fwd) { e.preventDefault(); onNudge(1) }
+    else if (e.key === 'Home' || e.key === 'Enter') { e.preventDefault(); onReset() }
+  }
+  return (
+    <div
+      className={vertical ? 'ce-split ce-split-v' : 'ce-split ce-split-h'} role="separator" tabIndex={0} data-drag={drag} data-split={vertical ? 'sidebar' : 'sections'}
+      aria-orientation={vertical ? 'vertical' : 'horizontal'} aria-label={label} aria-valuenow={Math.round(value * 100) / 100} aria-valuemin={min} aria-valuemax={max}
+      title={`${label} (drag, double-click to reset)`}
+      onMouseDown={start} onDoubleClick={onReset} onKeyDown={key}
+    />
+  )
+}
 
 // ---- sidebar ------------------------------------------------------------------------------------------------
 
@@ -36,10 +83,16 @@ function RootPicker({ store, s, choices }: { store: EditorStore; s: State; choic
   const [text, setText] = useState('')
   const options = useMemo(() => {
     const seen = new Set(choices.map((c) => c.path.toLowerCase()))
-    const extra = s.roots.filter((r) => !seen.has(r.path.toLowerCase())).map((r) => ({ label: baseName(r.path), path: r.path }))
+    const all = [...choices.map((c) => c.path), ...s.roots.map((r) => r.path)]
+    // Repositories found below a folder are registered as roots too; only list a nested root the user opened by hand.
+    const nested = (p: string): boolean => all.some((o) => !sameRoot(o, p) && p.replace(/\\/g, '/').toLowerCase().startsWith(`${o.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()}/`))
+    const extra = s.roots
+      .filter((r) => !seen.has(r.path.toLowerCase()) && (!nested(r.path) || s.folders.some((f) => sameRoot(f, r.path))))
+      .map((r) => ({ label: baseName(r.path), path: r.path }))
     return [...choices, ...extra]
-  }, [choices, s.roots])
+  }, [choices, s.roots, s.folders])
   const known = s.root !== null && options.some((o) => o.path === s.root)
+  const canBrowse = store.canBrowse()
   const submit = (): void => {
     const p = text.trim()
     if (p.length === 0) return
@@ -47,12 +100,13 @@ function RootPicker({ store, s, choices }: { store: EditorStore; s: State; choic
   }
   return (
     <div className="ce-roots">
+      <select className="ce-select" aria-label="Folder" value={s.root ?? ''} onChange={(e) => void store.selectRoot(e.target.value)} title={s.root ?? ''}>
+        {s.root === null || !known ? <option value={s.root ?? ''}>{s.root === null ? 'Select a folder' : s.root}</option> : null}
+        {options.map((o) => <option key={o.path} value={o.path}>{o.label}</option>)}
+      </select>
       <div className="ce-roots-row">
-        <select className="ce-select" aria-label="Folder" value={s.root ?? ''} onChange={(e) => void store.selectRoot(e.target.value)} title={s.root ?? ''}>
-          {s.root === null || !known ? <option value={s.root ?? ''}>{s.root === null ? 'Select a folder' : s.root}</option> : null}
-          {options.map((o) => <option key={o.path} value={o.path}>{o.label}</option>)}
-        </select>
-        <button className="ce-btn" onClick={() => setAdding(!adding)} title="Open a folder by its absolute path">Open folder...</button>
+        {canBrowse ? <button className="ce-btn" data-act="browse" onClick={() => void store.browse()} title="Choose a folder with the system dialog">Browse...</button> : null}
+        <button className="ce-btn" data-act="type-path" onClick={() => setAdding(!adding)} title="Open a folder by typing its absolute path">{canBrowse ? 'Type path...' : 'Open folder...'}</button>
       </div>
       {adding ? (
         <input
@@ -61,16 +115,20 @@ function RootPicker({ store, s, choices }: { store: EditorStore; s: State; choic
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') setAdding(false) }}
         />
       ) : null}
+      <button className="ce-search" data-act="quick-open" onClick={() => store.setQuickOpen(true)} title="Search files by name (Ctrl+E)">
+        <SearchGlyph /><span>Search files</span><kbd>Ctrl+E</kbd>
+      </button>
     </div>
   )
 }
 
-function Section({ title, open, onToggle, count, actions, children }: {
-  title: string; open: boolean; onToggle(): void; count?: number; actions?: ReactElement | null; children: ReactElement | ReactElement[] | null
+function Section({ title, open, onToggle, count, actions, style, children }: {
+  title: string; open: boolean; onToggle(): void; count?: number; actions?: ReactElement | null; style?: Record<string, string | number>
+  children: ReactElement | ReactElement[] | null
 }): ReactElement {
   return (
-    <div className="ce-sec" data-open={open} data-sec={title}>
-      <div className="ce-sec-h" onClick={onToggle} role="button" aria-expanded={open}>
+    <div className="ce-sec" data-open={open} data-sec={title} style={style}>
+      <div className="ce-sec-h" onClick={onToggle} role="button" aria-expanded={open} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}>
         <Chevron open={open} />
         <span>{title}</span>
         {count !== undefined && count > 0 ? <span className="ce-count">{count}</span> : null}
@@ -94,13 +152,13 @@ function Explorer({ store, s }: { store: EditorStore; s: State }): ReactElement 
         if (r.kind === 'dir') {
           return (
             <div key={r.path} className="ce-row" style={pad} role="treeitem" aria-expanded={r.expanded} data-path={r.path} onClick={() => void store.toggleDir(r.path)}>
-              <Chevron open={r.expanded} /><FolderGlyph /><span className="ce-name">{r.name}</span>
+              <Chevron open={r.expanded} /><FolderIcon open={r.expanded} /><span className="ce-name">{r.name}</span>
             </div>
           )
         }
         return (
           <div key={r.path} className="ce-row" style={{ ...pad, paddingLeft: pad.paddingLeft + 14 }} role="treeitem" data-path={r.path} data-active={activePath === r.path} onClick={() => void store.openFile(r.path)}>
-            <FileGlyph /><span className="ce-name">{r.name}</span>
+            <FileIcon name={r.name} /><span className="ce-name">{r.name}</span>
           </div>
         )
       })}
@@ -114,70 +172,124 @@ const GROUPS: Array<{ key: GroupName; label: string }> = [
   { key: 'untracked', label: 'Untracked' },
 ]
 
-function ChangeRow({ store, f, group }: { store: EditorStore; f: GitFile; group: GroupName }): ReactElement {
+/** One changed file. `repo` is the root-relative folder of its repository ('' = the root); `f.path` is relative to that repository. */
+function ChangeRow({ store, f, group, repo }: { store: EditorStore; f: GitFile; group: GroupName; repo: string }): ReactElement {
   const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : ''
-  const id = group === 'untracked' ? `file:${f.path}` : `diff:${group === 'staged' ? 's' : 'w'}:${f.path}`
-  const open = (): void => { if (group === 'untracked') void store.openFile(f.path); else void store.openDiff(f.path, group === 'staged') }
+  const full = joinRel(repo, f.path)
+  const id = group === 'untracked' ? `file:${full}` : `diff:${group === 'staged' ? 's' : 'w'}:${full}`
+  const open = (): void => { if (group === 'untracked') void store.openFile(full); else void store.openDiff(full, group === 'staged', repo) }
   const stop = (fn: () => void) => (e: { stopPropagation(): void }): void => { e.stopPropagation(); fn() }
   return (
     <div className="ce-row" data-path={f.path} data-group={group} data-active={store.getState().active === id} onClick={open} title={f.origPath ? `${f.origPath} -> ${f.path}` : f.path}>
-      <span style={{ width: 8 }} />
+      <FileIcon name={f.path} />
       <span className="ce-name">{baseName(f.path)}</span>
       {dir ? <span className="ce-dim">{dir}</span> : null}
       <span className="ce-acts">
-        {group !== 'staged' ? <button className="ce-ibtn" data-act="discard" data-danger="true" title={group === 'untracked' ? 'Delete file' : 'Discard changes'} onClick={stop(() => void store.discard([f]))}>&#x21B6;</button> : null}
+        {group !== 'staged' ? <button className="ce-ibtn" data-act="discard" data-danger="true" title={group === 'untracked' ? 'Delete file' : 'Discard changes'} onClick={stop(() => void store.discard([f], repo))}>&#x21B6;</button> : null}
         {group === 'staged'
-          ? <button className="ce-ibtn" data-act="unstage" title="Unstage" onClick={stop(() => void store.unstage([f.path]))}>&minus;</button>
-          : <button className="ce-ibtn" data-act="stage" title="Stage" onClick={stop(() => void store.stage([f.path]))}>+</button>}
+          ? <button className="ce-ibtn" data-act="unstage" title="Unstage" onClick={stop(() => void store.unstage([f.path], repo))}>&minus;</button>
+          : <button className="ce-ibtn" data-act="stage" title="Stage" onClick={stop(() => void store.stage([f.path], repo))}>+</button>}
       </span>
       <span className="ce-badge" data-k={statusLetter(f, group)}>{statusLetter(f, group)}</span>
     </div>
   )
 }
 
-function Changes({ store, s }: { store: EditorStore; s: State }): ReactElement {
-  const groups = useMemo(() => groupChanges(s.git.status), [s.git.status])
-  if (s.root === null) return <div className="ce-note">Pick a folder above.</div>
-  if (s.git.notGit) return <div className="ce-note">This folder is not a git repository.</div>
-  if (s.git.error) return <div className="ce-note" data-error="true">{s.git.error}</div>
-  if (s.git.status === null) return <div className="ce-note">Loading...</div>
+/** The Staged / Changes / Untracked groups of one repository. */
+function RepoGroups({ store, g, repo }: { store: EditorStore; g: GitState; repo: string }): ReactElement {
+  const groups = useMemo(() => groupChanges(g.status), [g.status])
+  if (g.notGit) return <div className="ce-note">This folder is not a git repository.</div>
+  if (g.error && g.status === null) return <div className="ce-note" data-error="true">{g.error}</div>
+  if (g.status === null) return <div className="ce-note">Loading...</div>
   const total = groups.staged.length + groups.changes.length + groups.untracked.length
   if (total === 0) return <div className="ce-note">No changes.</div>
   return (
     <div>
+      {g.error ? <div className="ce-note" data-error="true">{g.error}</div> : null}
       {GROUPS.map(({ key, label }) => groups[key].length === 0 ? null : (
         <div key={key} data-group-block={key}>
           <div className="ce-grp">
             <span>{label} ({groups[key].length})</span>
             <span className="ce-grow" />
             {key === 'staged'
-              ? <button className="ce-ibtn" data-act="unstage-all" title="Unstage all" onClick={() => void store.unstageAll()}>&minus;</button>
-              : <button className="ce-ibtn" data-act="stage-all" title={key === 'untracked' ? 'Stage all untracked' : 'Stage all'} onClick={() => void (key === 'changes' ? store.stage(groups.changes.map((f) => f.path)) : store.stage(groups.untracked.map((f) => f.path)))}>+</button>}
-            {key !== 'staged' ? <button className="ce-ibtn" data-act="discard-all" data-danger="true" title={key === 'untracked' ? 'Delete all untracked files' : 'Discard all changes'} onClick={() => void store.discard(groups[key])}>&#x21B6;</button> : null}
+              ? <button className="ce-ibtn" data-act="unstage-all" title="Unstage all" onClick={() => void store.unstageAll(repo)}>&minus;</button>
+              : <button className="ce-ibtn" data-act="stage-all" title={key === 'untracked' ? 'Stage all untracked' : 'Stage all'} onClick={() => void (key === 'changes' ? store.stage(groups.changes.map((f) => f.path), repo) : store.stage(groups.untracked.map((f) => f.path), repo))}>+</button>}
+            {key !== 'staged' ? <button className="ce-ibtn" data-act="discard-all" data-danger="true" title={key === 'untracked' ? 'Delete all untracked files' : 'Discard all changes'} onClick={() => void store.discard(groups[key], repo)}>&#x21B6;</button> : null}
           </div>
-          {groups[key].map((f) => <ChangeRow key={`${key}:${f.path}`} store={store} f={f} group={key} />)}
+          {groups[key].map((f) => <ChangeRow key={`${key}:${f.path}`} store={store} f={f} group={key} repo={repo} />)}
         </div>
       ))}
     </div>
   )
 }
 
-function Sidebar({ store, s, choices }: { store: EditorStore; s: State; choices: Array<{ label: string; path: string }> }): ReactElement {
-  const [openEx, setOpenEx] = useState(true)
-  const [openCh, setOpenCh] = useState(true)
-  useEffect(() => { if (s.changesFocus > 0) setOpenCh(true) }, [s.changesFocus])
-  const total = s.git.status ? s.git.status.files.length : 0
+/** A collapsible repository in the list shown when the root itself is not a repository. */
+function RepoBlock({ store, repo, g, open, onToggle }: { store: EditorStore; repo: RepoEntry; g: GitState | undefined; open: boolean; onToggle(): void }): ReactElement {
+  const n = g?.status?.files.length ?? 0
   return (
-    <aside className="ce-side">
+    <div className="ce-repo" data-repo={repo.rel} data-open={open}>
+      <div className="ce-repo-h" role="button" aria-expanded={open} onClick={onToggle} title={repo.path}>
+        <Chevron open={open} />
+        <span className="ce-name">{repo.name}</span>
+        {repo.rel !== repo.name ? <span className="ce-dim">{repo.rel}</span> : null}
+        <span className="ce-grow" />
+        {g?.status?.branch ? <span className="ce-branch" title="Branch">{g.status.branch}</span> : null}
+        {n > 0 ? <span className="ce-count">{n}</span> : null}
+        {g?.loading && g.status === null ? <span className="ce-dim">...</span> : null}
+      </div>
+      {open ? <div className="ce-repo-body">{g ? <RepoGroups store={store} g={g} repo={repo.rel} /> : <div className="ce-note">Loading...</div>}</div> : null}
+    </div>
+  )
+}
+
+function Changes({ store, s }: { store: EditorStore; s: State }): ReactElement {
+  const [toggled, setToggled] = useState<Record<string, boolean>>({})
+  if (s.root === null) return <div className="ce-note">Pick a folder above.</div>
+  const list = s.repos.list
+  if (list === null) return s.repos.error ? <div className="ce-note" data-error="true">{s.repos.error}</div> : <div className="ce-note">Loading...</div>
+  if (list.length === 0) return <div className="ce-note" data-empty-repos>No git repository in this folder.</div>
+  if (list.length === 1 && list[0].rel === '') return <RepoGroups store={store} g={s.git} repo="" />
+  return (
+    <div>
+      {s.repos.truncated ? <div className="ce-note">Showing the first {list.length} repositories.</div> : null}
+      {list.map((r) => {
+        const g = s.repoGit[r.rel]
+        const open = toggled[r.rel] ?? (g?.status !== null && g?.status !== undefined && g.status.files.length > 0)
+        return <RepoBlock key={r.rel} store={store} repo={r} g={g} open={open} onToggle={() => setToggled({ ...toggled, [r.rel]: !open })} />
+      })}
+    </div>
+  )
+}
+
+function Sidebar({ store, s, choices }: { store: EditorStore; s: State; choices: Array<{ label: string; path: string }> }): ReactElement {
+  const { exOpen, chOpen, exFrac } = s.layout
+  const secs = useRef<HTMLDivElement | null>(null)
+  useEffect(() => { if (s.changesFocus > 0) store.setLayout({ chOpen: true }) }, [s.changesFocus, store])
+  const total = totalChanges(s)
+  const both = exOpen && chOpen
+  const grow = (open: boolean, share: number): Record<string, number | string> => (open ? { flex: `${both ? share : 1} 1 0px` } : { flex: '0 0 auto' })
+  const dragSections = (y: number): void => {
+    const box = secs.current?.getBoundingClientRect()
+    if (!box || box.height <= 0) return
+    store.setLayout({ exFrac: (y - box.top) / box.height })
+  }
+  return (
+    <aside className="ce-side" style={{ width: s.layout.sidebar }}>
       <RootPicker store={store} s={s} choices={choices} />
-      <Section title="EXPLORER" open={openEx} onToggle={() => setOpenEx(!openEx)}
-        actions={<button className="ce-ibtn" title="Refresh" data-act="refresh-tree" onClick={() => void store.refreshExplorer()}>&#x21BB;</button>}>
-        <Explorer store={store} s={s} />
-      </Section>
-      <Section title="CHANGES" open={openCh} onToggle={() => setOpenCh(!openCh)} count={total}
-        actions={<button className="ce-ibtn" title="Refresh" data-act="refresh-git" onClick={() => void store.refreshGit()}>&#x21BB;</button>}>
-        <Changes store={store} s={s} />
-      </Section>
+      <div className="ce-secs" ref={secs}>
+        <Section title="EXPLORER" open={exOpen} onToggle={() => store.setLayout({ exOpen: !exOpen })} style={grow(exOpen, exFrac)}
+          actions={<button className="ce-ibtn" title="Refresh" data-act="refresh-tree" onClick={() => void store.refreshExplorer()}>&#x21BB;</button>}>
+          <Explorer store={store} s={s} />
+        </Section>
+        {both ? (
+          <Splitter vertical={false} label="Resize Explorer and Changes" value={exFrac} min={FRAC_MIN} max={FRAC_MAX}
+            onMove={dragSections} onNudge={(d) => store.setLayout({ exFrac: exFrac + d * 0.04 })} onReset={() => store.setLayout({ exFrac: FRAC_DEFAULT })} />
+        ) : null}
+        <Section title="CHANGES" open={chOpen} onToggle={() => store.setLayout({ chOpen: !chOpen })} count={total} style={grow(chOpen, 1 - exFrac)}
+          actions={<button className="ce-ibtn" title="Refresh (rescans for repositories)" data-act="refresh-git" onClick={() => void store.refreshGit(true)}>&#x21BB;</button>}>
+          <Changes store={store} s={s} />
+        </Section>
+      </div>
     </aside>
   )
 }
@@ -195,6 +307,7 @@ function TabBar({ store, s }: { store: EditorStore; s: State }): ReactElement {
           onMouseDown={(e) => { if (e.button === 1) e.preventDefault() }}
           onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); store.closeTab(t.id) } }}
         >
+          <FileIcon name={t.path} />
           <span className="ce-ttl">{t.title}</span>
           {t.dirty ? <span className="ce-dot" title="Unsaved changes" /> : null}
           <button className="ce-x" aria-label={`Close ${t.title}`} onClick={(e) => { e.stopPropagation(); store.closeTab(t.id) }}>
@@ -257,17 +370,19 @@ function EditorArea({ store, s, tab }: { store: EditorStore; s: State; tab: Tab 
     host.layout()
     return () => { host.element.remove() }
   }, [store, s.hostReady])
+  // The sidebar width changes the editor's box: Monaco has automaticLayout, other hosts get an explicit nudge.
+  useEffect(() => { store.getHost()?.layout() }, [store, s.layout.sidebar])
   let overlay: ReactElement | null = null
   if (!tab) {
     overlay = (
       <div className="ce-overlay" data-empty>
         <h3>Code</h3>
-        <span>Open a file from the Explorer, or press <kbd>Ctrl</kbd>+<kbd>P</kbd> to search.</span>
+        <span>Open a file from the Explorer, or press <kbd>Ctrl</kbd>+<kbd>E</kbd> to search.</span>
         {s.root === null ? <span>Pick a folder to start.</span> : null}
       </div>
     )
   } else if (tab.error) {
-    overlay = <div className="ce-overlay"><h3>Could not open {tab.title}</h3><span>{tab.error}</span><button className="ce-btn" onClick={() => { store.closeTab(tab.id, true); void (tab.kind === 'file' ? store.openFile(tab.path) : store.openDiff(tab.path, tab.staged)) }}>Retry</button></div>
+    overlay = <div className="ce-overlay"><h3>Could not open {tab.title}</h3><span>{tab.error}</span><button className="ce-btn" onClick={() => { store.closeTab(tab.id, true); void (tab.kind === 'file' ? store.openFile(tab.path) : store.openDiff(tab.path, tab.staged, tab.repo)) }}>Retry</button></div>
   } else if (!tab.loaded) {
     overlay = <div className="ce-overlay"><span>Loading...</span></div>
   } else if (tab.binary) {
@@ -323,6 +438,7 @@ function QuickOpen({ store, s }: { store: EditorStore; s: State }): ReactElement
             const part = (from: number, to: number): ReactElement[] => [...r.path.slice(from, to)].map((ch, k) => (at.has(from + k) ? <mark key={k}>{ch}</mark> : <span key={k}>{ch}</span>))
             return (
               <div key={r.path} className="ce-qo-item" role="option" aria-selected={i === sel} data-sel={i === sel} data-path={r.path} onMouseEnter={() => setSel(i)} onClick={() => choose(r.path)}>
+                <FileIcon name={r.path} />
                 <span>{part(slash, r.path.length)}</span>
                 <span className="ce-dim">{slash > 0 ? part(0, slash - 1) : null}</span>
               </div>
@@ -339,9 +455,11 @@ function QuickOpen({ store, s }: { store: EditorStore; s: State }): ReactElement
 function StatusBar({ s, tab }: { s: State; tab: Tab | undefined }): ReactElement {
   const st = s.git.status
   const liveLabel = s.live === 'live' ? 'Live updates on' : s.live === 'connecting' ? 'Connecting...' : 'Live updates off (reconnecting)'
+  const nested = s.repos.list !== null && s.repos.list.length > 0 && !s.repos.list.some((r) => r.rel === '')
+  const branch = st?.branch ?? (nested ? `${s.repos.list?.length} repositories` : s.git.notGit ? 'no git' : '-')
   return (
     <div className="ce-status" data-statusbar>
-      <span title={liveLabel}><span className="ce-live" data-s={s.live} />{st?.branch ?? (s.git.notGit ? 'no git' : '-')}</span>
+      <span title={liveLabel}><span className="ce-live" data-s={s.live} />{branch}</span>
       {st && (st.ahead > 0 || st.behind > 0) ? <span title="Ahead / behind upstream">{`↑${st.ahead} ↓${st.behind}`}</span> : null}
       <span title={s.root ?? ''}>{s.root ?? 'no folder'}</span>
       <span className="ce-grow" />
@@ -386,22 +504,36 @@ export function CodeEditorPage({ store, useWorkspaces }: PageProps): ReactElemen
     return () => observer.disconnect()
   }, [store])
 
-  const onKeyDown = useCallback((e: ReactKeyboardEvent) => {
-    if (e.defaultPrevented) return
-    const action = actionFor(e.nativeEvent, describeTarget(e.target))
-    if (action === null) return
-    e.preventDefault()
-    e.stopPropagation()
-    if (action === 'save') void store.save()
-    else if (action === 'closeTab') store.closeActive()
-    else store.setQuickOpen(!store.getState().quickOpen)
+  // Shortcuts live on the WINDOW in the capture phase, not on the view: with the focus on the page body (right after
+  // choosing "Code" in the sidebar) a key never passes through the view, and the desktop app / browser would take
+  // it (print, save page). Capture + stopImmediatePropagation also keeps Monaco and the shell from seeing it twice.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const action = pageAction(e, viewRef.current)
+      if (action === null) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      if (action === 'save') void store.save()
+      else if (action === 'closeTab') store.closeActive()
+      else store.setQuickOpen(!store.getState().quickOpen)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [store])
+
+  const dragSidebar = (x: number): void => {
+    const box = viewRef.current?.getBoundingClientRect()
+    const room = box && box.width > 0 ? box.width - 320 : SIDEBAR_MAX // always leave the editor some space
+    store.setLayout({ sidebar: Math.min(x - (box?.left ?? 0), Math.max(SIDEBAR_MIN, room)) })
+  }
 
   const tab = store.tab(s.active)
   return (
-    <div className="ce-view" ref={viewRef} data-scheme={scheme} data-dsh-plugin="code-editor" onKeyDown={onKeyDown}>
+    <div className="ce-view" ref={viewRef} data-scheme={scheme} data-dsh-plugin="code-editor">
       <div className="ce-cols">
         <Sidebar store={store} s={s} choices={choices} />
+        <Splitter vertical label="Resize sidebar" value={s.layout.sidebar} min={SIDEBAR_MIN} max={SIDEBAR_MAX}
+          onMove={dragSidebar} onNudge={(d) => store.setLayout({ sidebar: s.layout.sidebar + d * 16 })} onReset={() => store.setLayout({ sidebar: SIDEBAR_DEFAULT })} />
         <main className="ce-main">
           <TabBar store={store} s={s} />
           {tab ? <Crumb store={store} s={s} tab={tab} /> : null}

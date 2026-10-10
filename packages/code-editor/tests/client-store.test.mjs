@@ -5,6 +5,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { ApiError } from '../src/client/api.ts'
 import { EditorStore } from '../src/client/store.ts'
 import { FakeHost, FakeSocket, MemoryStorage, gitFile, makeApi, sleep, until } from './helpers/fake.mjs'
 
@@ -15,7 +16,7 @@ async function setup(o = {}) {
   const confirms = []
   const panel = { n: 0 }
   const store = new EditorStore({
-    api, storage, Socket: FakeSocket, gitDelayMs: 1, wsDelay: () => 5, selectPanel: () => { panel.n++ },
+    api, storage, picker: o.picker, Socket: FakeSocket, gitDelayMs: 1, wsDelay: () => 5, selectPanel: () => { panel.n++ },
     confirm: (m) => { confirms.push(m); return o.confirm ?? true },
   })
   const host = new FakeHost()
@@ -381,4 +382,148 @@ test('open request: a folder with review shows the CHANGES view of its root (no 
   assert.equal(await other.store.handleOpenRequest({ path: '/repo/sub', review: true }), true)
   assert.equal(other.store.getState().root, '/repo')
   assert.deepEqual(calls(other.api, 'resolve').at(-1), ['resolve', '/repo/sub'])
+})
+
+// ---- nested repositories, browse, layout ----
+const multi = {
+  repos: { '/w/proj': { inside: false, truncated: false, repos: [{ path: '/w/proj/alpha', rel: 'alpha', name: 'alpha' }, { path: '/w/proj/pk/beta', rel: 'pk/beta', name: 'beta' }] } },
+  statusByRoot: {
+    '/w/proj/alpha': { branch: 'dev', ahead: 0, behind: 0, files: [gitFile('x.ts'), gitFile('new.ts', { worktree: '?', unstaged: false, untracked: true })] },
+    '/w/proj/pk/beta': { branch: 'main', ahead: 0, behind: 0, files: [gitFile('y.ts', { index: 'M', worktree: ' ', staged: true, unstaged: false })] },
+  },
+}
+const bothLoaded = (store) => Object.values(store.getState().repoGit).length === 2 && Object.values(store.getState().repoGit).every((g) => g.status)
+
+test('a root that only contains repositories lists them, registers their paths and loads one status each', async () => {
+  const { api, store } = await setup(multi)
+  await until(() => bothLoaded(store), 'both statuses')
+  const s = store.getState()
+  assert.deepEqual(s.repos.list.map((r) => r.rel), ['alpha', 'pk/beta'])
+  assert.equal(s.git.notGit, false)
+  assert.equal(s.git.status, null, 'the root has no repository of its own')
+  assert.deepEqual(calls(api, 'roots').flatMap((c) => c[1]).filter((p) => p.includes('/alpha') || p.includes('beta')).sort(), ['/w/proj/alpha', '/w/proj/pk/beta'], 'nested repo paths are registered as roots')
+  assert.deepEqual(calls(api, 'gitStatus').map((c) => c[1]).sort(), ['/w/proj/alpha', '/w/proj/pk/beta'], 'the root itself is never asked for a status')
+  assert.equal(store.changeCount(), 3)
+  assert.equal(s.repoGit.alpha.status.branch, 'dev')
+})
+
+test('per-repository actions use the repository path as root and repo-relative paths', async () => {
+  const { api, store } = await setup(multi)
+  await until(() => bothLoaded(store), 'both statuses')
+  assert.equal(await store.stage(['x.ts'], 'alpha'), true)
+  assert.deepEqual(calls(api, 'stage')[0], ['stage', '/w/proj/alpha', ['x.ts']])
+  assert.equal(await store.unstage(['y.ts'], 'pk/beta'), true)
+  assert.deepEqual(calls(api, 'unstage')[0], ['unstage', '/w/proj/pk/beta', ['y.ts']])
+  await store.stageAll('alpha')
+  assert.deepEqual(calls(api, 'stage')[1], ['stage', '/w/proj/alpha', ['x.ts', 'new.ts']])
+  await store.discard([gitFile('new.ts', { worktree: '?', unstaged: false, untracked: true })], 'alpha')
+  assert.deepEqual(calls(api, 'discard')[0], ['discard', '/w/proj/alpha', [], ['new.ts']])
+  const betaCalls = () => calls(api, 'gitStatus').filter((c) => c[1] === '/w/proj/pk/beta').length
+  const before = betaCalls()
+  await store.stage(['x.ts'], 'alpha')
+  assert.equal(betaCalls(), before, 'an action refreshes only its own repository')
+  assert.equal(await store.stage(['x.ts'], 'gone/repo'), false, 'an unknown repository is refused client-side')
+})
+
+test('a nested diff tab keeps a root-relative path and asks the host with the repository root', async () => {
+  const { api, store, host } = await setup(multi)
+  await until(() => bothLoaded(store), 'both statuses')
+  await store.openDiff('alpha/x.ts', false, 'alpha')
+  assert.deepEqual(calls(api, 'gitDiff')[0], ['gitDiff', '/w/proj/alpha', 'x.ts', false])
+  assert.equal(store.tab('diff:w:alpha/x.ts').repo, 'alpha')
+  assert.equal(host.diffShown.id, 'diff:w:alpha/x.ts')
+})
+
+test('diff tabs of a nested repository are restored with their repository', async () => {
+  const storage = new MemoryStorage()
+  const a = await setup({ ...multi, storage })
+  await until(() => bothLoaded(a.store), 'both statuses')
+  await a.store.openDiff('alpha/x.ts', false, 'alpha')
+  a.store.dispose()
+  const b = await setup({ ...multi, storage })
+  await until(() => b.store.tab('diff:w:alpha/x.ts')?.loaded, 'restored diff tab')
+  assert.equal(b.store.tab('diff:w:alpha/x.ts').repo, 'alpha')
+  assert.deepEqual(calls(b.api, 'gitDiff')[0], ['gitDiff', '/w/proj/alpha', 'x.ts', false])
+})
+
+test('review of a file inside a nested repository opens its diff there', async () => {
+  const { api, store } = await setup({ ...multi, tree: { '': [{ name: 'alpha', type: 'dir', size: 0, mtime: 1 }], alpha: [] } })
+  await until(() => bothLoaded(store), 'both statuses')
+  assert.equal(await store.handleOpenRequest({ path: '/w/proj/alpha/x.ts', review: true }), true)
+  assert.equal(store.getState().active, 'diff:w:alpha/x.ts')
+  assert.deepEqual(calls(api, 'gitDiff')[0], ['gitDiff', '/w/proj/alpha', 'x.ts', false])
+  assert.equal(calls(api, 'gitRepos').some((c) => c[2] === true), true, 'a review rescans for repositories')
+})
+
+test('an empty repository list is "no repository"; a root inside a repo uses it directly; an old host falls back', async () => {
+  const none = await setup({ repos: { '/w/proj': { inside: false, truncated: false, repos: [] } } })
+  await until(() => none.store.getState().git.notGit, 'notGit')
+  assert.equal(none.store.getState().repos.list.length, 0)
+  assert.equal(calls(none.api, 'gitStatus').length, 0)
+
+  const single = await setup()
+  await until(() => single.store.getState().git.status, 'status')
+  assert.deepEqual(single.store.getState().repos.list, [{ path: '/w/proj', rel: '', name: 'proj' }])
+  assert.deepEqual(single.store.getState().repoGit, {})
+
+  FakeSocket.reset()
+  const old = makeApi({})
+  old.gitRepos = async () => { throw new ApiError('Not Found', 404) }
+  const store = new EditorStore({ api: old, storage: new MemoryStorage(), Socket: FakeSocket, gitDelayMs: 1, wsDelay: () => 5 })
+  store.attachHost(new FakeHost())
+  await store.setWorkspaces(['/w/proj'])
+  await until(() => store.getState().git.status, 'fallback status')
+  assert.equal(store.getState().repos.list[0].rel, '')
+})
+
+test('repositories refresh on live git frames; the refresh button rescans', async () => {
+  const { api, store, sock } = await setup(multi)
+  await until(() => bothLoaded(store), 'both statuses')
+  const n = () => calls(api, 'gitStatus').filter((c) => c[1] === '/w/proj/alpha').length
+  const before = n()
+  sock().open()
+  sock().push({ type: 'git' })
+  await until(() => n() > before, 'status refresh')
+  assert.equal(calls(api, 'gitRepos').every((c) => c[2] === false), true, 'live frames reuse the repository list')
+  await store.refreshGit(true)
+  assert.equal(calls(api, 'gitRepos').some((c) => c[2] === true), true)
+})
+
+test('Browse: the picker result is registered and selected; cancel and an absent picker do nothing', async () => {
+  const picks = ['/w/other', null, '']
+  const picker = { available: () => true, pick: async () => picks.shift() }
+  const { api, store } = await setup({ picker })
+  assert.equal(store.canBrowse(), true)
+  assert.equal(await store.browse(), true)
+  assert.deepEqual(calls(api, 'roots').at(-1)[1], ['/w/other'])
+  assert.equal(store.getState().root, '/w/other')
+  assert.deepEqual(store.getState().folders, ['/w/other'])
+  assert.equal(await store.browse(), false, 'cancelled')
+  assert.equal(await store.browse(), false, 'empty answer')
+  assert.equal(store.getState().root, '/w/other')
+
+  const absent = await setup()
+  assert.equal(absent.store.canBrowse(), false)
+  assert.equal(await absent.store.browse(), false)
+  const throwing = await setup({ picker: { available: () => true, pick: async () => { throw new Error('boom') } } })
+  assert.equal(await throwing.store.browse(), false, 'a failing picker is a cancel')
+})
+
+test('layout: defaults, clamping, persistence across stores, no-op writes', async () => {
+  const storage = new MemoryStorage()
+  const a = await setup({ storage })
+  assert.deepEqual(a.store.getState().layout, { sidebar: 280, exFrac: 0.5, exOpen: true, chOpen: true })
+  a.store.setLayout({ sidebar: 351, exFrac: 0.3, chOpen: false })
+  a.store.setLayout({ sidebar: 99999 })
+  assert.equal(a.store.getState().layout.sidebar, 640)
+  a.store.setLayout({ sidebar: 351 })
+  const writes = []
+  const spy = { getItem: (k) => storage.getItem(k), setItem: (k, v) => { writes.push(k); storage.setItem(k, v) } }
+  const b = await setup({ storage: spy, workspaces: false })
+  assert.deepEqual(b.store.getState().layout, { sidebar: 351, exFrac: 0.3, exOpen: true, chOpen: false })
+  const n = writes.length
+  b.store.setLayout({ sidebar: 351 })
+  assert.equal(writes.length, n, 'an unchanged layout is not written')
+  b.store.setLayout({ exFrac: 0 })
+  assert.equal(b.store.getState().layout.exFrac, 0.15)
 })

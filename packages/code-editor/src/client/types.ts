@@ -13,6 +13,9 @@ export interface GitFile {
   untracked: boolean
   conflicted: boolean
 }
+/** One repository of the CHANGES view (API.md `GET /git/repos`). `rel` is relative to the root ('' = the root itself). */
+export interface RepoEntry { path: string; rel: string; name: string }
+export interface RepoList { inside: boolean; truncated: boolean; repos: RepoEntry[] }
 export interface GitStatus { branch: string | null; ahead: number; behind: number; files: GitFile[] }
 export interface GitDiff { original: string | null; modified: string | null; binary: boolean; tooLarge: boolean }
 
