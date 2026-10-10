@@ -223,3 +223,37 @@ test('live socket: parses frames, reconnects with backoff, stops on close', () =
   FakeSocket.all[2].drop()
   assert.equal(timers.length, 0, 'no reconnect after close')
 })
+
+// ---- layout link: strict ctx (reading anything not injected throws, like a real cordis ctx) ----
+import { trackLayout } from '../src/client/layout-link.ts'
+const strict = (base) => new Proxy(base, { get(t, p) { if (p in t) return t[p]; throw new Error(`cannot get property "${String(p)}" without inject`) } })
+
+test('layout link: uses ctx.inject, never reads ctx.layout directly, switches only while the service exists', () => {
+  const picked = []
+  let cb
+  const disposers = []
+  const ctx = strict({ inject: (names, fn) => { assert.deepEqual(names, ['layout']); cb = fn } })
+  const link = trackLayout(ctx, 'dsh-code-editor')
+  link.select() // service not there yet: no-op, no throw
+  assert.equal(link.available(), false)
+  cb(strict({ layout: { selectPanel: (id) => picked.push(id) }, on: (ev, fn) => { assert.equal(ev, 'dispose'); disposers.push(fn) } }))
+  assert.equal(link.available(), true)
+  link.select()
+  assert.deepEqual(picked, ['dsh-code-editor'])
+  disposers[0]() // service went away
+  link.select()
+  assert.equal(picked.length, 1)
+  assert.equal(link.available(), false)
+})
+
+test('layout link: tolerates a ctx without inject, a throwing selectPanel and a service without selectPanel', () => {
+  assert.doesNotThrow(() => trackLayout(strict({}), 'x').select())
+  assert.doesNotThrow(() => trackLayout({ inject() { throw new Error('boom') } }, 'x').select())
+  let cb
+  const link = trackLayout({ inject: (_n, fn) => { cb = fn } }, 'x')
+  cb({ layout: { selectPanel() { throw new Error('panel "x" is not registered') } } })
+  assert.doesNotThrow(() => link.select())
+  const bare = trackLayout({ inject: (_n, fn) => { cb = fn } }, 'x')
+  cb({ layout: {} })
+  assert.equal(bare.available(), false)
+})

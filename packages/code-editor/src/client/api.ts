@@ -35,7 +35,7 @@ export interface Api {
   stage(root: string, paths: string[]): Promise<void>
   unstage(root: string, paths: string[]): Promise<void>
   discard(root: string, paths: string[], untracked: string[]): Promise<void>
-  /** PROPOSED (API.md): resolve the root (git top-level) for an absolute path. */
+  /** `GET /resolve` (API.md): resolve the root (git top-level) for an absolute path. */
   resolve(path: string): Promise<{ root: string; isGit: boolean } | null>
   /** `ws://` / `wss://` URL of the live-update socket. */
   wsUrl(root: string): string

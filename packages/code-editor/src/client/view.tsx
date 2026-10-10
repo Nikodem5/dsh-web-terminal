@@ -165,6 +165,7 @@ function Changes({ store, s }: { store: EditorStore; s: State }): ReactElement {
 function Sidebar({ store, s, choices }: { store: EditorStore; s: State; choices: Array<{ label: string; path: string }> }): ReactElement {
   const [openEx, setOpenEx] = useState(true)
   const [openCh, setOpenCh] = useState(true)
+  useEffect(() => { if (s.changesFocus > 0) setOpenCh(true) }, [s.changesFocus])
   const total = s.git.status ? s.git.status.files.length : 0
   return (
     <aside className="ce-side">

@@ -3,10 +3,11 @@
 // Same shape as the terminal: the Code page is a top-level entry, an icon in the root-scoped
 // `sidebar.panellist` list seat plus the page in the root-scoped `main` keyed seat under the same id.
 // Only `slots` is injected (reading any other ctx property would throw on a real cordis ctx);
-// the layout service is looked up defensively when another plugin asks to open a file.
+// the layout service is tracked through the optional `ctx.inject(['layout'], ...)` form (layout-link.ts).
 
 import type { Context } from '@deepseek-ai/cordis'
 import { CodeIcon } from './panel-icon.tsx'
+import { trackLayout } from './layout-link.ts'
 import { getStore, setSelectPanel } from './instance.ts'
 import { CodeEditorView } from './view.tsx'
 
@@ -18,27 +19,6 @@ export const inject = ['slots']
 
 /** Shared by the sidebar entry and the `main` panel. */
 export const PANEL_ID = 'dsh-code-editor'
-
-/**
- * `ctx.layout.selectPanel(id)` is how the harness' own plugins switch pages. `layout` is not in our inject
- * list, so it is only probed (inside try/catch) at the moment a file is opened from another plugin.
- */
-function findSelectPanel(ctx: Context): (() => void) | undefined {
-  const probes: Array<() => unknown> = [
-    () => (ctx as unknown as { layout?: unknown }).layout,
-    () => (ctx as unknown as { get?(n: string): unknown }).get?.('layout'),
-  ]
-  for (const probe of probes) {
-    try {
-      const layout = probe() as { selectPanel?: (id: string | null) => void } | undefined
-      if (layout && typeof layout.selectPanel === 'function') {
-        const l = layout
-        return () => { try { l.selectPanel?.(PANEL_ID) } catch { /* panel not registered yet */ } }
-      }
-    } catch { /* not available on this ctx */ }
-  }
-  return undefined
-}
 
 /**
  * Register the Code page (sidebar entry + main panel) and the cross-plugin open listener.
@@ -54,12 +34,21 @@ export function apply(ctx: Context): void {
   slots.inject('sidebar.panellist', () =>
     slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 6, label: () => 'Code' }, CodeIcon as never),
   )
+  const layout = trackLayout(ctx, PANEL_ID)
+  setSelectPanel(() => layout.select())
   if (typeof window !== 'undefined') {
+    // Presence marker: other plugins (the terminal) check it before offering "open in Code".
+    const marked = window as unknown as { __dshCodeEditor?: unknown }
+    marked.__dshCodeEditor = { version: 1 }
     const onOpen = (ev: Event): void => {
-      setSelectPanel(findSelectPanel(ctx))
       void getStore().handleOpenRequest((ev as CustomEvent).detail)
     }
     window.addEventListener('dsh-code-editor:open', onOpen)
-    try { ctx.on('dispose', () => window.removeEventListener('dsh-code-editor:open', onOpen)) } catch { /* no dispose hook */ }
+    try {
+      ctx.on('dispose', () => {
+        window.removeEventListener('dsh-code-editor:open', onOpen)
+        delete marked.__dshCodeEditor
+      })
+    } catch { /* no dispose hook */ }
   }
 }

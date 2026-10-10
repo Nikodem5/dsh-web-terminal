@@ -362,3 +362,23 @@ test('a failed load shows an error on the tab instead of throwing', async () => 
   assert.equal(store.tab('file:a.txt').error, 'boom')
   assert.equal(store.tab('file:a.txt').loaded, false)
 })
+
+test('open request: a folder with review shows the CHANGES view of its root (no file tab), refreshing git', async () => {
+  const files = [gitFile('a.txt')]
+  const { store, api } = await setup({ status: { branch: 'main', ahead: 0, behind: 0, files } })
+  const before = store.getState().changesFocus
+  const gitCalls = calls(api, 'gitStatus').length
+  assert.equal(await store.handleOpenRequest({ path: '/w/proj', review: true }), true)
+  assert.equal(store.getState().root, '/w/proj')
+  assert.equal(store.getState().changesFocus, before + 1)
+  assert.ok(calls(api, 'gitStatus').length > gitCalls)
+  assert.equal(store.getState().active, null, 'a folder opens no file')
+  // a sub folder of a known root works too (it lists as a directory)
+  assert.equal(await store.handleOpenRequest({ path: '/w/proj/src', review: true }), true)
+  assert.equal(store.getState().changesFocus, before + 2)
+  // outside every root: /resolve picks the git top-level, which is registered
+  const other = await setup({ resolve: () => ({ root: '/repo', isGit: true }) })
+  assert.equal(await other.store.handleOpenRequest({ path: '/repo/sub', review: true }), true)
+  assert.equal(other.store.getState().root, '/repo')
+  assert.deepEqual(calls(other.api, 'resolve').at(-1), ['resolve', '/repo/sub'])
+})

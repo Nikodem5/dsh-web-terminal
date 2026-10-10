@@ -58,6 +58,8 @@ export interface State {
   cursor: { line: number; col: number } | null
   live: LiveState
   quickOpen: boolean
+  /** Bumped by a review request: the page expands the CHANGES section. */
+  changesFocus: number
   notice: Notice | null
   hostReady: boolean
   /** Recently opened file paths (newest first), for the empty quick-open list. */
@@ -114,7 +116,7 @@ export class EditorStore {
     this.folders = g.folders
     this.s = {
       workspaces: [], roots: [], root: null, tree: {}, expanded: [], git: { status: null, notGit: false, error: null, loading: false },
-      tabs: [], active: null, inline: false, cursor: null, live: 'down', quickOpen: false, notice: null, hostReady: false, recent: [],
+      tabs: [], active: null, inline: false, cursor: null, live: 'down', quickOpen: false, changesFocus: 0, notice: null, hostReady: false, recent: [],
     }
   }
 
@@ -759,7 +761,11 @@ export class EditorStore {
         if (!(await this.selectRoot(root))) return false
       }
       const rel = relativeTo(root, abs) as string
-      if (d.review === true) {
+      if (d.review === true && (rel === '' || (await this.isDirectory(root, rel)))) {
+        // A folder: show the CHANGES view of the root (the folder only matters for choosing the root).
+        this.set({ changesFocus: this.s.changesFocus + 1 })
+        await this.refreshGit()
+      } else if (d.review === true) {
         await this.refreshGit()
         const f = this.s.git.status?.files.find((x) => x.path === rel)
         if (f && !f.untracked) await this.openDiff(rel, !f.unstaged && f.staged)
@@ -774,6 +780,11 @@ export class EditorStore {
       this.notify(`Cannot open ${abs}: ${errText(e)}`)
       return false
     }
+  }
+
+  /** True when `rel` (below `root`) lists as a folder. */
+  private async isDirectory(root: string, rel: string): Promise<boolean> {
+    try { await this.deps.api.tree(root, rel); return true } catch { return false }
   }
 
   dispose(): void {
