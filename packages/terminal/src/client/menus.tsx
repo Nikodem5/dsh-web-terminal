@@ -3,10 +3,11 @@
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
+import { Pop } from './popover.tsx'
 import { requestCloseAll } from './actions.ts'
 import { SendSettings } from './send-menu.tsx'
 import { setPathTarget, setPathTemplate } from './path-links.ts'
-import { ShellIntegrationSettings } from './blocks-settings.tsx'
+import { CommandAlertSettings, ShellIntegrationSettings } from './blocks-settings.tsx'
 import type { PathTarget } from './types.ts'
 import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setHungMinutes, setNotify, setSound, setTermTheme } from './terminal-store.ts'
 
@@ -32,7 +33,7 @@ export function LayoutsMenu(): ReactElement {
     setName('')
   }
   return (
-    <div className="wt-pop" onPointerDown={(e) => e.stopPropagation()}>
+    <Pop onPointerDown={(e) => e.stopPropagation()}>
       <div className="wt-pop-title">Saved layouts</div>
       {prefs.layouts.length === 0 ? (
         <div className="wt-item" style={{ color: 'var(--wt-dim)' }}>None yet.</div>
@@ -73,7 +74,7 @@ export function LayoutsMenu(): ReactElement {
       <div style={{ fontSize: 11, color: 'var(--wt-dim)' }}>
         Saves each window's name, folder, shell, startup command, position and pin. The same name overwrites.
       </div>
-    </div>
+    </Pop>
   )
 }
 
@@ -83,17 +84,8 @@ export function SettingsMenu(): ReactElement {
   const font = prefs.font
   const preset = FONT_CHOICES.find((c) => c.value === font.family)
   return (
-    <div className="wt-pop" data-right="true" style={{ width: 300 }} onPointerDown={(e) => e.stopPropagation()}>
-      <div className="wt-pop-title">Terminal colours</div>
-      <label className="wt-field">
-        Theme (agents like Claude Code assume a dark background)
-        <select className="wt-input" value={prefs.termTheme} onChange={(e) => setTermTheme(e.target.value as 'dark' | 'light' | 'auto')}>
-          <option value="dark">Dark</option>
-          <option value="light">Light</option>
-          <option value="auto">Follow the app</option>
-        </select>
-      </label>
-      <div className="wt-pop-title">Terminal font</div>
+    <Pop data-right="true" style={{ width: 300 }} onPointerDown={(e) => e.stopPropagation()}>
+      <div className="wt-pop-title" data-section="font">Font</div>
       <label className="wt-field">
         Preset
         <select
@@ -131,7 +123,24 @@ export function SettingsMenu(): ReactElement {
           <input className="wt-input" type="number" min={1} max={2} step={0.05} value={font.lineHeight} onChange={(e) => setFont({ lineHeight: Number(e.target.value) })} />
         </label>
       </div>
-      {/* ── readability: spacing, bold weight, contrast ── */}
+      <label className="wt-item" style={{ cursor: 'pointer' }} title="In narrow windows the font shrinks just enough to keep this many columns visible; it never grows past the size above.">
+        <input type="checkbox" checked={prefs.autoFont} onChange={(e) => setAutoFont(e.target.checked)} />
+        <span className="wt-grow">Shrink font to fit window</span>
+      </label>
+      <label className="wt-field">
+        Columns to keep visible
+        <input className="wt-input" type="number" min={40} max={240} step={5} disabled={!prefs.autoFont} value={prefs.fitCols} onChange={(e) => setFitCols(Number(e.target.value))} />
+      </label>
+      <button type="button" className="wt-btn" onClick={() => setFont({ ...DEFAULT_FONT })}>Reset font</button>
+      <div className="wt-pop-title" data-section="readability">Readability</div>
+      <label className="wt-field">
+        Theme (agents like Claude Code assume a dark background)
+        <select className="wt-input" value={prefs.termTheme} onChange={(e) => setTermTheme(e.target.value as 'dark' | 'light' | 'auto')}>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="auto">Follow the app</option>
+        </select>
+      </label>
       <div className="wt-row">
         <label className="wt-field wt-grow">
           Letter spacing (px)
@@ -155,17 +164,10 @@ export function SettingsMenu(): ReactElement {
           {CONTRAST_LABELS[font.minContrast] === undefined ? <option value={font.minContrast}>{`Custom (${font.minContrast}:1)`}</option> : null}
         </select>
       </label>
-      {/* ── end readability ── */}
-      <label className="wt-item" style={{ cursor: 'pointer' }} title="In narrow windows the font shrinks just enough to keep this many columns visible; it never grows past the size above.">
-        <input type="checkbox" checked={prefs.autoFont} onChange={(e) => setAutoFont(e.target.checked)} />
-        <span className="wt-grow">Shrink font to fit window</span>
-      </label>
-      <label className="wt-field">
-        Columns to keep visible
-        <input className="wt-input" type="number" min={40} max={240} step={5} disabled={!prefs.autoFont} value={prefs.fitCols} onChange={(e) => setFitCols(Number(e.target.value))} />
-      </label>
-      <button type="button" className="wt-btn" onClick={() => setFont({ ...DEFAULT_FONT })}>Reset font</button>
-      <div className="wt-pop-title">Notifications</div>
+      <PathLinksSettings />
+      <SendSettings />
+      <ShellIntegrationSettings />
+      <div className="wt-pop-title" data-section="alerts">Alerts</div>
       <label className="wt-item" style={{ cursor: 'pointer' }}>
         <input type="checkbox" checked={prefs.notify} onChange={(e) => setNotify(e.target.checked)} />
         <span className="wt-grow">Desktop notification when an agent needs me or finishes while I am elsewhere</span>
@@ -178,16 +180,15 @@ export function SettingsMenu(): ReactElement {
         Flag a working agent as stuck after (minutes, 0 = never)
         <input className="wt-input" type="number" min={0} max={240} step={1} value={prefs.hungMinutes} onChange={(e) => setHungMinutes(Number(e.target.value))} />
       </label>
-      <PathLinksSettings />
-      <ShellIntegrationSettings />
-      <SendSettings />
-    </div>
+      <CommandAlertSettings />
+    </Pop>
   )
 }
 
 // ── clickable file paths (setting block) ──
 
 const PATH_TARGETS: Array<{ value: PathTarget; label: string }> = [
+  { value: 'code', label: 'Code (this app)' },
   { value: 'vscode', label: 'VS Code' },
   { value: 'cursor', label: 'Cursor' },
   { value: 'default', label: 'OS default app' },
@@ -199,7 +200,7 @@ function PathLinksSettings(): ReactElement {
   const prefs = getPrefs()
   return (
     <>
-      <div className="wt-pop-title">Clickable file paths</div>
+      <div className="wt-pop-title" data-section="paths">Paths</div>
       <label className="wt-field" title="Ctrl+click (Cmd+click on macOS) a file path in the output to open it">
         Open with
         <select className="wt-input" value={prefs.pathTarget} onChange={(e) => setPathTarget(e.target.value as PathTarget)}>

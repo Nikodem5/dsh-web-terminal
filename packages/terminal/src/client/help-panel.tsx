@@ -4,10 +4,12 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import { Pop } from './popover.tsx'
 import { getStats, subscribeStats } from './stats.ts'
 import {
   ACTIVITY_ORDER,
   ACTIVITY_TITLE,
+  AGENT_MARK_HELP,
   ATTENTION_LEGEND,
   BLOCK_ACTIONS,
   COMMAND_ALERT_LEGEND,
@@ -114,7 +116,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
   }
 
   return (
-    <div className="wt-pop wt-help" data-right="true" role="dialog" aria-label="Help" onPointerDown={(e) => e.stopPropagation()}>
+    <Pop className="wt-help" data-right="true" role="dialog" aria-label="Help" onPointerDown={(e) => e.stopPropagation()}>
       <div className="wt-help-head">
         <input ref={inputRef} className="wt-input wt-grow" value={query} placeholder="Filter shortcuts…" aria-label="Filter shortcuts" onChange={(e) => setQuery(e.target.value)} />
         <button type="button" className="wt-hbtn" title="Close (Esc)" onClick={onClose}>✕</button>
@@ -193,6 +195,15 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
           ))}
         </Section>
 
+        <Section title="Files changed by an agent">
+          {AGENT_MARK_HELP.map((m) => (
+            <div key={m.how} className="wt-help-row">
+              <span className="wt-help-how">{m.how}</span>
+              <span>{m.what}</span>
+            </div>
+          ))}
+        </Section>
+
         <Section title="Stats bar">
           {STATS_LEGEND.map((s) => (
             <div key={s.term} className="wt-help-row">
@@ -215,6 +226,6 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
           </div>
         </Section>
       </div>
-    </div>
+    </Pop>
   )
 }

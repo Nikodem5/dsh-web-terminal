@@ -33,7 +33,8 @@ export const MOUSE_ACTIONS: readonly MouseAction[] = [
   { how: 'Drag a window to an edge', what: 'Snap: top = maximize, left / right = half, bottom = half, corner = quarter' },
   { how: 'Drag a maximized title bar', what: 'Restore the previous size under the pointer' },
   { how: 'Drag an edge or corner', what: 'Resize (not while pinned or maximized)' },
-  { how: 'Ctrl+click a link or file path', what: 'Open it: links in the browser, paths in the editor chosen in Aa (Cmd+click on macOS)' },
+  { how: 'Ctrl+click a link or file path', what: 'Open it: links in the browser, paths in the target chosen in Aa: "Code (this app)" (the default for new users, falls back to VS Code when the Code plugin is not installed), VS Code, Cursor, ... (Cmd+click on macOS)' },
+  { how: 'More menu ("..."): Review changes in this folder', what: "Open the window's folder (the shell's current folder when known) in the Code plugin, showing its uncommitted changes. Only shown when the Code plugin is installed, and not for ssh windows" },
   { how: 'Right-click a selection', what: 'Send menu: copy, another terminal, or a new Claude terminal' },
   { how: 'Shift+right-click a selection', what: 'The same inside programs that use the mouse (they get plain right-clicks)' },
   { how: 'Shift+drag in the terminal', what: 'Select text inside programs that use the mouse (Windows / Linux)' },
@@ -111,6 +112,18 @@ export const STATS_LEGEND: readonly StatsLegendItem[] = [
   { term: '2.5B tok', what: 'All-time tokens processed, cache reads included; hover for the input / output / cache split.' },
   { term: '3 agents', what: 'Claude sub-agents running right now, across all terminals.' },
   { term: '● 2 working', what: 'Terminals by agent status (working, needs you, finished).' },
+]
+
+export interface AgentMarkHelp {
+  how: string
+  what: string
+}
+
+/** Mirrors the code editor's agent markers (packages/code-editor/src/client/agent-marks.ts). */
+export const AGENT_MARK_HELP: readonly AgentMarkHelp[] = [
+  { how: '⚡ in the code editor', what: 'A file a Claude session in one of your open terminals changed (Edit, Write, MultiEdit, NotebookEdit). It shows in the explorer (folders above it get a faint dot), tabs, quick open and the CHANGES list; hover for the terminal, the time and the tool.' },
+  { how: 'Temporary', what: 'The mark lasts while that terminal is open. Closing the terminal, or restarting its shell, removes it.' },
+  { how: 'Needs Claude hooks', what: 'Only Claude started through this plugin reports edits; shell commands and other editors are not marked.' },
 ]
 
 // ── diagnostics ──

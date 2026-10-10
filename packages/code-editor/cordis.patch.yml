@@ -1,0 +1,10 @@
+# dsh-code-editor bundle patch.
+#
+# Inserts the host row that registers the editor's file/git routes
+# (/api/dsh-code-editor/*) and the live-update WebSocket (/code-editor/ws).
+#
+# The browser half (the Code page) is discovered separately by the client-modules
+# registry from the `dsh.client` and `exports["./client"]` fields in package.json.
+- insert:
+    - id: code-editor
+      name: dsh-code-editor
