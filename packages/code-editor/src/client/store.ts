@@ -9,6 +9,9 @@ import { baseName, dirName, findRoot, joinRel, languageFor, normKey, relativeTo,
 import { DEFAULT_LAYOUT, defaultStorage, loadGlobal, loadRootState, sanitizeLayout, saveGlobal, saveRootState, type Layout, type StorageLike } from './persist.ts'
 import type { GitFile, GitStatus, OpenRequest, RepoEntry, RepoList, RootInfo, TreeEntry, WsFrame } from './types.ts'
 import { openLive, type LiveState, type SocketCtor } from './ws.ts'
+import { MarkdownController } from './md-state.ts'
+import { SearchController } from './search-state.ts'
+import type { SearchMatch } from './types.ts'
 
 export interface GitState { status: GitStatus | null; notGit: boolean; error: string | null; loading: boolean }
 /** The repositories of the CHANGES view; `list === null` until the first discovery finished. */
@@ -125,6 +128,9 @@ export class EditorStore {
   private storage: StorageLike | null
   private folders: string[]
   readonly deps: Deps
+  // --- search in files + markdown preview (ce-search-md): logic lives in search-state.ts / md-state.ts ---
+  readonly search: SearchController
+  readonly md: MarkdownController
 
   constructor(deps: Deps) {
     this.deps = deps
@@ -136,6 +142,10 @@ export class EditorStore {
       repos: { list: null, loading: false, truncated: false, error: null }, repoGit: {}, folders: g.folders, layout: g.layout ?? DEFAULT_LAYOUT,
       tabs: [], active: null, inline: false, cursor: null, live: 'down', quickOpen: false, changesFocus: 0, notice: null, hostReady: false, recent: [],
     }
+    this.search = new SearchController({
+      api: deps.api, root: () => this.s.root, open: (path, match) => this.openSearchMatch(path, match), clearHighlight: () => this.host?.clearHighlight?.(),
+    })
+    this.md = new MarkdownController({ getText: (id) => this.host?.getValue(id) ?? this.tab(id)?.initial ?? null, active: () => this.s.active })
   }
 
   // ---- store plumbing -------------------------------------------------------------------------------------------
@@ -258,6 +268,8 @@ export class EditorStore {
     if (dirty.length > 0 && !this.confirm(`${dirty.length} file(s) have unsaved changes (${dirty.map((t) => t.title).join(', ')}). Switch folder and discard them?`)) return false
     this.persistRoot()
     this.closeLive()
+    this.search.reset()
+    this.md.reset()
     for (const t of this.s.tabs) this.host?.disposeModel(t.id)
     const gen = ++this.generation
     const st = loadRootState(this.storage, root)
@@ -385,6 +397,7 @@ export class EditorStore {
     this.persistRoot()
     await this.ensureLoaded(id)
     if (this.s.active === id) this.syncEditor()
+    this.md.activeChanged(this.s.active)
   }
 
   private async ensureLoaded(id: string): Promise<void> {
@@ -469,6 +482,7 @@ export class EditorStore {
     const idx = this.s.tabs.findIndex((x) => x.id === id)
     const tabs = this.s.tabs.filter((x) => x.id !== id)
     this.host?.disposeModel(id)
+    this.md.forget(id)
     let active = this.s.active
     if (active === id) active = tabs[Math.min(idx, tabs.length - 1)]?.id ?? null
     this.set({ tabs, active })
@@ -497,6 +511,7 @@ export class EditorStore {
       if (!t || t.kind !== 'file') return
       const v = host.getValue(id)
       if (v === null) return
+      this.md.notifyEdit(id)
       const dirty = v !== t.saved
       if (dirty !== t.dirty) this.patchTab(id, { dirty })
     })
@@ -507,10 +522,13 @@ export class EditorStore {
     host.onKey((a) => {
       if (a === 'save') void this.save()
       else if (a === 'quickOpen') this.setQuickOpen(!this.s.quickOpen)
-      else this.closeActive()
+      else if (a === 'closeTab') this.closeActive()
+      else this.searchKey(a)
     })
+    host.onScroll?.((id, ratio) => this.md.scrolled(id, ratio))
     this.set({ hostReady: true })
     this.syncEditor()
+    this.md.activeChanged(this.s.active)
   }
 
   /** Load the editor lazily (first time the page opens). Failure leaves the page usable without an editor. */
@@ -953,7 +971,27 @@ export class EditorStore {
     try { await this.deps.api.tree(root, rel); return true } catch { return false }
   }
 
+  // --- search in files + markdown preview glue (ce-search-md) ---
+
+  /** Search shortcuts: show the SEARCH view / step through the results. */
+  searchKey(action: 'searchFiles' | 'searchNext' | 'searchPrev'): void {
+    if (action === 'searchFiles') this.search.show()
+    else void this.search.step(action === 'searchNext' ? 1 : -1, true)
+  }
+
+  /** Open a search match: the file at the match, with the match highlighted in the editor. */
+  async openSearchMatch(path: string, match: SearchMatch): Promise<void> {
+    await this.openFile(path, { line: match.line, col: match.col })
+    const t = this.tab(fileId(path))
+    if (t && this.s.active === t.id) this.host?.highlight?.(t.id, match.line, match.col, match.length)
+  }
+
+  /** Open a link of the markdown preview: a root-relative `.md` file (and scroll to a heading id when it has one). */
+  async openPreviewLink(path: string): Promise<void> { await this.openFile(path) }
+
   dispose(): void {
+    this.search.dispose()
+    this.md.dispose()
     this.closeLive()
     if (this.gitTimer !== null) clearTimeout(this.gitTimer)
     this.host?.dispose()

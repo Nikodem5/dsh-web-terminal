@@ -1,6 +1,8 @@
 // dsh-code-editor - stylesheet for the Code page, injected once. Colours are local --ce-* tokens that follow
 // the MEASURED app scheme (data-scheme), so a theme whose tokens disagree with color-scheme cannot give white-on-white.
 
+import { SEARCH_MD_CSS } from './search-md-styles.ts'
+
 export const VIEW_CSS = `
 .ce-view { --ce-accent: #4d6bfe; --ce-warn: #f0b429; --ce-danger: #ff6b6b; --ce-ok: #3fd68f;
   --ce-line: #333844; --ce-surface: #1b1d23; --ce-deep: #14161b; --ce-text: #e8eaed; --ce-dim: #9aa0a6; --ce-hover: #ffffff14; --ce-sel: #4d6bfe33; --ce-field: #101216; color-scheme: dark;
@@ -140,6 +142,6 @@ export function injectStyles(): void {
   injected = true
   const el = document.createElement('style')
   el.dataset.dshCodeEditor = 'view'
-  el.textContent = VIEW_CSS
+  el.textContent = VIEW_CSS + SEARCH_MD_CSS
   document.head.appendChild(el)
 }

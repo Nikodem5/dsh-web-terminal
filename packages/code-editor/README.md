@@ -53,7 +53,7 @@ One watcher per root, shared by all its sockets, closed 30 s after the last sock
 
 ## Client (the Code page)
 
-Source in `src/client/`, built by `node build.mjs` into one classic script (`lib/client.js`, about 3.8 MiB: Monaco 0.52.2 lite, the editor worker and the codicon font are embedded). Monaco only runs when the Code page first opens, so a failure there shows a notice and never breaks plugin loading. Workers start from a blob URL (data: URL, then the main thread, as fallbacks). Highlighting is Monarch only (no TypeScript language service); JSON has a small built-in grammar.
+Source in `src/client/`, built by `node build.mjs` into one classic script (`lib/client.js`, about 3.9 MiB: Monaco 0.52.2 lite, the editor worker and the codicon font are embedded). Monaco only runs when the Code page first opens, so a failure there shows a notice and never breaks plugin loading. Workers start from a blob URL (data: URL, then the main thread, as fallbacks). Highlighting is Monarch only (no TypeScript language service); JSON has a small built-in grammar.
 
 ### Features
 
@@ -64,6 +64,8 @@ Source in `src/client/`, built by `node build.mjs` into one classic script (`lib
 - Tabs with a dirty dot, middle-click close and a confirmation for unsaved tabs. Files open in Monaco; change entries open in the diff editor (staged or unstaged, side by side or inline).
 - Saving sends `expectedMtime`. A 409 (or an on-disk change under unsaved edits) shows "File changed on disk" with Reload / Overwrite / Compare (disk vs mine diff, then keep mine or take disk).
 - A clean open tab reloads silently on disk changes (cursor and scroll kept). Status bar: branch, ahead/behind, live state, root, line:col, EOL, language.
+- **Search in files** (sidebar `Files | Search` switch, `Ctrl+Shift+F`): query box with match-case, whole-word and regex toggles, collapsible include / exclude globs (`*.ts, src/**`; a bare name matches anywhere), results grouped by file with counts. Typing is debounced (300 ms), toggles search at once, and a newer search aborts the older request (the host stops its `git grep` / worker when the connection drops). Clicking a result opens the file at the match and highlights it (Monaco decoration); Up/Down in the box move the selection, Enter opens it, `F4` / `Shift+F4` step through results from anywhere in the view. Host side (`GET /search`): `git grep -n --column -I` (+ `--untracked --exclude-standard`) in git roots, a symlink-skipping walk elsewhere; caps 2000 matches / 200 files, 10 s budget, previews ~200 characters around the match. Regular-expression work (the walk, and locating matches in `git grep` lines) runs in a worker thread that is terminated at the deadline, so a catastrophic pattern returns partial results with `timedOut` instead of freezing the host. Patterns use JavaScript regex syntax.
+- **Markdown preview** (`.md` / `.markdown` tabs): an `Editor | Side by side | Preview` switch in the breadcrumb row; the preview follows typing (200 ms debounce) and the editor scroll position (by ratio, side by side only). Rendering is `marked` (GFM: tables, task lists, fences, strikethrough) followed by **DOMPurify** (plain-HTML profile: no scripts, handlers, svg / math / forms / media / `style` / `class` / `id` / `data-*`) and a post-pass that rewrites links and images; the result is appended as a DOM fragment, never re-parsed. The markdown is treated as hostile (agents, untrusted repositories). Links: relative `.md` links open in the editor, `http(s)` links open with `window.open(..., 'noopener,noreferrer')` (anchors carry no `href`, so middle-click cannot navigate), `#anchors` scroll to heading ids, everything else (`javascript:`, `mailto:`, `file:`, ...) is inert text. Images: relative images are fetched through `GET /raw` (rasters and svg only, 5 MiB cap, shown from a blob URL); **remote images are never loaded** (privacy / tracking) and show a `[image: alt]` placeholder. Fenced code is coloured with Monaco's `colorize`, its output rebuilt node by node (only text and `mtk` spans survive).
 - Per-root UI state (open tabs, active tab, expanded folders, diff layout) is kept in `localStorage`.
 
 ### Shortcuts
@@ -74,7 +76,11 @@ Source in `src/client/`, built by `node build.mjs` into one classic script (`lib
 | Ctrl+P | Same, where the app lets the page have it (see below) |
 | Ctrl+S | Save the active file |
 | Ctrl+F4 | Close the active tab (asks when dirty); also middle-click or the tab's x |
+| Ctrl+Shift+F, Ctrl+Shift+H | Search in files (shows the SEARCH view and focuses the box) |
+| F4 / Shift+F4 | Next / previous search result (only while there are results) |
 | Ctrl+F | Find (Monaco) |
+
+**Why the search keys.** Checked against the app's shortcut registry (`app.asar`: `register("session.fork", ..., "KeyF", ["primary","alt"], ["primary","shift"])`): `Ctrl+Shift+F` is free in the desktop build (fork session is `Ctrl+Alt+F` there) but the app's web build binds it to "fork session", so `Ctrl+Shift+H` (VS Code's replace-in-files key, unused by the app) is a second binding that always works. While the Code page is mounted, the page's capture-phase listener takes both. Bare `F4` is unused by the app (only `Alt+F4` is special-cased); `Ctrl+F4` stays close-tab. There is no shortcut for the markdown preview (VS Code's `Ctrl+Shift+V` is the paste-as-plain-text accelerator of most shells); use the switch.
 
 **Why these keys.** The desktop app owns some accelerators and handles them before the page: Ctrl+W (it minimises the window, so closing a tab is Ctrl+F4 instead) and Ctrl+P (its own file page, `Mod+P`; so search files defaults to Ctrl+E, VS Code's alias of Quick Open). Ctrl+T, Ctrl+K and Ctrl+B are the app's too. The keys are caught on `window` in the capture phase while the Code page is mounted (so they work with the focus anywhere on the page, not only inside the page's own elements) and again as Monaco commands in the editor. Ctrl+S / Ctrl+F4 are not taken inside plain text inputs (folder path, quick-open box); the search key works everywhere.
 
@@ -94,4 +100,4 @@ On load the editor sets `window.__dshCodeEditor = { version: 1 }` so other plugi
 
 ### Client tests
 
-`tests/client-*.test.mjs` (api wrapper, fuzzy ranking, changes grouping, discard plan, explorer rows, shortcuts, persistence, live socket, store state machine) and `smoke-view.mjs` (renders the page in jsdom with a mocked fetch and a fake editor host).
+`tests/search-routes.test.mjs` (host search + raw routes), `tests/client-search.test.mjs` (search state, shortcuts), `tests/markdown.test.mjs` (render, sanitizer XSS corpus, links, images, preview state), `tests/client-*.test.mjs` (api wrapper, fuzzy ranking, changes grouping, discard plan, explorer rows, shortcuts, persistence, live socket, store state machine) and `smoke-view.mjs` (renders the page in jsdom with a mocked fetch and a fake editor host).
