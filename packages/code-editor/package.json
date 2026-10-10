@@ -3,5 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "description": "Monaco-based code editor plugin for DeepSeek Harness (placeholder, coming next).",
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "jsdom": "^29.1.1",
+    "monaco-editor": "^0.52.2"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/client-*.test.mjs && node smoke-view.mjs"
+  }
 }
