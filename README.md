@@ -30,7 +30,11 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Switch terminals | **Ctrl+Alt+←/→** cycles through the list order (works while a terminal has focus) |
 | Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste |
 | Find in terminal | **Ctrl+F** (or `⋯` → Find…) opens a find bar over the focused terminal: highlights every match in the scrollback, `n / total` counter, **Enter** / **Shift+Enter** next/previous, match-case / whole-word / regex toggles, **Esc** closes. Pre-fills from a one-line selection |
+| Jump to new output | **Ctrl+Shift+U** scrolls to the "new since" divider (see below) |
 | Links | URLs in terminal output are underlined on hover; **Ctrl+click** (Cmd+click) opens them in your system browser (plain clicks still select text) |
+
+### Overview (mission control)
+**Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Knowing what your agents are doing
 Status comes from the agent itself, not from guessing at output.
@@ -54,6 +58,9 @@ Status comes from the agent itself, not from guessing at output.
 - **Broadcast**: **⇉ Broadcast** adds checkboxes to the list. Type a command in the bar and Enter sends it to
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
+
+### New since you last looked
+A terminal counts as looked at while its window is focused, the Terminals page is showing and the app is in front. When you stop looking, the plugin remembers where the output ended. Output that adds at least one new line while you are away shows as a small count on the terminal's list row (separate from attention badges; in-place repaints such as a status line do not count). When you come back, a thin divider `── new since 14:32 ──` marks the first new line and stays until you look away again. If it is above the visible rows, a `↓ 42 new lines` pill at the window's bottom right (or **Ctrl+Shift+U**) jumps to it. Full-screen programs (vim, htop) are skipped, and a divider whose line has scrolled out of the scrollback is not shown. Attention and alerts are unchanged.
 
 ### Stats bar (chat header and Terminals page)
 A compact one-line bar in the chat header, and again in the Terminals page toolbar (next to *Close all*): terminal counts by status (working, needs you,
@@ -81,18 +88,100 @@ first; completed ones are dimmed and drop off about five minutes after they end.
 run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;
 an older host without them simply shows an empty panel.
 
+### Clickable file paths
+Hold **Ctrl** (**Cmd** on macOS) over a file path in the output: it is underlined, the pointer changes and a tooltip
+shows the resolved path. **Ctrl+click** opens it; plain clicks still select text and reach TUIs that read the mouse.
+Only paths that **exist** are linked (checked by the host, batched, cached per terminal for 10 s, misses included).
+
+- **Detected**: `C:\a\b.ts`, `C:/a/b.ts`, `\\server\share\f`, `/a/b.ts`, `~/a/b`, `src/a.ts`, `./a`, `../a`, and a bare
+  `file.ext` (extension required). Positions: `:12`, `:12:5`, `(12)`, `(12,5)`, `#L12`, `#L12-L20`, `line 12`
+  (`, line 12, column 5`). Quotes, brackets and trailing `. , ; :` are stripped; paths with spaces need quotes. URLs
+  (the web-links addon owns those), versions (`1.2.3`), times (`12:30`) and ratios are ignored. Wrapped lines are joined.
+- **Relative paths** resolve against the terminal's folder: on **Linux** the live cwd of the shell's newest
+  descendant (else the shell) from `/proc`, so a `cd` is followed. On **Windows and macOS** only the folder the
+  terminal was started in is known, so after a `cd` relative paths still resolve against the start folder (absolute
+  ones are unaffected). Git Bash `/c/Users/...` paths are mapped to `C:\Users\...` on Windows.
+- **Aa → Clickable file paths → Open with**: `VS Code` (default, `code -g file:line:col`), `Cursor`, `OS default app`
+  (Explorer / `xdg-open` / `open`; programs and scripts such as `.exe .bat .sh` are refused, since opening would run
+  them) or `Custom command`, a template like `myeditor {file}:{line}:{col}`. Placeholders `{file} {line} {col} {dir}`;
+  quotes group arguments; each argument is substituted separately (a path with spaces stays one argument). A missing
+  line/col written after a `:` is dropped together with the colon, anywhere else it becomes `1`. Folders always open in
+  the file manager. If the editor is missing, a message appears in the terminal (e.g. "VS Code not found on PATH").
+- **Routes** (behind the harness `/api` checks, POST JSON): `/api/dsh-web-terminal/paths`
+  `{terminalId, cwd?, candidates[≤50, ≤1024 chars]}` → `{ok, results:[{candidate, path|null, isDir}]}` (`stat` only,
+  file contents are never read; `cwd` is the fallback when the session is unknown), and `/api/dsh-web-terminal/open`
+  `{path, line?, col?, target:'vscode'|'cursor'|'default'|'custom', template?}` → `{ok}` or `{ok:false, error}`. The path
+  is re-checked to exist. Programs are started from an argv array, detached, without a shell; on Windows a `.cmd` shim
+  is replaced by the real `Code.exe`/`Cursor.exe` beside it, and only if there is none run through `cmd.exe` after
+  arguments with shell metacharacters are refused. The browser already has a full shell over `/terminal/ws`, so a
+  custom command adds no capability.
+
+### Command blocks / shell integration
+
+A shell that cooperates tells the terminal where each prompt, command and output starts and how the command ended, so
+every command becomes a **block**. Phase 1 draws a thin bar in the left padding of the terminal: pulsing accent while
+the command runs, green when it succeeded, red when it failed (grey if the shell reported no exit code). The model
+(command, exit code, duration, folder, xterm markers for prompt / input / output / end; up to 500 per terminal) is
+kept for the next steps (hover actions, jumping between blocks, failed-command alerts). The shell also reports its
+**real current folder**, which Ctrl+click on a relative path now resolves against, even on Windows where a `cd` was
+invisible before. When it is active, the startup command is typed the moment the first prompt is ready instead of after
+a quiet period.
+
+- **How**: invisible OSC sequences, VS Code's convention: `133;A` prompt start, `133;B` prompt end, `133;C` output
+  start, `133;D;<exit>` finished, `633;E;<command>` the command line (`\`, `\x3b` for `;` and `\xNN` for control
+  characters), `633;P;Cwd=<folder>`. OSC 7 (`file://host/path`) is understood too. Nothing is printed.
+- **Injected at spawn, your files stay untouched.**
+  - PowerShell 5.1 / 7: `powershell.exe -NoLogo -NoExit -Command ". ([scriptblock]::Create([IO.File]::ReadAllText('<plugin>/lib/shell/integration.ps1')))"`.
+    Your profile loads first; the script then wraps whatever `prompt` exists (oh-my-posh, starship, your own): D with the
+    exit code, the folder and A before it, B after it. C and E come from wrapping `PSConsoleHostReadLine`, which PowerShell
+    calls once per accepted line whatever key accepted it. Without PSReadLine there is no such hook, so only prompts and
+    folder are reported (no blocks). The script is read as text, so a Restricted execution policy does not block it.
+  - bash (Linux): `bash --rcfile <plugin>/lib/shell/integration.bash -i`. The script first sources `~/.bashrc` (bash
+    itself reads `/etc/bash.bashrc` where the distro builds that in), then prepends to `PROMPT_COMMAND` (your `$?` is
+    preserved), appends B to `PS1` last (so prompt tools that rewrite `PS1` keep working), and prints C from `PS0`
+    (bash 4.4+) or a `DEBUG` trap on older versions. E is read from history after the command ended.
+  - Git Bash: the same with `DSH_WT_BASH_LOGIN=1` in the environment instead of `-l` (a login shell ignores
+    `--rcfile`): the script replays `/etc/profile` and the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`. The
+    shell is therefore not a "login shell" (`logout` does not work, use `exit`).
+  - cmd, WSL, sh, fish: no integration. **zsh: not yet** (needs a `ZDOTDIR` shim; started as before).
+- **Turn it off**: Aa menu, **Shell integration** (applies to terminals started after the change; the client adds
+  `integration=0` to the socket URL), or `DSH_WT_SHELL_INTEGRATION=0` in the harness environment for every shell.
+- **Limits**: a command that bash's history does not record (`HISTCONTROL=ignorespace`) has its text read from the
+  screen instead. A nested shell or `ssh` session does not report (its prompt is not wrapped). A prompt function that
+  returns nothing (so PowerShell would print its own `PS>`) gets B before that text.
+### Send a selection to another terminal
+Select text (an error in a build terminal, say), **right-click** it and pick where it goes, or press **Ctrl+Shift+S**
+(arrows + Enter, Esc cancels). The menu offers **Copy**, every other connected terminal (agents first, with their
+status dot) and **New Claude terminal here** (same folder and shell; the text is sent once `claude` is typed, its screen
+is quiet and it has switched paste mode on, and is copied to the clipboard instead if that takes over a minute).
+
+- The text is **pasted, never submitted**: you add context and press Enter. It goes in as a bracketed paste when the
+  target enabled that mode (Claude Code does); otherwise it is typed with the last line left open, and a multi-line
+  send asks first because each line would run. Trailing spaces are trimmed and control characters removed; over 32 KB
+  asks first. The target window is focused and restored if minimized.
+- **Aa → Send selection**: "Wrap text sent to an agent in a code block" (default on) sends a fenced block so the agent
+  reads it as quoted output. Other terminals get the plain text.
+- **Mouse programs**: while a TUI tracks the mouse, right-click belongs to it and passes through; **Shift+right-click**
+  (xterm's usual "select instead" key) opens the menu there. Without a selection right-click is unchanged.
+
 ### Safety
 - Closing a terminal that is still **working or waiting** (single close, **Close all**, replacing a layout)
   asks first. Restarting a busy shell asks too.
 - `⋯` → **Save log…** downloads the terminal's scrollback as a text file.
 
 ### Look
-VS Code Dark+/Light+ colours following the app theme, rounded windows with an accent-ringed focus state, thin
-scrollbars. **Aa** sets the **font** (presets or any installed font list; default
-`'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace` at 12 px), size and line height, for all
-terminals. **Shrink font to fit window** (on by default, in **Aa**): in narrow windows the font shrinks just enough
-to keep about 100 columns visible (adjustable; never below 9 px, never above your size), so tiled terminals stay
-readable without wrapping. Text colours in the dialogs and bars are chosen from the *measured* background, so they stay legible
+Dark/light palettes derived from VS Code Dark+/Light+ and brightened for readability: every text colour
+(black aside) is at least 4.5:1 against the background, default text 15.7:1 dark / 18.5:1 light. Rounded windows with an
+accent-ringed focus state, thin scrollbars, 8 px of padding inside each window. **Aa** sets the **font** (presets or
+any installed font list; default `'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas,
+'DejaVu Sans Mono', 'Liberation Mono', monospace` at 14 px; no ligatures, xterm draws none without an addon), size,
+line height (1.2), letter spacing (0-2 px), bold weight (600) and **Contrast** (Off 1:1 / Normal 4.5:1 / High 7:1:
+xterm lifts any text colour that is closer than this to its background, so grey hints stay legible; dim/faint text
+gets half the ratio, so pick High if it is still too faint) for all terminals, live. Stored fonts equal to the old
+12 px default move to the new defaults; a font you chose keeps its values. **Shrink font to fit window** (on by
+default, in **Aa**): in narrow windows the font shrinks just enough to keep about 100 columns visible (adjustable;
+never below 12 px, never above your size), so tiled terminals stay readable; a window narrower than that shows fewer
+columns instead of smaller text. Text colours in the dialogs and bars are chosen from the *measured* background, so they stay legible
 whatever the theme's tokens say. New terminals open first in the list and on top of the stack.
 
 Switching tabs or sessions does **not** touch the terminals. Window layout, names, folders, favourites and
@@ -121,12 +210,16 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
+| `lib/paths.js`, `lib/open.js` | Clickable paths: existence check with cwd rules; opening in an editor from an argv (no shell) |
+| `src/client/paths.ts`, `path-links.ts` | Path detection (pure) and the xterm link provider |
 | `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
 | `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
 | `lib/hook-post.js` | Command-hook forwarder Claude runs for `SessionStart` (HTTP hooks are ignored there) |
 | `lib/statusline.js` | Status-line wrapper Claude runs: posts usage / sub-agent tasks to the host, relays the user's own line |
 | `lib/subagents.js` | Pure per-terminal sub-agent store (status-line tasks + Start/Stop hooks, retention, cap) |
 | `lib/post.js` | Shared loopback POST and stdin helpers of the two scripts above |
+| `lib/shells.js`, `lib/shell/integration.ps1`, `integration.bash` | Shell table and the integration injected at spawn (command blocks, real cwd) |
+| `src/client/blocks.ts`, `blocks-settings.tsx`, `blocks.css.ts` | OSC 133/633 parsing, the block model, the gutter bars, the Aa switch |
 | `src/client/start.ts` | Plugin start: reconnects every saved terminal before the page is opened |
 | `src/client/index.ts` | Registers the sidebar entry (`sidebar.panellist`), the page (`main`) and the header stats bar; injects the session's folder into the bar |
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
@@ -140,7 +233,7 @@ Restart the desktop app: plugins load at boot. `node install.mjs --remove deskto
 | `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
 | `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, stuck detection |
 | `src/client/launch.ts` | Adds `--settings` to a `claude` startup command |
-| `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet) |
+| `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet; or the shell integration's prompt-ready signal) |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
 | `smoke-host.mjs` / `smoke-client.mjs` / `smoke-view.mjs` | Tests |
@@ -239,7 +332,7 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
   reachable wherever the harness web server is (loopback by default).
 - Up to 24 concurrent shells. A second connection to the same id (e.g. another browser tab) supersedes the first.
 - The page is registered under the `main` key and sidebar id `dsh-web-terminal`; the sidebar selects it by that id. On macOS the toolbar pads its top by the frame's `--dsh-frame-top-clearance`.
-- Not yet: clickable file paths, font zoom (Ctrl+wheel), per-terminal colour tags, quick-send snippets.
+- Not yet: font zoom (Ctrl+wheel), per-terminal colour tags, quick-send snippets.
 
 ## Roadmap (planned ideas, not built yet)
 
@@ -259,7 +352,6 @@ Ordered roughly by how much they help when running several agents. Recommended f
 - **Search all terminals** — one search box across every terminal's scrollback, jumping to the match.
 
 ### Files and input
-- ★ **Clickable file paths** — `Ctrl+click` on `src/foo.ts:42` opens it (URLs already work).
 - **Drag a file or folder onto a terminal** — pastes its quoted path.
 - **Quick-send snippets** — saved prompts sent to one terminal or to the broadcast group.
 

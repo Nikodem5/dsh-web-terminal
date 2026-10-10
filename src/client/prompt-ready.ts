@@ -14,8 +14,10 @@ export const startupTiming = {
  * How long to wait before typing the startup command, 0 meaning now. A shell is ready once it has printed
  * something and then gone quiet; each chunk of output restarts the quiet period, so a slow profile that
  * prints in pieces is waited out. With no output at all the max bound applies.
+ * With shell integration the shell says exactly when its prompt is ready for input (`promptReady`), so there is no waiting.
  */
-export function startupWait(now: number, attachedAt: number, lastOutputAt: number | undefined, t = startupTiming): number {
+export function startupWait(now: number, attachedAt: number, lastOutputAt: number | undefined, t = startupTiming, promptReady = false): number {
+  if (promptReady) return 0
   const deadline = attachedAt + t.maxMs
   const readyAt = lastOutputAt === undefined ? deadline : Math.max(attachedAt + t.minMs, lastOutputAt + t.settleMs)
   return Math.max(0, Math.min(readyAt, deadline) - now)

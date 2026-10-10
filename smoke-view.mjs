@@ -258,6 +258,20 @@ check(qa('.wt-li').length === 2, 'second terminal appears in the list')
   const z = wins.map((w) => Number(w.style.zIndex))
   check(z[0] > z[1], `new terminal has the highest z-index (${z.join(' vs ')})`)
 }
+
+// output to a terminal that is not in front leaves a subtle unread count in its list row
+{
+  window.document.hasFocus = () => true
+  const row = () => q('.wt-li[data-focused="false"]') // the first terminal: the new one has focus
+  check(row()?.querySelector('.wt-unread') === null, 'no unread indicator before any output')
+  sock.push({ type: 'data', data: 'a\r\nb\r\nc\r\n' })
+  await sleep(120)
+  const mark = row()?.querySelector('.wt-unread')
+  check(mark?.textContent === '3' && row()?.querySelector('.wt-badge') === null, `an unfocused terminal shows 3 unread lines, apart from attention badges (got "${mark?.textContent}")`)
+  click(row())
+  await sleep(60)
+  check(row()?.querySelector('.wt-unread') === null, 'looking at the terminal clears the list indicator')
+}
 const focusedBefore = q('.wt-li[data-focused="true"] .wt-li-name')?.textContent
 doc.defaultView.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))
 await sleep(40)
@@ -296,14 +310,14 @@ check(focusedBefore !== focusedAfter, `Ctrl+Alt+Right moves focus (${focusedBefo
   check(q('.wt-find') === null, 'Esc closes the find bar')
 }
 
-// smaller default font, and the settings menu shows it
+// bigger default font, and the settings menu shows it
 {
   click(byText('.wt-bar button', 'Aa'))
   await sleep(30)
   const numbers = qa('.wt-pop input[type="number"]').map((i) => i.value)
   check(q('.wt-pop select')?.value === 'dark', 'terminal colours default to dark')
   check(q('.wt-view').style.getPropertyValue('--wt-term-bg') === '#14161b', 'window chrome matches the terminal background')
-  check(numbers[0] === '12', `default terminal font size is 12 (got ${numbers[0]})`)
+  check(numbers[0] === '14', `default terminal font size is 14 (got ${numbers[0]})`)
   check(byText('.wt-pop .wt-item', 'Shrink font to fit window') !== undefined && numbers.includes('100'), 'settings offer auto-fit font with a 100-column default')
   click(byText('.wt-bar button', 'Aa'))
   await sleep(20)
@@ -395,13 +409,14 @@ sock.push({ type: 'agent', provider: 'claude', state: 'working', detail: '' })
 await sleep(40)
 ReactDOM.flushSync(() => barRoot.render(React.createElement(statsBar, barProps)))
 await sleep(60)
-const pageBar = q('.wt-view .wt-bar .wt-stats')
+const pageBar = q('.wt-view .wt-statsrow .wt-stats')
 check(pageBar !== null && pageBar.textContent.includes('5h 42%') && pageBar.textContent.includes('$12.34'), 'the stats bar also renders in the page toolbar')
 check(pageBar?.textContent.includes('1 working') === true, 'the page bar counts agents live too (two bars share the poller)')
 const barText = barHost.textContent
 check(barText.includes('5h 42%') && barText.includes('7d 63%') && barText.includes('out ~'), `stats bar shows limits (${barText})`)
 check(barText.includes('$12.34') && barText.includes('2.5B tok'), 'stats bar shows cost and tokens')
 check(barText.includes('1 working'), 'stats bar counts a working agent')
+check(barHost.querySelectorAll('.wt-pct').length === 2 && barHost.querySelectorAll('.wt-pct-warn').length === 1 && barHost.querySelector('.wt-pct-danger') === null, 'stats bar colours only the 63% percentage (warn), not 42%')
 sock.push({ type: 'agent', provider: 'claude', state: 'needs-you', detail: 'Permission: Bash: ls' })
 await sleep(60)
 check(barHost.textContent.includes('1 needs you') && !barHost.textContent.includes('working'), 'agent counts update live without a re-render')
@@ -410,7 +425,7 @@ await sleep(60)
 check(barHost.querySelector('.wt-stats-warn') !== null, 'out time is highlighted')
 ReactDOM.flushSync(() => barRoot.unmount())
 barHost.remove()
-check(q('.wt-view .wt-bar .wt-stats') !== null, 'unmounting the header bar leaves the page bar running')
+check(q('.wt-view .wt-statsrow .wt-stats') !== null, 'unmounting the header bar leaves the page bar running')
 
 // sub-agents: panel toggle, grouped rows from a frame, count in the stats bar
 check(q('.wt-agents') === null, 'the sub-agents panel starts closed')
@@ -431,13 +446,40 @@ check(/1m 0\ds/.test(rows[0].textContent), 'running row shows elapsed time')
 check(rows[1].textContent.includes('Old plan') && rows[1].dataset.running === 'false' && rows[1].textContent.includes('1m 00s'), 'completed row is dimmed with its total time')
 sock.push({ type: 'subagents', tasks: [{ id: 'a1', agentType: 'Explore', label: 'Find callers', status: 'running' }, { id: 'a3', agentType: 'Plan', label: 'Second', status: 'running' }] })
 await sleep(60)
-check(q('.wt-view .wt-bar .wt-stats')?.textContent.includes('2 agents') === true, 'the stats bar shows 2 agents')
+check(q('.wt-view .wt-statsrow .wt-stats')?.textContent.includes('2 agents') === true, 'the stats bar shows 2 agents')
 sock.push({ type: 'subagents', tasks: [] })
 await sleep(60)
-check(q('.wt-agents').textContent.includes('No sub-agents running') && !q('.wt-view .wt-bar .wt-stats').textContent.includes('agents'), 'empty state, and the count is hidden at 0')
+check(q('.wt-agents').textContent.includes('No sub-agents running') && !q('.wt-view .wt-statsrow .wt-stats').textContent.includes('agents'), 'empty state, and the count is hidden at 0')
 click(byText('.wt-bar button', 'Agents'))
 await sleep(40)
 check(q('.wt-agents') === null, 'the Agents button closes the panel')
+
+// toolbar stability: it is a full-width row above the columns, outside the shrinking area, and toggling panels never touches it
+{
+  const toolbarShape = () => {
+    const bar = q('.wt-page > .wt-bar')
+    return bar === null ? null : q('.wt-statsrow').children.length + [...bar.children].map((r) => r.className + ':' + [...r.children].map((c) => c.className.split(' ').slice(0, 2).join('.')).join(',')).join('|')
+  }
+  const bar = q('.wt-page > .wt-bar')
+  check(bar !== null && bar.closest('.wt-main') === null && bar.closest('.wt-cols') === null, 'the toolbar sits outside the columns and the shrinking main area')
+  const row2 = q('.wt-page > .wt-statsrow')
+  check(bar.nextElementSibling === row2 && row2.nextElementSibling === q('.wt-cols') && q('.wt-cols > .wt-main') !== null, 'the stats row sits between the toolbar and the columns')
+  check(row2.querySelector('.wt-stats') !== null && row2.closest('.wt-cols') === null && bar.querySelector('.wt-stats') === null, 'the stats bar lives in row 2, outside the columns')
+  check([...bar.children].map((c) => c.className).join() === 'wt-bar-left,wt-bar-mid,wt-bar-right', 'toolbar = left | middle | right regions')
+  check(byText('.wt-bar button', 'Claude').classList.contains('wt-btn-claude') && byText('.wt-bar button', 'Agents').classList.contains('wt-btn-agents'), 'Claude and Agents buttons carry their own classes')
+  const before = toolbarShape()
+  const sidebarOpen = q('.wt-side') !== null
+  click(byText('.wt-bar button', '☰'))
+  await sleep(30)
+  check((q('.wt-side') !== null) !== sidebarOpen && toolbarShape() === before, 'toggling the terminal list does not change the toolbar structure')
+  click(byText('.wt-bar button', '☰'))
+  await sleep(30)
+  click(byText('.wt-bar button', 'Agents'))
+  await sleep(30)
+  check(q('.wt-agents') !== null && toolbarShape() === before && q('.wt-page > .wt-bar') === bar, 'opening the Agents panel keeps the same toolbar node and structure')
+  click(byText('.wt-bar button', 'Agents'))
+  await sleep(30)
+}
 
 // No Workspaces from the shell: the dialog falls back to the folder of the session last viewed in the chat header.
 workspaceItems = []
@@ -455,6 +497,132 @@ await sleep(20)
 check(q('.wt-dialog input').value === 'C:\\work\\repo', 'the fallback chip fills the recorded session folder')
 click(byText('.wt-dialog button', 'Cancel'))
 await sleep(20)
+
+// ── send the selection to another terminal ──
+{
+  // jsdom has no layout: give every element a fixed box so xterm measures a cell and a drag can select.
+  const orig = window.Element.prototype.getBoundingClientRect
+  window.Element.prototype.getBoundingClientRect = () => ({ left: 0, top: 0, right: 640, bottom: 320, width: 640, height: 320, x: 0, y: 0 })
+  // xterm measures a cell from the offset size of a 32-character probe.
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetWidth', { get() { return 640 }, configurable: true })
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetHeight', { get() { return 320 }, configurable: true })
+  click(byText('.wt-bar button', 'New terminal'))
+  await sleep(20)
+  setValue(q('.wt-dialog input'), 'C:\\build')
+  click(byText('.wt-dialog button', 'Open'))
+  await sleep(60)
+  // Agent A (the first terminal) is a Claude with bracketed paste on, as its prompt would have it.
+  sock.push({ type: 'agent', provider: 'claude', state: 'finished', detail: '' })
+  sock.push({ type: 'data', data: '\x1b[?2004h' })
+  const bsock = sockets[sockets.length - 1]
+  bsock.push({ type: 'attached', created: false, replay: '', exited: false, exitCode: null })
+  bsock.push({ type: 'data', data: 'TS2304 no name x' })
+  await sleep(100)
+  const win = qa('.wt-win')[0]
+  const screen = win.querySelector('.xterm-screen')
+  const mouse = (target, type, x, y, extra = {}) => target.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, detail: 1, ...extra }))
+  const rightClick = () => {
+    const e = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 20, button: 2 })
+    win.querySelector('.wt-holder').dispatchEvent(e)
+    return e
+  }
+  check(!rightClick().defaultPrevented && q('.wt-send') === null, 'right-click without a selection keeps the default behaviour')
+  mouse(screen, 'mousedown', 1, 1)
+  mouse(screen, 'mousemove', 400, 1)
+  window.document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, clientX: 400, clientY: 1 }))
+  await sleep(30)
+  const prevented = rightClick().defaultPrevented
+  await sleep(30)
+  check(prevented && q('.wt-send') !== null, 'right-click on a selection opens the Send to menu')
+  window.Element.prototype.getBoundingClientRect = orig
+  const labels = qa('.wt-send .wt-send-item').map((el) => el.textContent)
+  check(labels[0] === 'Copy' && labels.some((l) => l.includes('Agent A')) && labels[labels.length - 1].includes('New Claude terminal'), `the menu lists Copy, the other terminals and a new Claude terminal (${labels.join(' | ')})`)
+  check(q('.wt-send .wt-send-item[data-active="true"]')?.textContent.includes('Agent A'), 'the agent terminal is preselected')
+  q('.wt-send').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await sleep(40)
+  const agentSock = sockets.find((x) => x.sent.some((f) => f.type === 'input' && f.data.includes('[200~')))
+  check(q('.wt-send') === null && agentSock !== undefined && agentSock !== bsock, 'Enter sends the selection to the chosen terminal only')
+  check(!bsock.sent.some((f) => f.type === 'input'), 'nothing is typed into the source terminal')
+  check(q('.wt-win[data-focused="true"] .wt-name')?.textContent === 'Agent A', 'the target window is focused')
+  check(agentSock !== undefined && agentSock.sent.filter((f) => f.type === 'input').pop().data.endsWith('~'), 'the text arrives as a bracketed paste in a code block, without Enter')
+  // Escape cancels the picker.
+  window.Element.prototype.getBoundingClientRect = () => ({ left: 0, top: 0, right: 640, bottom: 320, width: 640, height: 320, x: 0, y: 0 })
+  mouse(screen, 'mousedown', 1, 1)
+  mouse(screen, 'mousemove', 400, 1)
+  window.document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true, clientX: 400, clientY: 1 }))
+  await sleep(30)
+  rightClick()
+  await sleep(30)
+  q('.wt-send')?.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await sleep(30)
+  check(q('.wt-send') === null, 'Escape closes the Send to menu')
+  window.Element.prototype.getBoundingClientRect = orig
+  sock.push({ type: 'data', data: '\x1b[?2004l' })
+  sock.push({ type: 'agent', provider: 'claude', state: 'ended', detail: '' })
+  // Remove the extra terminal so the checks below see the original two.
+  window.confirm = () => true
+  click(win.querySelector('.wt-hbtn[data-danger="true"]'))
+}
+
+  await sleep(40)
+// mission control: a pure view transform, never a resize or a layout change
+{
+  const winShape = () => qa('.wt-win').map((w) => [w.style.left, w.style.top, w.style.width, w.style.height, w.style.zIndex, w.style.display].join(','))
+  const resizes = () => sockets.reduce((n, x) => n + x.sent.filter((f) => f.type === 'resize').length, 0)
+  const stored = () => window.localStorage.getItem('dsh.web-terminal.layout.v1')
+  const winNamed = (name) => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === name)
+  const key = (init) => window.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }))
+  const other = qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent !== 'Agent A')
+  const otherName = other.querySelector('.wt-name').textContent
+  click(other.querySelector('.wt-hbtn[title="Minimize"]'))
+  await sleep(30)
+  check(winNamed(otherName).style.display === 'none', 'overview setup: one window is minimized')
+  winNamed('Agent A').dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+  await sleep(400)
+  const saved = stored()
+  const resizeBefore = resizes()
+
+  click(byText('.wt-bar button', 'Overview'))
+  await sleep(30)
+  check(q('.wt-mission') !== null && qa('.wt-tile').length === 2, 'Overview shows a tile per terminal, minimized ones included')
+  check(qa('.wt-win').every((w) => w.style.display === 'flex' && /scale\(/.test(w.style.transform)), 'every window, minimized too, is CSS-scaled into its tile')
+  await sleep(400)
+  check(resizes() === resizeBefore && stored() === saved, 'overview sends no resize frame and persists no layout')
+
+  // typing filters the tiles; the non-matching window is hidden
+  key({ key: otherName[0].toLowerCase() })
+  key({ key: otherName[1].toLowerCase() })
+  await sleep(20)
+  check(qa('.wt-tile').length === 1 && q('.wt-mission-filter') !== null, 'typing filters the tiles by name')
+  check(winNamed('Agent A').style.visibility === 'hidden', 'a filtered-out window is hidden')
+  key({ key: 'Enter' })
+  await sleep(60)
+  check(q('.wt-mission') === null && winNamed(otherName).style.display === 'flex' && winNamed(otherName).dataset.focused === 'true', 'Enter on a filtered tile leaves overview, restores and focuses that terminal')
+  check(qa('.wt-win').every((w) => w.style.transform === ''), 'leaving overview clears the scaling')
+  await sleep(400)
+  check(resizes() === resizeBefore, 'leaving overview sends no resize frame either')
+
+  // minimize it again, refocus Agent A, then Esc must change nothing
+  click(winNamed(otherName).querySelector('.wt-hbtn[title="Minimize"]'))
+  await sleep(30)
+  winNamed('Agent A').dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+  await sleep(400)
+  const shape2 = winShape()
+  const saved2 = stored()
+  key({ key: ' ', code: 'Space', ctrlKey: true, shiftKey: true })
+  await sleep(20)
+  check(q('.wt-mission') !== null, 'Ctrl+Shift+Space opens overview')
+  key({ key: 'ArrowRight' })
+  await sleep(20)
+  check(qa('.wt-tile[data-sel="true"]').length === 1, 'arrow keys move one selected tile')
+  key({ key: 'Escape' })
+  await sleep(60)
+  check(q('.wt-mission') === null && winShape().join('|') === shape2.join('|') && stored() === saved2, 'Esc restores every window rect, z and minimized state exactly')
+  check(winNamed('Agent A').dataset.focused === 'true' && winNamed(otherName).style.display === 'none', 'Esc leaves focus and minimized state unchanged')
+  check(resizes() === resizeBefore, 'overview never resized a terminal')
+  click(byText('.wt-chip', otherName))
+  await sleep(30)
+}
 
 const busyWindow = () => qa('.wt-win').find((w) => w.querySelector('.wt-name')?.textContent === 'Agent A')
 // safe close: a busy terminal asks first; Cancel keeps it, OK ends it

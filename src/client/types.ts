@@ -4,6 +4,7 @@ import type { Terminal } from '@xterm/xterm'
 import type { FitAddon } from '@xterm/addon-fit'
 import type { SearchAddon } from '@xterm/addon-search'
 import type { SubagentInfo } from './subagents.ts'
+import type { BlockModel } from './blocks.ts'
 
 /** Rectangle in canvas fractions (0..1). */
 export interface Rect {
@@ -110,6 +111,8 @@ export interface Runtime {
   hostBusy: boolean | undefined
   lastOutputAt: number
   lastInputAt: number
+  /** When the startup command was typed into the shell (undefined until it is). */
+  startupSentAt?: number
   /** What the agent in this terminal last reported; undefined for a plain shell. */
   agent: AgentInfo | undefined
   /** Claude sub-agents the host reports for this terminal (running, plus recently completed). */
@@ -122,6 +125,12 @@ export interface Runtime {
   /** Short badge text and the longer tooltip/notification text. */
   attentionLabel: string
   attentionReason: string
+  // ── command blocks (blocks.ts) ──
+  /** Command blocks cut by the shell integration; created with the runtime. */
+  blocks?: BlockModel
+  /** The shell's real current folder, once it reports one (OSC 633;P / OSC 7). */
+  cwd?: string
+  // ── end command blocks ──
 }
 
 /** Font preferences shared by every terminal. */
@@ -129,6 +138,12 @@ export interface FontPrefs {
   family: string
   size: number
   lineHeight: number
+  /** Extra pixels between cells; xterm rounds it to whole pixels. */
+  letterSpacing: number
+  /** CSS weight of bold text (the regular weight stays 400). */
+  boldWeight: number
+  /** xterm minimumContrastRatio: text below this contrast against its background is lifted (1 = off). */
+  minContrast: number
 }
 
 /** One window inside a saved layout. */
@@ -151,6 +166,9 @@ export interface HostInfo {
   /** Files the host generated for agents; claudeSettings is null when it could not write one. */
   agent?: { claudeSettings?: string | null }
 }
+
+/** Where a Ctrl+clicked file path opens. */
+export type PathTarget = 'vscode' | 'cursor' | 'default' | 'custom'
 
 /** Persisted user preferences. */
 export interface Prefs {
@@ -177,6 +195,13 @@ export interface Prefs {
   sound: boolean
   /** Minutes without output or signals before a working agent is flagged as stuck; 0 turns it off. */
   hungMinutes: number
+  /** Editor for Ctrl+clicked file paths, and the command template when it is `custom`. */
+  pathTarget: PathTarget
+  pathTemplate: string
+  /** Inject shell integration (command blocks, real cwd) into newly started shells. */
+  shellIntegration: boolean
+  /** Frame text sent to an agent terminal as a fenced code block. */
+  sendCodeBlock: boolean
 }
 
 /** Everything the view reads; mutated in place, `version` bumps on change. */

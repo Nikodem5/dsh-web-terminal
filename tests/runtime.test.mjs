@@ -538,6 +538,21 @@ test('with no saved size, an unopened terminal uses an explicit default in both 
   await sleep(300)
 })
 
+test('appearance options reach the Terminal and change live', async () => {
+  const { rt } = await start()
+  const o = rt.term.options
+  assert.equal(o.fontSize, 14)
+  assert.equal(o.lineHeight, 1.2)
+  assert.equal(o.letterSpacing, 0)
+  assert.equal(o.fontWeightBold, 600)
+  assert.equal(o.minimumContrastRatio, 4.5)
+  assert.ok(o.fontFamily.startsWith("'Cascadia Mono'"))
+  s.setFont({ lineHeight: 1.5, letterSpacing: 1, boldWeight: 700, minContrast: 7, size: 16 })
+  assert.deepEqual([o.lineHeight, o.letterSpacing, o.fontWeightBold, o.minimumContrastRatio], [1.5, 1, 700, 7])
+  s.setFont({ ...s.DEFAULT_FONT })
+  assert.deepEqual([o.lineHeight, o.letterSpacing, o.fontWeightBold, o.minimumContrastRatio], [1.2, 0, 600, 4.5])
+})
+
 test('the real grid is remembered on the window once the terminal reports it', async () => {
   const { id, rt } = await start()
   rt.term.resize(100, 30)
@@ -545,4 +560,300 @@ test('the real grid is remembered on the window once the terminal reports it', a
   s.sizeToHost(rt)
   const win = s.getWins().find((w) => w.id === id)
   assert.deepEqual([win.cols, win.rows], [100, 30])
+})
+
+// ── clickable file paths ──
+
+/** Open a terminal and capture the link providers registered on it. */
+async function startLinks() {
+  const id = s.openTerminal({ cwd: '/work', startup: '' })
+  const rt = s.ensureRuntime(s.getWins().find((w) => w.id === id))
+  const providers = []
+  const register = rt.term.registerLinkProvider.bind(rt.term)
+  rt.term.registerLinkProvider = (p) => (providers.push(p), register(p))
+  s.openRuntime(rt)
+  const provide = (y) => new Promise((resolve) => providers[providers.length - 1].provideLinks(y, resolve))
+  return { id, rt, provide }
+}
+
+/** A fake host for /paths and /open; `existing` is the set of candidates that exist. */
+function fakeHost(existing, openReply = { ok: true }) {
+  const host = { pathCalls: [], opens: [], existing }
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    const body = init?.body === undefined ? undefined : JSON.parse(init.body)
+    if (String(url).endsWith('/paths')) {
+      host.pathCalls.push(body)
+      return { ok: true, json: async () => ({ ok: true, results: body.candidates.map((c) => ({ candidate: c, path: host.existing.has(c) ? `/work/${c}` : null, isDir: false })) }) }
+    }
+    if (String(url).endsWith('/open')) {
+      host.opens.push(body)
+      return { ok: true, json: async () => openReply }
+    }
+    return { ok: false }
+  }
+  host.restore = () => { globalThis.fetch = realFetch }
+  return host
+}
+
+test('path links: an existing path is a link with the position stripped from the lookup, a missing one is not', async () => {
+  const host = fakeHost(new Set(['src/a.ts']))
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('see src/a.ts:12:5 and missing/b.ts\r\n')
+    await flush(rt)
+    const links = await provide(1)
+    assert.equal(links.length, 1)
+    assert.equal(links[0].text, 'src/a.ts:12:5')
+    assert.deepEqual(links[0].range, { start: { x: 5, y: 1 }, end: { x: 17, y: 1 } })
+    assert.deepEqual(host.pathCalls[0].candidates.sort(), ['missing/b.ts', 'src/a.ts'])
+    assert.match(host.pathCalls[0].terminalId, /-0$/)
+    assert.equal(host.pathCalls[0].cwd, '/work')
+    // Same line again: answered from the cache (found and not-found alike).
+    await provide(1)
+    assert.equal(host.pathCalls.length, 1)
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: activation needs the modifier; a plain click opens nothing', async () => {
+  const host = fakeHost(new Set(['src/a.ts']))
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('src/a.ts:12:5\r\n')
+    await flush(rt)
+    const [link] = await provide(1)
+    link.activate({ ctrlKey: false, metaKey: false }, link.text)
+    await sleep(20)
+    assert.equal(host.opens.length, 0)
+    link.activate({ ctrlKey: true, metaKey: false }, link.text)
+    await until(() => host.opens.length === 1, 'the open request')
+    assert.deepEqual(host.opens[0], { path: '/work/src/a.ts', line: 12, col: 5, target: 'vscode', template: '' })
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: underline and pointer follow the modifier while hovering', async () => {
+  const host = fakeHost(new Set(['a.ts']))
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('a.ts\r\n')
+    await flush(rt)
+    const [link] = await provide(1)
+    assert.deepEqual(link.decorations, { pointerCursor: false, underline: false })
+    link.hover({ ctrlKey: false, metaKey: false, clientX: 0, clientY: 0 }, link.text)
+    assert.equal(link.decorations.underline, false)
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Control', ctrlKey: true }))
+    assert.deepEqual(link.decorations, { pointerCursor: true, underline: true })
+    assert.match(rt.term.element.querySelector('.xterm-hover').textContent, /Ctrl\+click to open/)
+    window.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'Control', ctrlKey: false }))
+    assert.equal(link.decorations.underline, false)
+    link.leave({}, link.text)
+    assert.equal(rt.term.element.querySelector('.xterm-hover'), null)
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: a path wrapped over two rows is one link on either row', async () => {
+  const host = fakeHost(new Set(['src/deep/file.ts']))
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.resize(12, 5)
+    rt.term.write('src/deep/file.ts\r\n')
+    await flush(rt)
+    const top = await provide(1)
+    const bottom = await provide(2)
+    assert.equal(top.length, 1)
+    assert.equal(bottom.length, 1)
+    assert.deepEqual(top[0].range, { start: { x: 1, y: 1 }, end: { x: 4, y: 2 } })
+    assert.deepEqual(host.pathCalls[0].candidates, ['src/deep/file.ts'])
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: a host error is shown inside the terminal', async () => {
+  const host = fakeHost(new Set(['a.ts']), { ok: false, error: 'VS Code not found on PATH' })
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('a.ts\r\n')
+    await flush(rt)
+    const [link] = await provide(1)
+    link.activate({ ctrlKey: true, metaKey: false }, link.text)
+    await until(() => rt.term.element.textContent.includes('VS Code not found on PATH'), 'the message')
+  } finally {
+    host.restore()
+  }
+})
+
+test('path links: URLs and a failing host produce no links', async () => {
+  const host = fakeHost(new Set())
+  try {
+    const { rt, provide } = await startLinks()
+    rt.term.write('https://example.com/a/b.ts\r\n')
+    await flush(rt)
+    assert.equal(await provide(1), undefined)
+    assert.equal(host.pathCalls.length, 0)
+    globalThis.fetch = async () => { throw new Error('down') }
+    rt.term.write('src/x.ts\r\n')
+    await flush(rt)
+    assert.equal(await provide(2), undefined)
+  } finally {
+    host.restore()
+  }
+})
+
+// ── "new since you last looked" ──
+
+test('newLinesSince / labels: counts from the blur-time cursor line, repaints add nothing', () => {
+  assert.equal(s.newLinesSince(11, 10), 0, 'cursor line unchanged = nothing new')
+  assert.equal(s.newLinesSince(11, 10 + 42), 42)
+  assert.equal(s.newLinesSince(11, 4), 0, 'never negative')
+  assert.equal(s.pillText(1), '↓ 1 new line')
+  assert.equal(s.pillText(42), '↓ 42 new lines')
+  const at = new Date(2026, 0, 5, 9, 7).getTime()
+  assert.equal(s.timeLabel(at), '09:07')
+  assert.equal(s.dividerText(at), '── new since 09:07 ──')
+  const key = (init) => ({ ctrlKey: true, shiftKey: true, altKey: false, metaKey: false, key: 'U', ...init })
+  assert.equal(s.isUnreadJump(key()), true)
+  assert.equal(s.isUnreadJump(key({ shiftKey: false })), false)
+  assert.equal(s.isUnreadJump(key({ altKey: true })), false)
+})
+
+/** Two terminals, the page showing; `a` is looked at until `away()` focuses `b`. */
+async function twoTerminals() {
+  window.document.hasFocus = () => true
+  s.setViewMounted(true)
+  const a = await start({ startup: undefined })
+  a.sock.push(attached())
+  const idB = s.openTerminal({ cwd: 'C:\other' })
+  const rtB = s.ensureRuntime(s.getWins().find((w) => w.id === idB))
+  s.openRuntime(rtB)
+  s.focusWin(a.id)
+  const lines = (n, tag = 'out') => Array.from({ length: n }, (_, i) => `${tag} ${i}\r\n`).join('')
+  const out = async (text) => {
+    a.sock.push({ type: 'data', data: text })
+    await flush(a.rt)
+  }
+  const away = () => s.focusWin(idB)
+  const back = () => s.focusWin(a.id)
+  return { ...a, idB, out, away, back, lines, done: () => s.setViewMounted(false) }
+}
+
+test('unread: blur, output, focus draws the divider on the first new line', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('prompt$ ')
+    const cursorAtBlur = t.rt.term.buffer.active.baseY + t.rt.term.buffer.active.cursorY
+    t.away()
+    assert.equal(s.unreadCount(t.id), 0)
+    await t.out(t.lines(7))
+    assert.equal(s.unreadCount(t.id), 7, 'the sidebar count follows the output')
+    assert.equal(s.dividerLine(t.id), -1, 'no divider while nobody looks')
+    t.back()
+    assert.equal(s.dividerLine(t.id), cursorAtBlur + 1)
+    assert.equal(s.unreadCount(t.id), 0, 'the sidebar indicator clears once looked at')
+    // The divider stays through more output, and is replaced the next time the user leaves.
+    await t.out(t.lines(2))
+    assert.equal(s.dividerLine(t.id), cursorAtBlur + 1)
+    t.away()
+    assert.equal(s.dividerLine(t.id), -1, 'the old divider goes when the terminal is left again')
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: in-place repaints are not new output', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('status: working')
+    t.away()
+    await t.out('\r\x1b[2Kstatus: working.')
+    await t.out('\r\x1b[2Kstatus: working..')
+    assert.equal(s.unreadCount(t.id), 0)
+    t.back()
+    assert.equal(s.dividerLine(t.id), -1, 'nothing new, no divider')
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: output while on the alternate screen is skipped', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('$ vim\r\n\x1b[?1049h')
+    t.away()
+    await t.out(t.lines(30, 'vim'))
+    assert.equal(s.unreadCount(t.id), 0)
+    t.back()
+    assert.equal(s.dividerLine(t.id), -1)
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: a marker that scrolled out of the scrollback leaves no divider', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('$ ')
+    t.away()
+    await t.out(t.lines(6000)) // scrollback is 5000 lines
+    assert.equal(s.unreadCount(t.id), 0)
+    t.back()
+    assert.equal(s.dividerLine(t.id), -1)
+    assert.equal(s.jumpToUnread(t.id), false)
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: the pill shows when the divider is above the viewport and jumping scrolls to it', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('$ ')
+    t.away()
+    await t.out(t.lines(80))
+    t.back()
+    const line = s.dividerLine(t.id)
+    assert.ok(line > 0)
+    assert.ok(t.rt.term.buffer.active.viewportY > line, 'the divider is above the visible rows')
+    assert.equal(s.unreadPill(t.id), 80)
+    // jsdom has no layout, so xterm's viewport cannot scroll here: check what the jump asks for.
+    const asked = []
+    t.rt.term.scrollToLine = (l) => asked.push(l)
+    assert.equal(s.jumpToUnread(t.id), true)
+    assert.deepEqual(asked, [line])
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: the overview is not looking; it keeps unread state and a pick shows the divider', async () => {
+  const t = await twoTerminals()
+  try {
+    await t.out('$ ')
+    t.away()
+    await t.out(t.lines(4))
+    assert.equal(s.unreadCount(t.id), 4)
+    s.enterOverview(t.idB)
+    assert.equal(s.unreadCount(t.id), 4, 'entering the overview keeps the unread count')
+    await t.out(t.lines(3))
+    assert.equal(s.unreadCount(t.id), 7, 'still counting, and nothing is marked as seen')
+    assert.equal(s.dividerLine(t.id), -1)
+    const cursorAtMark = t.rt.term.buffer.active.baseY + t.rt.term.buffer.active.cursorY - 7
+    s.exitOverview(t.id) // pick
+    assert.equal(s.dividerLine(t.id), cursorAtMark + 1, 'the picked terminal shows its divider at the original spot')
+    assert.equal(s.unreadCount(t.id), 0)
+    // Leaving overview without a pick: the focused terminal is looked at again.
+    s.enterOverview(t.id)
+    await t.out(t.lines(2))
+    s.exitOverview()
+    assert.ok(s.dividerLine(t.id) > cursorAtMark + 1, 'a fresh divider marks where the overview started')
+  } finally {
+    s.exitOverview()
+    t.done()
+  }
 })

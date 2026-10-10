@@ -16,6 +16,7 @@
 //   preferences.ts  folders, favourites, on/off switches
 //   appearance.ts   font and colour preferences
 //   theme.ts        xterm palette and surface measurement
+//   unread.ts       "new since you last looked" divider and jump
 
 export * from './types.ts'
 export * from './state.ts'
@@ -34,4 +35,9 @@ export * from './subagents.ts'
 export * from './subagent-state.ts'
 export * from './workspaces.ts'
 export * from './appearance.ts'
+export * from './path-links.ts'
+export * from './send-to.ts'
+export * from './unread.ts'
 export * from './theme.ts'
+export * from './blocks.ts'
+export * from './mission.ts'

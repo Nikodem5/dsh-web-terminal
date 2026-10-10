@@ -15,7 +15,18 @@ import type { FontPrefs, HostInfo, LayoutWin, Prefs, Rect, Runtime, SavedLayout,
 export const K_LAYOUT = 'dsh.web-terminal.layout.v1'
 export const K_PREFS = 'dsh.web-terminal.prefs.v1'
 
+// Mono (no ligatures) first: xterm draws no ligatures without an addon, so Code's ligature glyphs would only widen cells.
 export const DEFAULT_FONT: FontPrefs = {
+  family: "'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace",
+  size: 14,
+  lineHeight: 1.2,
+  letterSpacing: 0,
+  boldWeight: 600,
+  minContrast: 4.5,
+}
+
+/** Pre-readability defaults: a stored font that is exactly this was never really chosen, so it adopts the new defaults. */
+const OLD_DEFAULT_FONT = {
   family: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
   size: 12,
   lineHeight: 1.2,
@@ -38,6 +49,10 @@ export const prefs: Prefs = {
   notify: true,
   sound: true,
   hungMinutes: 10,
+  pathTarget: 'vscode',
+  pathTemplate: '',
+  shellIntegration: true,
+  sendCodeBlock: true,
 }
 
 export const store: Store = { wins: [], zTop: 1, focusId: null, searchId: null, version: 0, broadcast: { on: false, live: false, ids: new Set() } }
@@ -144,13 +159,23 @@ function applyPrefs(p: Record<string, unknown>): void {
   for (const key of ['fontCustom', 'autoFont', 'sidebar', 'agentsPanel', 'notify', 'sound'] as const) if (typeof p[key] === 'boolean') prefs[key] = p[key] as boolean
   if (isNum(p.fitCols)) prefs.fitCols = clamp(Math.round(p.fitCols), 40, 240)
   if (isNum(p.hungMinutes)) prefs.hungMinutes = clamp(Math.round(p.hungMinutes), 0, 240)
+  if (p.pathTarget === 'vscode' || p.pathTarget === 'cursor' || p.pathTarget === 'default' || p.pathTarget === 'custom') prefs.pathTarget = p.pathTarget
+  if (typeof p.sendCodeBlock === 'boolean') prefs.sendCodeBlock = p.sendCodeBlock
+  if (typeof p.pathTemplate === 'string') prefs.pathTemplate = p.pathTemplate.slice(0, 500)
+  if (typeof p.shellIntegration === 'boolean') prefs.shellIntegration = p.shellIntegration
   if (p.termTheme === 'dark' || p.termTheme === 'light' || p.termTheme === 'auto') prefs.termTheme = p.termTheme
   const font = isObj(p.font) ? p.font : {}
+  // "Reset font" and any edit set fontCustom, so a stored font equal to the old default is also treated as unchosen.
+  const wasOldDefault = font.family === OLD_DEFAULT_FONT.family && font.size === OLD_DEFAULT_FONT.size && font.lineHeight === OLD_DEFAULT_FONT.lineHeight
+  if (wasOldDefault) prefs.fontCustom = false
   prefs.font = prefs.fontCustom
     ? {
         family: typeof font.family === 'string' && font.family.trim().length > 0 ? font.family : DEFAULT_FONT.family,
         size: isNum(font.size) ? clamp(font.size, 8, 32) : DEFAULT_FONT.size,
         lineHeight: isNum(font.lineHeight) ? clamp(font.lineHeight, 1, 2) : DEFAULT_FONT.lineHeight,
+        letterSpacing: isNum(font.letterSpacing) ? clamp(Math.round(font.letterSpacing), 0, 2) : DEFAULT_FONT.letterSpacing,
+        boldWeight: isNum(font.boldWeight) ? clamp(Math.round(font.boldWeight / 100) * 100, 100, 900) : DEFAULT_FONT.boldWeight,
+        minContrast: isNum(font.minContrast) ? clamp(font.minContrast, 1, 21) : DEFAULT_FONT.minContrast,
       }
     : { ...DEFAULT_FONT }
 }

@@ -291,6 +291,58 @@ test('setFont clamps size and line height and falls back for an empty family', (
   assert.equal(s.getPrefs().font.size, 8)
 })
 
+test('readability defaults: bigger font, mono-first family, 1.2 line height, semi-bold, 4.5:1 contrast', () => {
+  const d = s.DEFAULT_FONT
+  assert.equal(d.size, 14)
+  assert.equal(d.lineHeight, 1.2)
+  assert.equal(d.letterSpacing, 0)
+  assert.equal(d.boldWeight, 600)
+  assert.equal(d.minContrast, 4.5)
+  assert.ok(d.family.startsWith("'Cascadia Mono'") && d.family.endsWith('monospace'))
+})
+
+test('setFont clamps letter spacing, bold weight and contrast', () => {
+  s.setFont({ letterSpacing: 9, boldWeight: 5000, minContrast: 99 })
+  assert.deepEqual([s.getPrefs().font.letterSpacing, s.getPrefs().font.boldWeight, s.getPrefs().font.minContrast], [2, 900, 21])
+  s.setFont({ letterSpacing: -3, boldWeight: 20, minContrast: 0.2 })
+  assert.deepEqual([s.getPrefs().font.letterSpacing, s.getPrefs().font.boldWeight, s.getPrefs().font.minContrast], [0, 100, 1])
+})
+
+test('auto-fit never shrinks below the floor on a normal window, and honours letter spacing', () => {
+  s.setAutoFont(true)
+  s.setFitCols(100)
+  s.setFont({ ...s.DEFAULT_FONT })
+  assert.equal(s.effectiveFontSize(2000), 14, 'wide window keeps the full size')
+  assert.equal(s.effectiveFontSize(720), 12, '720px = 100 cols at 12px')
+  assert.equal(s.effectiveFontSize(300), s.AUTO_FONT_FLOOR, 'very narrow window stops at the floor')
+  assert.ok(s.effectiveFontSize(900) >= 13, 'a 900px window stays at 13 or more')
+  s.setFont({ letterSpacing: 2 })
+  assert.ok(s.effectiveFontSize(900) <= 13, 'letter spacing makes cells wider, so the font shrinks sooner')
+})
+
+// ── palette contrast ──
+
+test('contrastRatio matches known WCAG values', () => {
+  assert.equal(Math.round(s.contrastRatio('#000000', '#ffffff')), 21)
+  assert.equal(s.contrastRatio('#777777', '#777777'), 1)
+})
+
+test('palettes: text colours reach 4.5:1 on their background (black excepted), default text far above', () => {
+  for (const dark of [true, false]) {
+    const p = s.termPalette(dark)
+    assert.ok(s.contrastRatio(p.foreground, p.background) >= 12, `${dark ? 'dark' : 'light'} foreground`)
+    for (const name of ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white', 'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite', 'cursor']) {
+      if (name === 'cursor' && !dark) continue
+      assert.ok(s.contrastRatio(p[name], p.background) >= 4.5, `${dark ? 'dark' : 'light'} ${name} ${s.contrastRatio(p[name], p.background).toFixed(2)}`)
+    }
+  }
+  // SGR dim text is the default foreground at half opacity: it must still clear 4.5:1.
+  const p = s.termPalette(true)
+  const half = (c, b) => Math.round((c + b) / 2).toString(16).padStart(2, '0')
+  const dim = '#' + [1, 3, 5].map((i) => half(parseInt(p.foreground.slice(i, i + 2), 16), parseInt(p.background.slice(i, i + 2), 16))).join('')
+  assert.ok(s.contrastRatio(dim, p.background) >= 4.5, `dim default text ${s.contrastRatio(dim, p.background).toFixed(2)}`)
+})
+
 test('setFitCols clamps to a sane column range', () => {
   s.setFitCols(5)
   assert.equal(s.getPrefs().fitCols, 40)
@@ -929,4 +981,35 @@ test('typing into a terminal clears a quiet flag (finished, bell) but not an urg
   s.applyAgentSignal(failed, signal('failed', 'rate_limit'))
   s.noteUserInput(failed)
   assert.equal(failed.attentionLevel, 'urgent', 'a failure stays until the window is focused')
+})
+
+test('stored font: old untouched default (flag set or not) adopts the new defaults; real choices survive; bad values are clamped', async () => {
+  const OLD = "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace"
+  let f = await loadStore({ fresh: true })
+  const loaded = []
+  // hydrate runs once per load, so each case gets a fresh store (seeded and hydrated in one tick).
+  const hydrateWith = async (p) => {
+    f = await loadStore({ fresh: true })
+    loaded.push(f)
+    window.localStorage.setItem(PREFS_KEY, JSON.stringify(p))
+    f.hydrate()
+    return f.getPrefs()
+  }
+  let p = await hydrateWith({ fontCustom: false, font: { family: OLD, size: 12, lineHeight: 1.2 } })
+  assert.deepEqual(p.font, f.DEFAULT_FONT)
+  p = await hydrateWith({ fontCustom: true, font: { family: OLD, size: 12, lineHeight: 1.2 } })
+  assert.deepEqual(p.font, f.DEFAULT_FONT, 'Reset font / an untouched edit stored the old default with fontCustom set')
+  assert.equal(p.fontCustom, false, 'so later default changes still reach them')
+  p = await hydrateWith({ fontCustom: true, font: { family: 'Menlo', size: 12, lineHeight: 1.2 } })
+  assert.equal(p.font.family, 'Menlo')
+  assert.equal(p.font.size, 12, 'a chosen family keeps its size')
+  assert.equal(p.font.minContrast, 4.5, 'new fields missing from old storage take defaults')
+  p = await hydrateWith({ fontCustom: true, font: { family: OLD, size: 16, lineHeight: 1.2 } })
+  assert.equal(p.font.size, 16)
+  p = await hydrateWith({ fontCustom: true, font: { family: 'X', size: 14, lineHeight: 1.3, letterSpacing: 50, boldWeight: 'heavy', minContrast: -4 } })
+  assert.deepEqual([p.font.letterSpacing, p.font.boldWeight, p.font.minContrast], [2, 600, 1])
+  p = await hydrateWith({ fontCustom: true, font: { family: 'X', size: 14, lineHeight: 1.3, boldWeight: 640, minContrast: 'x' } })
+  assert.deepEqual([p.font.boldWeight, p.font.minContrast], [600, 4.5])
+  for (const l of loaded) l.closeAll()
+  await settle()
 })

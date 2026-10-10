@@ -1,6 +1,7 @@
 // dsh-web-terminal — terminal runtimes: the xterm instance and WebSocket behind each
 // window, reconnecting, sizing, restart and log export.
 
+import { isMissionShortcut, isOverview } from './mission.ts'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -10,9 +11,13 @@ import { cleanTitle, displayName } from './names.ts'
 import { noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { withAgentHooks } from './launch.ts'
 import { applySubagents } from './subagent-state.ts'
-import { startupWait } from './prompt-ready.ts'
+import { startupTiming, startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
+import { registerPathLinks } from './path-links.ts'
+import { createBlocks } from './blocks.ts'
+import { openSendMenu, registerSendMenu } from './send-to.ts'
+import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
 
 /** Grid for a terminal that was never fitted (the host's own default, so a fresh PTY matches). */
@@ -80,7 +85,7 @@ function socketBase(): string {
 
 /** Key combinations the app handles itself, so the terminal must not swallow them. */
 function isAppShortcut(event: KeyboardEvent): boolean {
-  return event.ctrlKey && event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+  return (event.ctrlKey && event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) || isMissionShortcut(event)
 }
 
 /** Build (once) the xterm + socket for a window. */
@@ -100,10 +105,13 @@ export function ensureRuntime(win: WinState): Runtime {
     fontFamily: prefs.font.family,
     fontSize: prefs.font.size,
     lineHeight: prefs.font.lineHeight,
+    letterSpacing: prefs.font.letterSpacing,
+    fontWeight: 'normal',
+    fontWeightBold: prefs.font.boldWeight,
     scrollback: 5000,
     allowProposedApi: true,
     // Keep text readable whatever colours a program prints (e.g. white text from a dark-themed TUI on a light background).
-    minimumContrastRatio: 4.5,
+    minimumContrastRatio: prefs.font.minContrast,
     theme: termTheme(),
   })
   const fit = new FitAddon()
@@ -148,6 +156,8 @@ export function ensureRuntime(win: WinState): Runtime {
     attentionReason: '',
   }
   runtimes.set(win.id, rt)
+  rt.blocks = createBlocks(rt) // command blocks: OSC 133/633 handlers work before the terminal is opened
+  trackUnread(rt)
   ticker ??= setInterval(tick, 1000)
 
   // Bytes of the key press xterm is about to report through onData (onKey fires first, synchronously).
@@ -199,6 +209,11 @@ export function ensureRuntime(win: WinState): Runtime {
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true
     if (isAppShortcut(event)) return false
+    if (isUnreadJump(event)) {
+      event.preventDefault()
+      jumpToUnread(rt.id)
+      return false
+    }
     const mod = event.ctrlKey || event.metaKey
     if (mod && !event.shiftKey && !event.altKey && (event.key === 'f' || event.key === 'F')) {
       event.preventDefault()
@@ -207,6 +222,11 @@ export function ensureRuntime(win: WinState): Runtime {
     }
     if (mod && (event.key === 'c' || event.key === 'C') && (event.shiftKey || term.hasSelection())) {
       navigator.clipboard?.writeText(term.getSelection()).catch(() => {})
+      return false
+    }
+    // Ctrl+Shift+S: send the selection to another terminal (without one it stays a plain key).
+    if (mod && event.shiftKey && !event.altKey && (event.key === 's' || event.key === 'S') && openSendMenu(rt)) {
+      event.preventDefault()
       return false
     }
     if (mod && event.shiftKey && (event.key === 'v' || event.key === 'V')) {
@@ -223,6 +243,7 @@ export function ensureRuntime(win: WinState): Runtime {
     const dims = rt.fit.proposeDimensions()
     const params = new URLSearchParams({ id: `${rt.id}-${current.gen ?? 0}`, shell: current.shell })
     if (current.cwd.length > 0) params.set('cwd', current.cwd)
+    if (!prefs.shellIntegration) params.set('integration', '0')
     // Always explicit: before the page opens there is no fit, and the xterm grid is what the host must match.
     const fitted = rt.opened && dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)
     params.set('cols', String(fitted ? dims.cols : term.cols))
@@ -235,6 +256,9 @@ export function ensureRuntime(win: WinState): Runtime {
     let lastOutputAt: number | undefined
     let startupTimer: ReturnType<typeof setTimeout> | undefined
     let wakeStartup: (() => void) | undefined
+    // Prompts seen before this attach do not count: shell integration reports the one that is ready now.
+    let promptBase = 0
+    if (rt.blocks !== undefined) rt.blocks.onPromptReady = () => wakeStartup?.()
     const stopStartup = () => {
       clearTimeout(startupTimer)
       wakeStartup = undefined
@@ -272,7 +296,10 @@ export function ensureRuntime(win: WinState): Runtime {
         restoreAgent(rt, frame.agent)
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         term.reset()
-        if ((frame.replay ?? '').length > 0) term.write(frame.replay as string)
+        rt.blocks?.reset()
+        promptBase = rt.blocks?.promptsReady ?? 0
+        if ((frame.replay ?? '').length > 0) term.write(frame.replay as string, () => rebaseUnread(rt))
+        else rebaseUnread(rt)
         if (frame.exited === true) {
           setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
         } else {
@@ -289,7 +316,7 @@ export function ensureRuntime(win: WinState): Runtime {
               const check = () => {
                 clearTimeout(startupTimer)
                 if (rt.killed || rt.socket !== socket || socket.readyState !== WebSocket.OPEN) return stopStartup()
-                const wait = startupWait(Date.now(), attachedAt, lastOutputAt)
+                const wait = startupWait(Date.now(), attachedAt, lastOutputAt, startupTiming, (rt.blocks?.promptsReady ?? 0) > promptBase)
                 if (wait > 0) {
                   startupTimer = setTimeout(check, wait)
                   return
@@ -299,6 +326,7 @@ export function ensureRuntime(win: WinState): Runtime {
                 const session = store.wins.find((w) => w.id === rt.id)?.agentSession
                 const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings, session)
                 socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
+                rt.startupSentAt = Date.now()
               }
               wakeStartup = check
               rt.stopStartup = stopStartup
@@ -310,7 +338,9 @@ export function ensureRuntime(win: WinState): Runtime {
         // The host dropped output on a congested socket; its replay is the screen as it really is.
         if (typeof frame.replay !== 'string') return
         term.reset()
-        if (frame.replay.length > 0) term.write(frame.replay)
+        rt.blocks?.reset()
+        if (frame.replay.length > 0) term.write(frame.replay, () => rebaseUnread(rt))
+        else rebaseUnread(rt)
       } else if (frame.type === 'data') {
         if (rt.hostLost || typeof frame.data !== 'string') return
         lastOutputAt = Date.now()
@@ -382,6 +412,10 @@ export function openRuntime(rt: Runtime): void {
       window.open(uri, '_blank', 'noopener,noreferrer')
     }),
   )
+  registerPathLinks(rt)
+  rt.blocks?.opened() // gutters need the renderer
+  registerSendMenu(rt)
+  syncUnread(rt)
   // The grid was never sent to the host (or only xterm's default); report the real one.
   rt.lastCols = 0
 }
@@ -400,20 +434,25 @@ export function sizeToHost(rt: Runtime): void {
   }
 }
 
+/** Smallest size auto-fit shrinks to: shrinking further would trade legibility for columns. */
+export const AUTO_FONT_FLOOR = 12
+
 /**
  * Font size for a window: the user's size, shrunk only as far as needed to keep about
- * `fitCols` columns visible (monospace glyphs are roughly 0.6 em wide), never below 9 px.
+ * `fitCols` columns visible (monospace glyphs are roughly 0.6 em wide plus the letter spacing),
+ * never below AUTO_FONT_FLOOR. A window too narrow for that shows fewer columns instead.
  */
-function effectiveFontSize(widthPx: number): number {
+export function effectiveFontSize(widthPx: number): number {
   const base = prefs.font.size
   if (!prefs.autoFont) return base
-  const fitting = Math.floor(widthPx / (prefs.fitCols * 0.6))
-  return Math.max(Math.min(9, base), Math.min(base, fitting))
+  const fitting = Math.floor((widthPx / prefs.fitCols - prefs.font.letterSpacing) / 0.6)
+  return Math.max(Math.min(AUTO_FONT_FLOOR, base), Math.min(base, fitting))
 }
 
 /** Refit a runtime to its container (adapting the font size to its width) and tell the host. */
 export function refit(rt: Runtime): void {
-  if (!rt.holder.isConnected) return
+  // Mission control scales the live terminals without resizing them; a refit would resize the PTY.
+  if (isOverview() || !rt.holder.isConnected) return
   openRuntime(rt)
   if (rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
   const size = effectiveFontSize(rt.holder.clientWidth)
@@ -470,6 +509,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
     if (kill && rt.socket?.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'kill' }))
     rt.socket?.close()
   } catch {}
+  untrackUnread(id)
   try {
     rt.term.dispose()
   } catch {}
