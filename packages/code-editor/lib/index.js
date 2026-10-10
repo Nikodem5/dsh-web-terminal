@@ -13,6 +13,7 @@ import { MAX_LIST_FILES, MAX_WRITE_BYTES, listTree, readFile, walkFiles, writeFi
 import * as gitOps from './git.js'
 import { findRepos } from './repos.js'
 import { createWatchers } from './watcher.js'
+import { RAW, searchRoutes } from './search-routes.js'
 import { originAllowed, parseExtraOrigins } from './shared/origin.js'
 import { safeCall } from './shared/safe-call.js'
 
@@ -130,7 +131,12 @@ function apply(ctx, options) {
             }
             const url = new URL(req.url ?? '/', 'http://localhost')
             const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await readJsonBody(req, bodyLimit)
-            writeJson(res, 200, { ok: true, ...(await handler({ url, body, req })) })
+            const out = await handler({ url, body, req, res })
+            // search-routes.js: a binary answer (images for the markdown preview) instead of JSON.
+            if (out?.[RAW] !== undefined) {
+              res.writeHead(out[RAW].status, out[RAW].headers)
+              res.end(out[RAW].body)
+            } else writeJson(res, 200, { ok: true, ...out })
           } catch (error) {
             const failure = error instanceof EditorError ? error : fromFsError(error)
             if (!(error instanceof EditorError) && failure.status === 500) console.warn(`[code-editor] ${path}: ${error instanceof Error ? error.message : String(error)}`)
@@ -218,6 +224,9 @@ function apply(ctx, options) {
         return walkFiles(root.real)
       },
     }),
+    // --- search + raw image routes (search-routes.js) ---
+    ...searchRoutes({ route, rootOf, timeoutMs: Number.isFinite(opts.searchTimeoutMs) ? opts.searchTimeoutMs : undefined }),
+    // --- end search ---
     route(
       '/file',
       {
