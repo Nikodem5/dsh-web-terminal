@@ -220,8 +220,14 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     if (body === null) return
     body.appendChild(rt.holder)
     refit(rt)
+    let queued = false
     const observer = new ResizeObserver(() => {
-      requestAnimationFrame(() => refit(rt))
+      if (queued) return
+      queued = true
+      requestAnimationFrame(() => {
+        queued = false
+        refit(rt)
+      })
     })
     observer.observe(body)
     return () => {

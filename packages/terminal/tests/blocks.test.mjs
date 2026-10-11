@@ -37,7 +37,7 @@ async function until(check, what, timeout = 20000) {
   }
   assert.fail(`timed out waiting for ${what}`)
 }
-const flush = (rt) => new Promise((resolve) => rt.term.write('', resolve))
+const flush = (rt) => new Promise((resolve) => { s.flushOutput(rt); rt.term.write('', resolve) })
 const attached = (extra = {}) => ({ type: 'attached', created: false, replay: '', exited: false, exitCode: null, agent: null, ...extra })
 const typed = (sock, text) => sock.sent.some((f) => f.type === 'input' && f.data === text)
 

@@ -35,7 +35,7 @@ async function until(check, what, timeout = 20000) {
   }
   assert.fail(`timed out waiting for ${what}`)
 }
-const flush = (rt) => new Promise((resolve) => rt.term.write('', resolve))
+const flush = (rt) => new Promise((resolve) => { s.flushOutput(rt); rt.term.write('', resolve) })
 const ESC = '\x1b'
 const osc = (body) => `${ESC}]${body}\x07`
 const prompt = (cmd) => `${osc('133;A')}$ ${osc('133;B')}${cmd}\r\n${osc('633;E;' + cmd)}${osc('133;C')}`

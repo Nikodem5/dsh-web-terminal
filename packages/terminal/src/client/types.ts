@@ -122,6 +122,10 @@ export interface Runtime {
   pendingBytes: number
   /** Output was dropped while `pendingBytes` was over the limit. */
   droppedOutput: boolean
+  /** Output frames received since the last flush; written to xterm as one chunk per paint. */
+  outBuf: string
+  /** A flush of `outBuf` is already scheduled. */
+  outScheduled: boolean
   timer: ReturnType<typeof setTimeout> | undefined
   /** Cancels the pending startup-command typing (socket closed, terminal disposed). */
   stopStartup?: () => void
