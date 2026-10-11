@@ -44,7 +44,7 @@ async function until(check, what, timeout = 20000) {
 }
 
 /** Resolves once xterm has parsed everything written so far. */
-const flush = (rt) => new Promise((resolve) => rt.term.write('', resolve))
+const flush = (rt) => new Promise((resolve) => { s.flushOutput(rt); rt.term.write('', resolve) })
 
 const sub = (id, status = 'running') => ({ id, agentType: 'Explore', label: id, description: '', status, model: 'claude-haiku-5-5', startTime: 1000, endedAt: null, tokenCount: 5, contextWindowSize: null })
 

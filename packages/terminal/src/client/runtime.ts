@@ -7,6 +7,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { emit, hostInfo, hostInfoReady, prefs, refreshHostInfo, runtimes, store, updateWin } from './state.ts'
 import { cleanTitle, displayName } from './names.ts'
 import { SSH_LOST, noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
@@ -44,6 +45,44 @@ export const MAX_PENDING_BYTES = 5_000_000
 /** Whether `incoming` more bytes fit in the queue without passing the limit. */
 export function admitOutput(pending: number, incoming: number, limit = MAX_PENDING_BYTES): boolean {
   return pending + incoming <= limit
+}
+
+/**
+ * Hand the output gathered since the last flush to xterm as one write. A repaint from a TUI arrives
+ * as many small frames; one write per frame means one parse and render pass per frame.
+ */
+export function flushOutput(rt: Runtime): void {
+  rt.outScheduled = false
+  if (rt.killed) {
+    rt.outBuf = '' // disposed while a flush was pending: the terminal is gone
+    return
+  }
+  if (rt.outBuf === '') return
+  const batch = rt.outBuf
+  rt.outBuf = ''
+  rt.term.write(batch, () => {
+    rt.pendingBytes = Math.max(0, rt.pendingBytes - batch.length)
+    if (rt.droppedOutput && rt.pendingBytes === 0) {
+      rt.droppedOutput = false
+      rt.term.write('\r\n\x1b[2m[output was too fast and part of it was dropped]\x1b[0m\r\n')
+    }
+  })
+}
+
+/** Queue output and flush it on the next paint (a timer too: a hidden page gets no animation frames). */
+function queueOutput(rt: Runtime, data: string): void {
+  rt.pendingBytes += data.length
+  rt.outBuf += data
+  if (rt.outScheduled) return
+  rt.outScheduled = true
+  requestAnimationFrame(() => flushOutput(rt))
+  setTimeout(() => flushOutput(rt), 50)
+}
+
+/** Forget queued output that the screen is about to be reset over (replay, resync). */
+function discardOutput(rt: Runtime): void {
+  rt.pendingBytes = Math.max(0, rt.pendingBytes - rt.outBuf.length)
+  rt.outBuf = ''
 }
 
 /**
@@ -147,6 +186,8 @@ export function ensureRuntime(win: WinState): Runtime {
     hostLost: false,
     pendingBytes: 0,
     droppedOutput: false,
+    outBuf: '',
+    outScheduled: false,
     timer: undefined,
     lastCols: 0,
     lastRows: 0,
@@ -198,12 +239,15 @@ export function ensureRuntime(win: WinState): Runtime {
     noteUserInput(rt)
   })
   term.onTitleChange((title) => {
+    const same = title === rt.title
     rt.title = title
     const w = store.wins.find((x) => x.id === rt.id)
     if (w !== undefined) {
       const name = cleanTitle(title, w.cwd)
       if (name !== undefined && name !== w.autoName) updateWin(rt.id, { autoName: name })
     }
+    // A TUI that re-sets the same title every frame must not re-render the app.
+    if (same) return
     tick()
     emit()
   })
@@ -294,6 +338,7 @@ export function ensureRuntime(win: WinState): Runtime {
           noteHostRestart(rt)
           // The new host writes its own per-process settings file; the path we know belongs to the dead one.
           refreshHostInfo()
+          flushOutput(rt)
           term.write('\r\n\x1b[2m[host restarted: this shell is gone, restart this window]\x1b[0m\r\n')
           return
         }
@@ -306,6 +351,7 @@ export function ensureRuntime(win: WinState): Runtime {
         restoreAgent(rt, frame.agent)
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         applyEdits(rt, (frame as { edits?: unknown }).edits)
+        discardOutput(rt)
         term.reset()
         rt.blocks?.reset()
         promptBase = rt.blocks?.promptsReady ?? 0
@@ -350,6 +396,7 @@ export function ensureRuntime(win: WinState): Runtime {
       } else if (frame.type === 'resync') {
         // The host dropped output on a congested socket; its replay is the screen as it really is.
         if (typeof frame.replay !== 'string') return
+        discardOutput(rt)
         term.reset()
         rt.blocks?.reset()
         if (frame.replay.length > 0) term.write(frame.replay, () => rebaseUnread(rt))
@@ -363,15 +410,7 @@ export function ensureRuntime(win: WinState): Runtime {
           rt.droppedOutput = true
           return
         }
-        const size = frame.data.length
-        rt.pendingBytes += size
-        term.write(frame.data, () => {
-          rt.pendingBytes = Math.max(0, rt.pendingBytes - size)
-          if (rt.droppedOutput && rt.pendingBytes === 0) {
-            rt.droppedOutput = false
-            term.write('\r\n\x1b[2m[output was too fast and part of it was dropped]\x1b[0m\r\n')
-          }
-        })
+        queueOutput(rt, frame.data)
       } else if (frame.type === 'activity') {
         noteHostBusy(rt, frame.busy === true)
       } else if (frame.type === 'agent') {
@@ -384,11 +423,13 @@ export function ensureRuntime(win: WinState): Runtime {
         if (rt.hostLost) return
         setConn(rt, 'exited', `exit ${frame.exitCode ?? 'signal'}`)
         noteExit(rt, frame.exitCode)
+        flushOutput(rt)
         term.write(rt.ssh && frame.exitCode === SSH_LOST
           ? '\r\n\x1b[2m[ssh connection lost or not made (exit 255) — use Reconnect]\x1b[0m\r\n'
           : '\r\n\x1b[2m[process exited — close or restart this window]\x1b[0m\r\n')
       } else if (frame.type === 'error') {
         setConn(rt, 'failed', frame.message ?? 'error')
+        flushOutput(rt)
         term.write(`\x1b[31m${frame.message ?? 'error'}\x1b[0m\r\n`)
       }
     }
@@ -421,6 +462,18 @@ export function openRuntime(rt: Runtime): void {
   if (rt.opened) return
   rt.opened = true
   rt.term.open(rt.holder)
+  // GPU renderer: the default DOM one is the bottleneck for full-screen repaints. Falls back to it
+  // when WebGL is unavailable or the context is lost (many terminals can exhaust the browser's contexts).
+  try {
+    const webgl = new WebglAddon()
+    webgl.onContextLoss(() => webgl.dispose())
+    try {
+      rt.term.loadAddon(webgl)
+    } catch (error) {
+      webgl.dispose() // do not leak the GL context of an addon that failed to attach
+      throw error
+    }
+  } catch {}
   // Links open with Ctrl/Cmd+click (like VS Code) so plain clicks still select text.
   // The desktop app routes window.open of http(s) URLs to the system browser.
   rt.term.loadAddon(

@@ -90,6 +90,8 @@ const MAX_SESSIONS = 24
 
 /** Scrollback kept per detached session so a reload can repaint it (characters). */
 const REPLAY_LIMIT = 400_000
+/** The replay may grow this far past the limit before it is trimmed, so the copy trimming costs is not paid on every chunk. */
+const REPLAY_SLACK = 100_000
 
 /** Largest agent-signal request body accepted (bytes); real hook payloads are a few KB. */
 const SIGNAL_BODY_LIMIT = 64 * 1024
@@ -104,11 +106,13 @@ const DEFAULTS = {
   /** Ping interval; a socket that has not answered by the next ping is dropped. */
   heartbeatMs: 15_000,
   /** Stop forwarding live output when this many bytes are queued for the browser... */
-  highWater: 4 * 1024 * 1024,
+  highWater: 1024 * 1024,
   /** ...and send one resync frame once the queue is back under this. */
-  lowWater: 512 * 1024,
+  lowWater: 256 * 1024,
   /** How often a congested socket is checked for draining. */
   drainMs: 100,
+  /** Live output is gathered for this long and sent as one frame (a TUI repaint arrives as many small PTY chunks). */
+  batchMs: 8,
   /** A shell nobody has attached to or heard output from for this long is killed (12 h: overnight builds survive, forgotten shells do not pile up). */
   orphanMs: 12 * 60 * 60 * 1000,
   /** A detached session whose process already exited is dropped after this (10 min: long enough to reload and read the exit message). */
@@ -138,6 +142,7 @@ function readConfig() {
     highWater: envNumber('DSH_WT_HIGH_WATER', DEFAULTS.highWater),
     lowWater: envNumber('DSH_WT_LOW_WATER', DEFAULTS.lowWater),
     drainMs: envNumber('DSH_WT_DRAIN_MS', DEFAULTS.drainMs),
+    batchMs: envNumber('DSH_WT_BATCH_MS', DEFAULTS.batchMs),
     orphanMs: envNumber('DSH_WT_ORPHAN_MS', DEFAULTS.orphanMs),
     exitedMs: envNumber('DSH_WT_EXITED_MS', DEFAULTS.exitedMs),
     sweepMs: envNumber('DSH_WT_SWEEP_MS', DEFAULTS.sweepMs),
@@ -384,20 +389,44 @@ function apply(ctx) {
       if (ws === null || ws.readyState !== ws.OPEN) return stopDrainWatch(session)
       if (ws.bufferedAmount > config.lowWater) return
       stopDrainWatch(session)
-      send(ws, { type: 'resync', replay: session.replay })
+      send(ws, { type: 'resync', replay: replayOf(session) })
     }, config.drainMs)
     session.drainTimer.unref?.()
   }
-  /** Forward one chunk of live output to the attached browser, unless it is falling behind. */
-  const forwardData = (session, text) => {
+  /** The scrollback to repaint from, trimmed to the limit (it may sit slightly over between trims). */
+  const replayOf = (session) => {
+    if (session.replay.length > REPLAY_LIMIT) session.replay = trimReplay(session.replay, REPLAY_LIMIT)
+    return session.replay
+  }
+  /** Drop output gathered but not yet sent (a repaint from the replay covers it). */
+  const dropPending = (session) => {
+    clearTimeout(session.flushTimer)
+    session.flushTimer = null
+    session.pendingText = ''
+  }
+  /** Send the gathered live output as one frame, unless the browser is falling behind. */
+  const flushData = (session) => {
+    clearTimeout(session.flushTimer)
+    session.flushTimer = null
+    const text = session.pendingText
+    session.pendingText = ''
     const ws = session.ws
-    if (ws === null || ws.readyState !== ws.OPEN || session.congested) return
+    if (text === '' || ws === null || ws.readyState !== ws.OPEN || session.congested) return
     if (ws.bufferedAmount > config.highWater) {
       session.congested = true
       watchDrain(session)
       return
     }
     send(ws, { type: 'data', data: text })
+  }
+  /** Queue one chunk of live output for the attached browser; it goes out within `batchMs`. */
+  const forwardData = (session, text) => {
+    const ws = session.ws
+    if (ws === null || ws.readyState !== ws.OPEN || session.congested) return
+    session.pendingText += text
+    if (session.flushTimer !== null) return
+    session.flushTimer = setTimeout(() => flushData(session), config.batchMs)
+    session.flushTimer.unref?.()
   }
 
   // Agent signals arrive on a small loopback-only HTTP server of our own rather than on the
@@ -684,6 +713,7 @@ function apply(ctx) {
     clearTimeout(session.editTimer)
     session.edits.clear()
     stopDrainWatch(session)
+    dropPending(session)
     try { session.ws?.close(1000, 'killed') } catch {}
     safeCall(() => session.handle.terminate())
   }
@@ -799,7 +829,8 @@ function apply(ctx) {
       session.ws = ws
       session.lastActive = Date.now()
       stopDrainWatch(session)
-      send(ws, { type: 'attached', created: false, replay: session.replay, exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list(), edits: session.edits.list() })
+      dropPending(session)
+      send(ws, { type: 'attached', created: false, replay: replayOf(session), exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list(), edits: session.edits.list() })
       session.lastBusy = undefined
       if (cols > 0 && rows > 0 && !session.exited) resizeHandle(session.handle, cols, rows)
     } else {
@@ -839,7 +870,7 @@ function apply(ctx) {
           safeCall(() => handle.terminate())
           throw new Error('plugin unloaded')
         }
-        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null }
+        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null, pendingText: '', flushTimer: null }
         sessions.set(id, created)
         tokens.set(token, id)
         return created
@@ -864,7 +895,8 @@ function apply(ctx) {
       handle.output.on('data', (chunk) => {
         const text = decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
         if (text.length === 0) return
-        live.replay = trimReplay(live.replay + text, REPLAY_LIMIT)
+        live.replay += text
+        if (live.replay.length > REPLAY_LIMIT + REPLAY_SLACK) live.replay = trimReplay(live.replay, REPLAY_LIMIT)
         live.lastActive = Date.now()
         forwardData(live, text)
       })
@@ -874,6 +906,14 @@ function apply(ctx) {
           live.lastActive = Date.now()
           live.exitCode = outcome?.exitCode ?? null
           if (live.subagents.endAll()) notifySubagents(live)
+          // A congested socket missed output: repaint it from the replay now, so no later resync lands after the exit.
+          if (live.congested) {
+            stopDrainWatch(live)
+            dropPending(live)
+            send(live.ws, { type: 'resync', replay: replayOf(live) })
+          } else {
+            flushData(live)
+          }
           send(live.ws, { type: 'exit', exitCode: live.exitCode })
         },
         () => {},
@@ -881,7 +921,7 @@ function apply(ctx) {
       // The socket may have closed during the spawn: store the session detached so the sweep applies.
       if (ws.readyState !== ws.OPEN) return
       live.ws = ws
-      send(ws, { type: 'attached', created: true, replay: live.replay, exited: live.exited, exitCode: live.exitCode, agent: null, subagents: [], edits: [] })
+      send(ws, { type: 'attached', created: true, replay: replayOf(live), exited: live.exited, exitCode: live.exitCode, agent: null, subagents: [], edits: [] })
     }
 
     const bound = session
