@@ -5,7 +5,7 @@ A Monaco-based code editor and reviewer for the DeepSeek Harness web GUI. Two ha
 - **Host** (`lib/index.js`, this section): confined file and git routes plus a live-update WebSocket.
 - **Client** (`lib/client.js`, built from `src/` by `build.mjs`): the "Code" page.
 
-The host/client contract is [API.md](API.md). It is the source of truth for routes, bodies, error codes and frames.
+The host/client contract is [API.md](docs/API.md). It is the source of truth for routes, bodies, error codes and frames.
 
 ## Host
 

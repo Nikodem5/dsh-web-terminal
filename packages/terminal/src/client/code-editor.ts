@@ -3,7 +3,7 @@
 // The editor listens for a window event and marks its presence with `window.__dshCodeEditor = { version }`
 // when it loads. Nothing here talks to the host: opening a file or the review view is one DOM event.
 
-/** Event the editor plugin listens for (contract: packages/code-editor/API.md). */
+/** Event the editor plugin listens for (contract: packages/code-editor/docs/API.md). */
 export const EDITOR_OPEN_EVENT = 'dsh-code-editor:open'
 
 export interface EditorOpenDetail {

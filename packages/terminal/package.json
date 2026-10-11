@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "description": "Interactive PTY terminal inside the DeepSeek Harness web GUI, with a one-click Claude launcher for subscription sign-in (claude login).",
+  "author": "Nikodem Marcinkiewicz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nikodem5/dsh-web-terminal.git",
+    "directory": "packages/terminal"
+  },
+  "homepage": "https://github.com/Nikodem5/dsh-web-terminal#readme",
+  "bugs": {
+    "url": "https://github.com/Nikodem5/dsh-web-terminal/issues"
+  },
   "type": "module",
   "main": "lib/index.js",
   "exports": {

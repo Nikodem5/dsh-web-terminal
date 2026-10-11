@@ -8,7 +8,7 @@
 // browser half never reaches the client bundle graph. Copying `lib/` plus the
 // two manifests into the profile keeps the package physically inside the tree.
 //
-// Usage: node scripts/install.mjs [--remove] [--dry-run] [--package <name>|all] [profile ...]
+// Usage: node scripts/install.mjs (from a release archive: node install.mjs) [--remove] [--dry-run] [--package <name>|all] [profile ...]
 //        (default: every built plugin package, profiles desktop and web)
 //        --dry-run prints what would be copied or removed without writing anything.
 
@@ -16,7 +16,10 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, write
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+// In the repo this file is scripts/install.mjs (packages/ is one level up); in a release archive it sits
+// next to packages/ (see scripts/pack-release.mjs), so look beside it first.
+const here = dirname(fileURLToPath(import.meta.url))
+const root = existsSync(join(here, 'packages')) ? here : join(here, '..')
 const home = process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh')
 
 const args = process.argv.slice(2)

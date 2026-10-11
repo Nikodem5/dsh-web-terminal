@@ -2,18 +2,28 @@
   "name": "dsh-web-terminal-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "DeepSeek Harness plugins: web terminal, code editor (coming next), shared helpers.",
+  "description": "DeepSeek Harness plugins: web terminal, code editor and shared helpers.",
+  "author": "Nikodem Marcinkiewicz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nikodem5/dsh-web-terminal.git"
+  },
+  "homepage": "https://github.com/Nikodem5/dsh-web-terminal#readme",
+  "bugs": {
+    "url": "https://github.com/Nikodem5/dsh-web-terminal/issues"
+  },
   "type": "module",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && node --test tests/*.test.mjs",
     "install:desktop": "node scripts/install.mjs desktop",
     "install:web": "node scripts/install.mjs web",
     "install:all": "node scripts/install.mjs",
-    "install:dry": "node scripts/install.mjs --dry-run"
+    "install:dry": "node scripts/install.mjs --dry-run",
+    "pack": "npm run build && node scripts/pack-release.mjs"
   },
   "engines": {
     "node": ">=22"

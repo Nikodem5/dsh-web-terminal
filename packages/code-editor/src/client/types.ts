@@ -1,4 +1,4 @@
-// dsh-code-editor - shared types (mirror of packages/code-editor/API.md).
+// dsh-code-editor - shared types (mirror of packages/code-editor/docs/API.md).
 
 export interface RootInfo { path: string; exists: boolean; isGit: boolean }
 export interface TreeEntry { name: string; type: 'file' | 'dir' | 'symlink'; size: number; mtime: number }

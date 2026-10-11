@@ -5,7 +5,7 @@
 //   2. WS   /terminal/ws                -> the upgrade route exists, negotiates a
 //      real PTY, echoes a marker command, and terminates cleanly
 //
-// Usage: node probe.mjs <port> [token]
+// Usage: node dev/probe.mjs <port> [token]
 
 import { createHash, randomBytes } from 'node:crypto'
 import { connect } from 'node:net'
