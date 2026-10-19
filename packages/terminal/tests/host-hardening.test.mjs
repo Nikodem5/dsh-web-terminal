@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
-import { originAllowed, parseExtraOrigins } from '../lib/origin.js'
+import { originAllowed, parseExtraOrigins } from '../lib/shared/origin.js'
 
 // Own home: node --test runs files in parallel processes and host-protocol removes its own.
 const home = mkdtempSync(join(tmpdir(), 'dsh-wt-hardening-'))

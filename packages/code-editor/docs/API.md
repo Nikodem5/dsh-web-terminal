@@ -56,7 +56,7 @@ Same rules as the other git routes (registered `root`, 409 `not-git`, `execFile`
 - **Never prompts.** All git processes get `GIT_TERMINAL_PROMPT=0` and stdin closed; fetch / pull / push also `GIT_ASKPASS=`, `SSH_ASKPASS=`, `GCM_INTERACTIVE=never` and (unless the user set `GIT_SSH` / `GIT_SSH_COMMAND`) `ssh -o BatchMode=yes`; `protocol.ext.allow=never` is always set. A remote that needs credentials fails fast with 409 `auth-required` ("Authentication required - run git in a terminal"). Credential helpers that work without interaction still apply. Sync commands time out after 120 s (504 `timeout`); commit allows 120 s for slow hooks; other git calls keep 20 s.
 
 ## Live updates
-- WebSocket `/code-editor/ws?root=<abs>` (same Origin policy as the terminal plugin: reuse its logic or copy `packages/terminal/lib/origin.js` into packages/shared/host). Server -> client frames:
+- WebSocket `/code-editor/ws?root=<abs>` (same Origin policy as the terminal plugin, `packages/shared/host/origin.js`). Server -> client frames:
   - `{ type: 'hello', root }`
   - `{ type: 'changed', paths: string[] }` relative paths changed on disk, debounced 150 ms, capped 500 per frame (`{ type: 'changed', paths: [], overflow: true }` = "reload everything"). Ignore `.git/` internals except `index` and `HEAD`, which produce `{ type: 'git' }` (status may have changed).
   - `{ type: 'git' }` also sent after any stage/unstage/discard/write and after every git tool mutation (commit, checkout, fetch, pull, push).
