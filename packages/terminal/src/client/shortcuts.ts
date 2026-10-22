@@ -35,6 +35,8 @@ export interface Shortcut {
   chord?: Chord
   /** Display text for keys that have no chord (they are handled inside a widget). */
   keys?: string
+  /** Replaces the key list in the display text of a chord (e.g. `1–9` instead of nine keys). */
+  keyNames?: string
   /** The handler only acts while the terminal has a selection (so the key is a plain key otherwise). */
   needsSelection?: boolean
   /** The handler only acts while the terminal shows its normal screen and has command blocks to go to (otherwise the program gets the key). */
@@ -43,6 +45,10 @@ export interface Shortcut {
 
 export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'cycle', group: 'Windows', desc: 'Switch to the previous / next terminal', chord: { key: ['ArrowLeft', 'ArrowRight'], mod: 'ctrl', alt: true, shift: 'any' } },
+  { id: 'new', group: 'Windows', desc: 'Open the New terminal dialog', chord: { key: ['n'], mod: 'ctrl', alt: true } },
+  { id: 'close', group: 'Windows', desc: 'Close the focused terminal (asks first when it is busy)', chord: { key: ['w'], mod: 'ctrl', alt: true } },
+  { id: 'jump', group: 'Windows', desc: 'Jump to the 1st–9th terminal in the list (restores it if minimized)', chord: { key: ['1', '2', '3', '4', '5', '6', '7', '8', '9'], mod: 'ctrl', alt: true }, keyNames: '1–9' },
+  { id: 'focus-mode', group: 'Windows', desc: 'Maximize the focused terminal; again to restore the layout', chord: { key: ['Enter'], mod: 'ctrl', alt: true } },
   { id: 'overview', group: 'Overview', desc: 'Show / hide the overview of every terminal', chord: { code: ['Space'], key: [' '], mod: 'ctrl', shift: true } },
   { id: 'overview-filter', group: 'Overview', desc: 'Filter terminals by name or folder (while the overview is open)', keys: 'Type' },
   { id: 'overview-move', group: 'Overview', desc: 'Move the selection between tiles', keys: '← ↑ ↓ →' },
@@ -91,6 +97,14 @@ export function matchShortcut(id: string, e: Parameters<typeof matches>[1]): boo
   return chord !== undefined && matches(chord, e)
 }
 
+/** The Windows-group shortcuts that terminals-view acts on in its window-level listener. */
+const WINDOW_SHORTCUTS = ['cycle', 'new', 'close', 'jump', 'focus-mode'] as const
+
+/** Which window-level shortcut the event is, or null. */
+export function windowShortcut(e: Parameters<typeof matches>[1]): (typeof WINDOW_SHORTCUTS)[number] | null {
+  return WINDOW_SHORTCUTS.find((id) => matchShortcut(id, e)) ?? null
+}
+
 const KEY_LABEL: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', ' ': 'Space', Space: 'Space' }
 
 /** Display text for a shortcut's keys, e.g. `Ctrl+Shift+U` (`Cmd+Shift+U` on macOS) or `Ctrl+Alt+←/→`. */
@@ -104,7 +118,7 @@ export function formatShortcut(s: Shortcut, mac = isMac()): string {
   if (chord.shift === true) parts.push('Shift')
   // `code` and `key` of a chord name the same physical key (Space); show the key list once.
   const names = [...new Set((chord.key ?? chord.code ?? []).map((k) => KEY_LABEL[k] ?? (k.length === 1 ? k.toUpperCase() : k)))]
-  parts.push(names.join('/'))
+  parts.push(s.keyNames ?? names.join('/'))
   return parts.join('+')
 }
 

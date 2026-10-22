@@ -1038,3 +1038,14 @@ test('stored font: old untouched default (flag set or not) adopts the new defaul
   for (const l of loaded) l.closeAll()
   await settle()
 })
+
+test('toggleMaximize twice restores the layout (focus mode)', () => {
+  const a = s.openTerminal({ cwd: 'C:\a' })
+  const before = s.getWins().find((w) => w.id === a)
+  const { x, y, w, h } = before
+  s.toggleMaximize(a)
+  assert.equal(s.getWins().find((win) => win.id === a).maximized, true)
+  s.toggleMaximize(a)
+  const after = s.getWins().find((win) => win.id === a)
+  assert.deepEqual({ x: after.x, y: after.y, w: after.w, h: after.h, max: after.maximized }, { x, y, w, h, max: false })
+})

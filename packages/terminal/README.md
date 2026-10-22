@@ -28,7 +28,8 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Maximize / minimize | `□` / double-click the title bar; `–` turns a window into a chip in the toolbar |
 | Pin | `◇` / `◆` locks position and size (also skipped by layout presets) |
 | Layout presets | Grid, Columns, Rows, Main + side, Cascade (unpinned windows only) |
-| Switch terminals | **Ctrl+Alt+←/→** cycles through the list order (works while a terminal has focus) |
+| Switch terminals | **Ctrl+Alt+←/→** cycles through the visible terminals in list order (minimized ones are skipped; works while a terminal has focus). **Ctrl+Alt+1–9** jumps to the Nth terminal in the list (restoring it if minimized) |
+| New / close / focus mode | **Ctrl+Alt+N** opens the New terminal dialog, **Ctrl+Alt+W** closes the focused terminal (asks first when it is busy), **Ctrl+Alt+Enter** maximizes it and restores the layout on the next press |
 | Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste |
 | Find in terminal | **Ctrl+F** (or `⋯` → Find…) opens a find bar over the focused terminal: highlights every match in the scrollback, `n / total` counter, **Enter** / **Shift+Enter** next/previous, match-case / whole-word / regex toggles, **Esc** closes. Pre-fills from a one-line selection |
 | Jump to new output | **Ctrl+Shift+U** scrolls to the "new since" divider (see below) |
@@ -452,8 +453,6 @@ Ordered roughly by how much they help when running several agents. Recommended f
 - **Worktree launcher** — one click to create a git worktree and open an agent terminal in it, so parallel agents don't clash.
 
 ### Speed and navigation
-- ★ **Shortcuts** — `Ctrl+Alt+N` new terminal, `Ctrl+Alt+W` close, `Ctrl+Alt+1–9` jump to a terminal.
-- ★ **Focus mode** — one key maximizes the current terminal and the same key restores the layout.
 - **Smarter placement** — new terminals fill the largest free gap instead of cascading over others.
 - **Search all terminals** — one search box across every terminal's scrollback, jumping to the match.
 
