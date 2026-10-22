@@ -28,6 +28,7 @@ import {
   arrange,
   baseName,
   broadcastLine,
+  clearFocus,
   closeSearch,
   cycleFocus,
   displayName,
@@ -625,7 +626,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
             <button type="button" className="wt-link" onClick={() => setBroadcast({ on: false, live: false })}>Done</button>
           </div>
         ) : null}
-        <div className="wt-canvas">
+        <div className="wt-canvas" onPointerDown={(e) => { if (!(e.target as HTMLElement).closest('.wt-win')) clearFocus() }}>
           <div className="wt-stage" ref={stageRef}>
             {wins.length === 0 ? (
               <div className="wt-empty">

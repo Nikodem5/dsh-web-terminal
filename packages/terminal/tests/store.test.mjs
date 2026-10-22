@@ -160,6 +160,26 @@ test('cycleFocus walks the list order and wraps', () => {
   assert.equal(s.getFocusId(), a)
 })
 
+test('cycleFocus skips minimized windows', () => {
+  const a = s.openTerminal({ cwd: 'C:\\a' })
+  const b = s.openTerminal({ cwd: 'C:\\b' })
+  const c = s.openTerminal({ cwd: 'C:\\c' })
+  s.updateWin(b, { minimized: true })
+  s.cycleFocus(1)
+  assert.equal(s.getFocusId(), a)
+  s.cycleFocus(-1)
+  assert.equal(s.getFocusId(), c)
+  s.updateWin(c, { minimized: true })
+  s.cycleFocus(1)
+  assert.equal(s.getFocusId(), a)
+})
+
+test('clearFocus leaves no terminal focused', () => {
+  s.openTerminal({ cwd: 'C:\\a' })
+  s.clearFocus()
+  assert.equal(s.getFocusId(), null)
+})
+
 test('focusWin raises the window above the others and un-minimizes it', () => {
   const a = s.openTerminal({ cwd: 'C:\\a' })
   const b = s.openTerminal({ cwd: 'C:\\b' })
