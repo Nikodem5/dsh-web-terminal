@@ -74,15 +74,26 @@ export function renameWin(id: string, name: string): void {
   else updateWin(id, { title: trimmed, nameManual: true })
 }
 
-/** Focus the next/previous terminal in list order (Ctrl+Alt+←/→). */
+/** Focus the next/previous visible terminal in list order (Ctrl+Alt+←/→); minimized ones are skipped. */
 export function cycleFocus(direction: 1 | -1): void {
   const n = store.wins.length
   if (n === 0) return
   const at = store.wins.findIndex((w) => w.id === store.focusId)
-  const next = store.wins[(at + direction + n) % n]
-  if (next === undefined) return
-  focusWin(next.id)
-  runtimes.get(next.id)?.term.focus()
+  for (let step = 1; step <= n; step++) {
+    const next = store.wins[(((at + direction * step) % n) + n) % n]
+    if (next === undefined || next.minimized) continue
+    focusWin(next.id)
+    runtimes.get(next.id)?.term.focus()
+    return
+  }
+}
+
+/** Drop focus from every terminal (click on empty stage space). */
+export function clearFocus(): void {
+  if (store.focusId === null) return
+  store.focusId = null
+  if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  emit()
 }
 
 /** Move a window within the list order (drag-reorder in the sidebar). */
