@@ -53,10 +53,10 @@ test('SubagentStop completes it with endedAt and keeps the agent type; a late st
   assert.deepEqual(s.list()[0], done)
 })
 
-test('a stop for an agent never seen still shows it, completed', () => {
+test('a stop for an agent never seen is ignored, so no nameless 0s row appears', () => {
   const { s } = store()
-  s.stop({ agent_id: 'zz', agent_type: 'Plan' })
-  assert.equal(s.list()[0].status, 'completed')
+  assert.equal(s.stop({ agent_id: 'zz', agent_type: 'Plan' }), false)
+  assert.deepEqual(s.list(), [])
 })
 
 test('a status-line task reporting a finished status ends the agent', () => {

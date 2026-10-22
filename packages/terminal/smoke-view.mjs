@@ -32,6 +32,11 @@ const check = (ok, label) => {
   if (!ok) failures++
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+/** Wait for a condition with a generous deadline (a loaded machine is slow); the check after it reports a miss. */
+const until = async (cond, ms = 5000) => {
+  const deadline = Date.now() + ms
+  while (!cond() && Date.now() < deadline) await sleep(20)
+}
 
 // ── browser surface the bundle expects ──
 const sockets = []
@@ -53,7 +58,12 @@ window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventLi
 // The host probe is slow on a cold start (it looks shells up on PATH): answer after the terminal attaches.
 const statsPayload = { ok: true, limits: { fiveHour: { usedPct: 42, resetsAt: Date.now() + 3600e3, outAt: Date.now() + 1800e3 }, sevenDay: { usedPct: 63, resetsAt: Date.now() + 86400e3, outAt: null }, sampledAt: Date.now() }, cost: { totalUsd: 12.34, terminals: 2 }, tokens: { total: 2_500_000_000, input: 1, output: 2, cacheRead: 3, cacheCreation: 4, asOf: Date.now() }, statusLine: { enabled: true, reason: null } }
 const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ version: '9.9.9', node: { available: true, path: 'C:\node\node.exe' }, shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', claude: { available: true }, ssh: { available: true, path: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', hosts: [{ alias: 'homepc', hostName: '192.168.1.20', user: 'me', port: 2222 }, { alias: 'nas', hostName: null, user: null, port: null }] }, agent: { claudeSettings: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' }, sessions: [] }) }))
-window.fetch = (url) => (String(url).endsWith('/stats') ? Promise.resolve({ ok: true, json: async () => statsPayload }) : infoFetch())
+const updatePayload = { ok: true, available: true, reason: null, repo: 'C:\src\dsh-web-terminal', installed: 'a'.repeat(40), head: 'b'.repeat(40), branch: 'main', canRelaunch: true, relaunchReason: null, running: false, step: null, log: [], ok: null, error: null }
+window.fetch = (url) => {
+  if (String(url).endsWith('/stats')) return Promise.resolve({ ok: true, json: async () => statsPayload })
+  if (String(url).endsWith('/update')) return Promise.resolve({ ok: true, json: async () => updatePayload })
+  return infoFetch()
+}
 window.confirm = () => true
 window.__DSH_TRANSPORT__ = { streamBaseUrl: 'http://127.0.0.1:19387' }
 window.HTMLCanvasElement.prototype.getContext = () => null
@@ -153,10 +163,10 @@ check(q('.wt-dialog') !== null && qa('.wt-win').length === 0, 'Enter on the Canc
 click(byText('.wt-dialog button', 'claude --resume'))
 await sleep(40)
 click(byText('.wt-dialog button', 'Open'))
-await sleep(120)
+await until(() => qa('.wt-win').length === 1 && sockets.length > 0)
 check(qa('.wt-win').length === 1, 'a terminal window opens')
 const sock = sockets[sockets.length - 1]
-check(sock.url.startsWith('ws://127.0.0.1:19387/terminal/ws?') && sock.url.includes('cwd=C%3A%5Cwork%5Crepo'), 'socket targets the host origin with the chosen folder')
+check(sock?.url.startsWith('ws://127.0.0.1:19387/terminal/ws?') && sock.url.includes('cwd=C%3A%5Cwork%5Crepo'), 'socket targets the host origin with the chosen folder')
 
 // host attaches a fresh shell: startup command is typed once its prompt is up
 
@@ -675,14 +685,17 @@ await sleep(20)
   click(btn)
   await sleep(40)
   check(q('.wt-help') !== null, 'the Help button opens the panel')
-  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Status colours|Files changed by an agent|Stats bar|Diagnostics', 'all seven sections render')
+  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Status colours|Files changed by an agent|Stats bar|Diagnostics|Update from source', 'all eight sections render')
   const total = qa('.wt-help [data-shortcut]').length
   check(total >= 15 && qa('.wt-help-group').length >= 7, 'shortcuts are listed in groups')
   check(qa('.wt-help .wt-dot').map((d) => d.dataset.a).join(',') === 'working,needs-you,finished,running,idle,exited,offline,connected,disconnected', 'the legend draws every status dot with the real .wt-dot classes')
   check(q('.wt-help .wt-badge[data-level="urgent"]') !== null && q('.wt-help .wt-badge[data-level="quiet"]') !== null && qa('.wt-help .wt-gutter-swatch').length === 4, 'badge and command-bar legends render')
-  const diag = q('.wt-help-sec:last-child').textContent
+  const diag = qa('.wt-help-sec').find((sec) => sec.querySelector('h4')?.textContent === 'Diagnostics').textContent
   check(diag.includes('9.9.9') && diag.includes('C:\node\node.exe') && /Terminals.*live/.test(diag) && diag.includes('Status-line wrapper'), 'diagnostics show the live version, node path and terminal counts')
   check(diag.includes('ssh') && diag.includes('OpenSSH\\ssh.exe') && /ssh config hosts2/.test(diag), 'diagnostics show where ssh was found and how many config hosts there are')
+  const upd = qa('.wt-help-sec').find((sec) => sec.querySelector('h4')?.textContent === 'Update from source')
+  check(upd.textContent.includes('C:\src\dsh-web-terminal') && upd.textContent.includes('aaaaaaa (clone is at bbbbbbb on main)'), 'the update section shows the clone and that it is ahead of the installed copy')
+  check([...upd.querySelectorAll('button')].some((b) => b.textContent === 'Pull, build and install' && !b.disabled) && [...upd.querySelectorAll('button')].some((b) => b.textContent === 'Restart app' && !b.disabled), 'the update and restart buttons are enabled')
   setValue(q('.wt-help input'), 'unread')
   await sleep(30)
   const left = qa('.wt-help [data-shortcut]').map((r) => r.dataset.shortcut)

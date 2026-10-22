@@ -40,7 +40,9 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 **Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Help panel
-The book button (or **F1**) opens a panel with six sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
+The book button (or **F1**) opens a panel with eight sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
+
+**Update from source** (last section) is for installs made with `npm run install:desktop` from a git clone: the installer records the clone and commit in `install-source.json` beside the installed package. **Pull, build and install** runs `git pull --ff-only`, `npm install`, `npm run build` and `node scripts/install.mjs <profile>` in that clone, with the output shown below the buttons; **Restart app** (after a confirm that counts busy terminals) hands off to a detached helper (`lib/relaunch.js`) that closes the app, forces it after 8 s, and starts it again. Release installs show why the update is unavailable; under `dsh web` restart it yourself. Routes: `GET`/`POST /api/dsh-web-terminal/update`, `POST /api/dsh-web-terminal/relaunch`, both refusing foreign Origins.
 
 ### Knowing what your agents are doing
 Status comes from the agent itself, not from guessing at output.
@@ -305,6 +307,7 @@ Restart the desktop app: plugins load at boot.
 | `src/client/terminals-view.tsx` | The view: toolbar, window chrome, drag/resize/snap, broadcast bar |
 | `src/client/shortcuts.ts` | The keyboard shortcut registry: the key handlers match with it and the help panel lists it |
 | `src/client/help-panel.tsx`, `help-data.ts` | The help popover and its content (mouse actions, legends, diagnostics report) |
+| `src/client/self-update.tsx`, `lib/self-update.js`, `lib/relaunch.js` | Update from source: the help-panel section, the host runner and the detached app relaunch |
 | `src/client/sidebar.tsx` | Right-hand terminal list |
 | `src/client/new-dialog.tsx` | New-terminal dialog |
 | `src/client/menus.tsx` | Layouts and settings popovers |
@@ -367,7 +370,7 @@ Three sources are merged per terminal (`lib/subagents.js`), keyed by agent id:
   `label`/`description`, `startTime`) and then relays the user's own `subagentStatusLine` command from
   `~/.claude/settings.json` (`CLAUDE_CONFIG_DIR` respected), or prints nothing so Claude's default rows stay.
 - `SubagentStart` / `SubagentStop` HTTP hooks to `/signal/claude`: the agent appears (running) and completes
-  (`status: "completed"`, `endedAt`, `agentType` kept). They carry no agent state.
+  (`status: "completed"`, `endedAt`, `agentType` kept). They carry no agent state. A stop for an id never seen is ignored.
 - `SessionEnd`, or the shell exiting, completes every running sub-agent.
 
 Finished sub-agents stay listed for 5 minutes (then vanish from the next frame); at most 50 per terminal. Strings are

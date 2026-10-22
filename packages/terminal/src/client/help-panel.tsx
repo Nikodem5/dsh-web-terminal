@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { Pop } from './popover.tsx'
+import { UpdateSection } from './self-update.tsx'
 import { getStats, subscribeStats } from './stats.ts'
 import {
   ACTIVITY_ORDER,
@@ -224,6 +225,10 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
             <button type="button" className="wt-btn" onClick={copy}>Copy diagnostics</button>
             {copied !== null ? <span className="wt-dim">{copied === 'ok' ? 'Copied' : 'Could not copy'}</span> : null}
           </div>
+        </Section>
+
+        <Section title="Update from source">
+          <UpdateSection />
         </Section>
       </div>
     </Pop>

@@ -22,7 +22,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { createServer } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import { TOKEN_ENV, TOKEN_HEADER, buildClaudeSettings, normalizeSignal } from './agent-signals.js'
@@ -39,6 +39,7 @@ import { OpenError, createOpener } from './open.js'
 import { MAX_CANDIDATES, linuxCwd, resolveCandidates } from './paths.js'
 import { createTokenTotals } from './token-totals.js'
 import { createUsage } from './usage.js'
+import { createSelfUpdate } from './self-update.js'
 import { safeCall } from './shared/safe-call.js'
 
 /** Stable cordis plugin name. */
@@ -57,6 +58,12 @@ const PATHS_PATH = '/api/dsh-web-terminal/paths'
 const OPEN_PATH = '/api/dsh-web-terminal/open'
 /** Bodies for those two are tiny; anything bigger is refused. */
 const PATH_BODY_LIMIT = 128 * 1024
+
+/** Update from source (GET status, POST start) and the app relaunch that loads the result. */
+const UPDATE_PATH = '/api/dsh-web-terminal/update'
+const RELAUNCH_PATH = '/api/dsh-web-terminal/relaunch'
+/** This package's installed folder (the parent of lib/). */
+const PLUGIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 
 /** The stats route the stats bar polls. */
 const STATS_PATH = '/api/dsh-web-terminal/stats'
@@ -702,6 +709,37 @@ function apply(ctx) {
     },
   }), noop)
 
+  // Update from source. These routes run commands, so a foreign page is refused like on the socket.
+  const selfUpdate = createSelfUpdate({ pluginDir: PLUGIN_DIR, node: () => nodeBin })
+  const disposeUpdate = optional('update route', () => ctx.webServer.register({
+    kind: 'exact',
+    path: UPDATE_PATH,
+    handler: async (req, res) => {
+      if (!originAllowed(req.headers?.origin, req.headers?.host, config.allowedOrigins)) return writeJson(res, 403, { ok: false, error: 'Origin not allowed' })
+      if (req.method === 'POST') {
+        await signalReady
+        const started = selfUpdate.start()
+        return writeJson(res, started ? 202 : 409, { ok: started, ...(await selfUpdate.status()) })
+      }
+      writeJson(res, 200, { ok: true, ...(await selfUpdate.status()) })
+    },
+  }), noop)
+  const disposeRelaunch = optional('relaunch route', () => ctx.webServer.register({
+    kind: 'exact',
+    path: RELAUNCH_PATH,
+    handler: async (req, res) => {
+      if (!originAllowed(req.headers?.origin, req.headers?.host, config.allowedOrigins)) return writeJson(res, 403, { ok: false, error: 'Origin not allowed' })
+      if (req.method !== 'POST') return writeJson(res, 405, { ok: false, error: 'POST only' })
+      await signalReady
+      try {
+        selfUpdate.relaunch()
+        writeJson(res, 200, { ok: true })
+      } catch (error) {
+        writeJson(res, 200, { ok: false, error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+  }), noop)
+
   /** End one session for good. */
   const destroy = (id) => {
     const session = sessions.get(id)
@@ -990,6 +1028,9 @@ function apply(ctx) {
     safeCall(disposeStats)
     safeCall(disposePaths)
     safeCall(disposeOpen)
+    safeCall(disposeUpdate)
+    safeCall(disposeRelaunch)
+    safeCall(() => selfUpdate.dispose())
     clearInterval(usageTimer)
     saveUsage(true)
     try { signalServer.close() } catch {}

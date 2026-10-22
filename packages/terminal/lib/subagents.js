@@ -156,11 +156,12 @@ export function createSubagents({ now = Date.now, retainMs = RETAIN_MS, max = MA
       const id = idOf(body?.agent_id)
       if (id === undefined) return false
       const existing = agents.get(id)
+      // Never seen running: it would only be a nameless, 0s row, so there is nothing worth listing.
+      if (existing === undefined) return false
       const patch = {}
       const agentType = text(body.agent_type)
       if (agentType !== '') patch.agentType = agentType
-      if (existing === undefined) patch.startTime = now()
-      if (existing?.endedAt == null) {
+      if (existing.endedAt == null) {
         patch.status = 'completed'
         patch.endedAt = now()
       }
