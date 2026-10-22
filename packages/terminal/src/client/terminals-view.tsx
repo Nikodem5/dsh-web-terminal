@@ -501,7 +501,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     return () => setViewMounted(false)
   }, [])
 
-  // Ctrl+Alt+←/→ cycles terminals (N new, W close, 1–9 jump, Enter focus mode), F1 toggles the help. Capture phase so they win over the page and the focused xterm.
+  // Ctrl+Alt+←/→ cycles terminals (T new, W close, 1–9 jump, M focus mode), F1 toggles the help. Capture phase so they win over the page and the focused xterm.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (matchShortcut('help', e)) {
@@ -518,7 +518,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
       if (action === 'cycle') cycleFocus(e.key === 'ArrowRight' ? 1 : -1)
       else if (action === 'new') setDialog({})
       else if (action === 'close') {
-        if (current !== null) requestClose([current])
+        if (current !== null) setTimeout(() => requestClose([current]), 0) // outside the key event, so the confirm dialog is not swallowed
       } else if (action === 'focus-mode') {
         if (current !== null) toggleMaximize(current)
       } else {
@@ -646,7 +646,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
               <div className="wt-empty">
                 <div>No terminals yet.</div>
                 <button type="button" className="wt-btn" data-variant="primary" onClick={() => setDialog({})}>＋ New terminal</button>
-                <div>Drag windows by the title bar, snap them to edges or corners, and pin them in place.<br />Ctrl+Alt+←/→ switches between terminals, Ctrl+Alt+N opens a new one.</div>
+                <div>Drag windows by the title bar, snap them to edges or corners, and pin them in place.<br />Ctrl+Alt+←/→ switches between terminals, Ctrl+Alt+T opens a new one.</div>
               </div>
             ) : null}
             {wins.map((w) => (
