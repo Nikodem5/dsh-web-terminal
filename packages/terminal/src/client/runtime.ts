@@ -2,7 +2,7 @@
 // window, reconnecting, sizing, restart and log export.
 
 import { isMissionShortcut, isOverview } from './mission.ts'
-import { matchShortcut } from './shortcuts.ts'
+import { matchShortcut, windowShortcut } from './shortcuts.ts'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -130,7 +130,7 @@ function socketBase(): string {
 
 /** Key combinations the app handles itself, so the terminal must not swallow them. */
 function isAppShortcut(event: KeyboardEvent): boolean {
-  return matchShortcut('cycle', event) || isMissionShortcut(event) || matchShortcut('help', event)
+  return windowShortcut(event) !== null || isMissionShortcut(event) || matchShortcut('help', event)
 }
 
 /** Build (once) the xterm + socket for a window. */

@@ -65,6 +65,7 @@ const KEYS = [
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((k) => ({ key: k, code: `Key${k}` })),
   { key: ' ', code: 'Space' },
   { key: 'Enter', code: 'Enter' },
+  ...'123456789'.split('').map((k) => ({ key: k, code: `Digit${k}` })),
   { key: 'Escape', code: 'Escape' },
   { key: 'Tab', code: 'Tab' },
   { key: 'ArrowLeft', code: 'ArrowLeft' },
@@ -92,6 +93,8 @@ test('formatShortcut: platform variants and key names', () => {
   assert.equal(s.formatShortcut(by('unread'), true), 'Cmd+Shift+U')
   assert.equal(s.formatShortcut(by('cycle'), false), 'Ctrl+Alt+←/→')
   assert.equal(s.formatShortcut(by('cycle'), true), 'Ctrl+Option+←/→', 'Ctrl stays Ctrl on macOS: Cmd+arrows are the system\'s')
+  assert.equal(s.formatShortcut(by('jump'), false), 'Ctrl+Alt+1–9')
+  assert.equal(s.formatShortcut(by('close'), false), 'Ctrl+Alt+W')
   assert.equal(s.formatShortcut(by('overview'), false), 'Ctrl+Shift+Space')
   assert.equal(s.formatShortcut(by('find'), false), 'Ctrl+F')
   assert.equal(s.formatShortcut(by('help'), false), 'F1')

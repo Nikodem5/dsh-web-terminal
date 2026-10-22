@@ -6,8 +6,8 @@
 //   633;E;<command>      the command line (escaped)        633;P;Cwd=<path>      real current folder
 //   7;file://host/path   the folder, the other common way
 //
-// Phase 1 renders a coloured gutter bar per block; the model is what later features (hover actions,
-// navigation, sticky header, failed-command alerts) read.
+// This module renders a coloured gutter bar per block and keeps the model that the other features read
+// (hover actions, navigation, sticky header, failed-command alerts: see block-*.ts).
 
 import type { IDecoration, IMarker, Terminal } from '@xterm/xterm'
 import { emit, persistSoon, prefs, runtimes } from './state.ts'
