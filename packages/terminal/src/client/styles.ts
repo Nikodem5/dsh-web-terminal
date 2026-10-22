@@ -211,6 +211,9 @@ const VIEW_CSS = `
 .wt-help-how { color: var(--wt-dim); overflow-wrap: anywhere; }
 .wt-kbd { justify-self: start; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; padding: 1px 6px; border: 0.5px solid var(--wt-line); border-radius: 5px; background: var(--wt-field); color: var(--wt-text); }
 .wt-help .wt-badge { justify-self: start; }
+.wt-update .wt-row { margin-top: 4px; }
+.wt-update-error { color: var(--wt-danger); padding-top: 4px; }
+.wt-update-log { max-height: 180px; overflow: auto; margin: 6px 0 0; padding: 6px 8px; background: var(--wt-deep); border: 0.5px solid var(--wt-line); border-radius: 6px; font: 11px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* find bar */
 .wt-find { position: absolute; top: 40px; right: 14px; z-index: 40; display: flex; align-items: center; gap: 4px; padding: 5px 6px; border: 0.5px solid var(--wt-line); border-radius: 10px; background: var(--wt-surface); color: var(--wt-text); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }

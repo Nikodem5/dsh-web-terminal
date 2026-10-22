@@ -12,6 +12,7 @@
 //        (default: every built plugin package, profiles desktop and web)
 //        --dry-run prints what would be copied or removed without writing anything.
 
+import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -64,6 +65,20 @@ if (!remove) {
   }
 }
 
+/**
+ * Installing from a git clone: the clone and the commit the copy was built from. Written beside each installed
+ * package as install-source.json so the terminal plugin's "Update from source" knows which clone to pull and build.
+ * A release archive has no .git, so its installs carry no source and the update stays unavailable.
+ */
+const source = (() => {
+  if (!existsSync(join(root, '.git'))) return null
+  let commit = null
+  try {
+    commit = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trim()
+  } catch {}
+  return { repo: root, commit, installedAt: new Date().toISOString() }
+})()
+
 /** Add or drop one package in one profile manifest. */
 function reconcileManifest(profileDir, name) {
   const manifestPath = join(profileDir, 'package.json')
@@ -112,6 +127,8 @@ for (const profile of profiles) {
       cpSync(join(dir, file), join(target, file))
     }
     cpSync(join(dir, 'lib'), join(target, 'lib'), { recursive: true })
+    if (source !== null) writeFileSync(join(target, 'install-source.json'), `${JSON.stringify(source, null, 2)}
+`)
     reconcileManifest(profileDir, name)
     console.log(`installed ${name} -> ${target}`)
   }

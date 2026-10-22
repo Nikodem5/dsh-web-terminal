@@ -51,6 +51,8 @@ npm run build
 npm run install:desktop      # or install:web; restart the app afterwards
 ```
 
+After that, the help panel (F1) → **Update from source** pulls, rebuilds, reinstalls and restarts the app in one go.
+
 `npm test` runs all tests; `npm run pack` builds the release archive into `dist/`. The installer copies each plugin
 into `~/.dsh/profiles/<profile>/node_modules` (override the location with `DSH_HOME`), because linked packages outside
 the profile tree do not get their browser half loaded.
