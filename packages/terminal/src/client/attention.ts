@@ -204,7 +204,9 @@ function refreshActivity(rt: Runtime): boolean {
 function rememberSession(rt: Runtime, signal: AgentSignal): void {
   if (signal.state === 'idle' || signal.state === 'ended' || !isSessionId(signal.session)) return
   const win = store.wins.find((w) => w.id === rt.id)
-  if (win !== undefined && win.agentSession !== signal.session) updateWin(rt.id, { agentSession: signal.session })
+  // A conversation belongs to the provider that started it: another provider's id is no use to this window's command.
+  if (win === undefined || (win.provider !== undefined && win.provider !== signal.provider)) return
+  if (win.agentSession !== signal.session) updateWin(rt.id, { agentSession: signal.session })
 }
 
 /** An agent reported a state. */

@@ -23,6 +23,7 @@ import {
   diagnosticRows,
 } from './help-data.ts'
 import type { DiagnosticsInput } from './help-data.ts'
+import { providers } from './providers.ts'
 import {
   SHORTCUTS,
   SHORTCUT_GROUPS,
@@ -58,7 +59,7 @@ function readDiagnostics(now: number): DiagnosticsInput {
     version: hostInfo.version,
     platform: hostInfo.platform,
     node: hostInfo.node,
-    claude: hostInfo.claude,
+    agents: providers.map((p) => ({ command: p.command, info: hostInfo.providers?.[p.id] })),
     ssh: hostInfo.ssh,
     statusLine,
     shellIntegration: getPrefs().shellIntegration,

@@ -696,54 +696,60 @@ const SETTINGS = 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json'
 const SETTINGS_ARG = '--settings "C:/Users/me/.dsh/web-terminal/claude-settings-1.json"'
 const SESSION = '3f4a3c42-a672-45ff-a7f5-ac6abdc48a8e'
 
-test('withAgentHooks adds --settings after claude and keeps the other flags', () => {
-  assert.equal(s.withAgentHooks('claude', SETTINGS), `claude ${SETTINGS_ARG}`)
-  assert.equal(s.withAgentHooks('claude --resume', SETTINGS), `claude ${SETTINGS_ARG} --resume`)
-  assert.equal(s.withAgentHooks('  claude --continue', SETTINGS), `  claude ${SETTINGS_ARG} --continue`)
+/** What the runtime types for a saved startup command: its provider's launch rewrite, or the command as is. */
+function withAgentHooks(startup, settingsPath, session) {
+  const provider = s.providerForCommand(startup)
+  return provider === undefined ? startup : provider.launch(startup, typeof settingsPath === 'string' ? { settingsPath } : undefined, session)
+}
+
+test('Claude launch adds --settings after claude and keeps the other flags', () => {
+  assert.equal(withAgentHooks('claude', SETTINGS), `claude ${SETTINGS_ARG}`)
+  assert.equal(withAgentHooks('claude --resume', SETTINGS), `claude ${SETTINGS_ARG} --resume`)
+  assert.equal(withAgentHooks('  claude --continue', SETTINGS), `  claude ${SETTINGS_ARG} --continue`)
 })
 
-test('withAgentHooks leaves other commands, an existing --settings and a missing file alone', () => {
+test('Claude launch leaves other commands, an existing --settings and a missing file alone', () => {
   const file = '/home/me/.dsh/web-terminal/s.json'
   for (const command of ['npm run dev', 'claude-code-router start', 'echo claude', 'claude --settings x.json', 'claude --settings=x.json', 'mclaude']) {
-    assert.equal(s.withAgentHooks(command, file), command, command)
+    assert.equal(withAgentHooks(command, file), command, command)
   }
-  assert.equal(s.withAgentHooks('claude', null), 'claude')
-  assert.equal(s.withAgentHooks('claude', undefined), 'claude')
-  assert.equal(s.withAgentHooks('claude', ''), 'claude')
+  assert.equal(withAgentHooks('claude', null), 'claude')
+  assert.equal(withAgentHooks('claude', undefined), 'claude')
+  assert.equal(withAgentHooks('claude', ''), 'claude')
 })
 
 test('commands that are not claude never get a conversation added', () => {
   for (const command of ['npm run dev', 'claude-code-router start', 'echo claude', 'mclaude']) {
-    assert.equal(s.withAgentHooks(command, SETTINGS, SESSION), command, command)
+    assert.equal(withAgentHooks(command, SETTINGS, SESSION), command, command)
   }
   // An existing --settings is kept, but the conversation is still resumed.
-  assert.equal(s.withAgentHooks('claude --settings x.json', SETTINGS, SESSION), `claude --settings x.json --resume ${SESSION}`)
+  assert.equal(withAgentHooks('claude --settings x.json', SETTINGS, SESSION), `claude --settings x.json --resume ${SESSION}`)
 })
 
 test('a remembered conversation is resumed by a fresh claude', () => {
-  assert.equal(s.withAgentHooks('claude', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION}`)
-  assert.equal(s.withAgentHooks('claude --model sonnet', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --model sonnet --resume ${SESSION}`)
+  assert.equal(withAgentHooks('claude', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION}`)
+  assert.equal(withAgentHooks('claude --model sonnet', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --model sonnet --resume ${SESSION}`)
   // Even when the settings file is unavailable, the conversation still resumes.
-  assert.equal(s.withAgentHooks('claude', null, SESSION), `claude --resume ${SESSION}`)
+  assert.equal(withAgentHooks('claude', null, SESSION), `claude --resume ${SESSION}`)
 })
 
 test('a bare --resume or --continue becomes a resume of the remembered conversation', () => {
   for (const flag of ['--resume', '-r', '--continue', '-c']) {
-    assert.equal(s.withAgentHooks(`claude ${flag}`, SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION}`, flag)
-    assert.equal(s.withAgentHooks(`claude ${flag} --model opus`, SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION} --model opus`, `${flag} then a flag`)
+    assert.equal(withAgentHooks(`claude ${flag}`, SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION}`, flag)
+    assert.equal(withAgentHooks(`claude ${flag} --model opus`, SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume ${SESSION} --model opus`, `${flag} then a flag`)
   }
 })
 
 test('a command that already names a conversation is left alone', () => {
-  assert.equal(s.withAgentHooks('claude --resume abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume abc-123-def-456`)
-  assert.equal(s.withAgentHooks('claude -r abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} -r abc-123-def-456`)
-  assert.equal(s.withAgentHooks('claude --resume=abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume=abc-123-def-456`)
+  assert.equal(withAgentHooks('claude --resume abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume abc-123-def-456`)
+  assert.equal(withAgentHooks('claude -r abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} -r abc-123-def-456`)
+  assert.equal(withAgentHooks('claude --resume=abc-123-def-456', SETTINGS, SESSION), `claude ${SETTINGS_ARG} --resume=abc-123-def-456`)
 })
 
 test('an unsafe or missing conversation id is never put in the command', () => {
   for (const bad of ['x; rm -rf ~', '$(whoami)', '', 'short', '--help', undefined, null]) {
-    assert.equal(s.withAgentHooks('claude', SETTINGS, bad), `claude ${SETTINGS_ARG}`, String(bad))
-    assert.equal(s.withAgentHooks('claude --resume', SETTINGS, bad), `claude ${SETTINGS_ARG} --resume`, `bare resume, ${String(bad)}`)
+    assert.equal(withAgentHooks('claude', SETTINGS, bad), `claude ${SETTINGS_ARG}`, String(bad))
+    assert.equal(withAgentHooks('claude --resume', SETTINGS, bad), `claude ${SETTINGS_ARG} --resume`, `bare resume, ${String(bad)}`)
   }
   assert.equal(s.isSessionId(SESSION), true)
   assert.equal(s.isSessionId('a;b'), false)
@@ -780,6 +786,59 @@ test('the remembered conversation is restored from the host after a page reload,
   while (!JSON.parse(window.localStorage.getItem('dsh.web-terminal.layout.v1') ?? '{"wins":[]}').wins.some((w) => w.id === rt.id && w.agentSession === SESSION) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
   const saved = JSON.parse(window.localStorage.getItem('dsh.web-terminal.layout.v1'))
   assert.equal(saved.wins.find((w) => w.id === rt.id).agentSession, SESSION)
+})
+
+// ── the provider registry ──
+
+test('the registry finds a provider by id and by the command that starts it', () => {
+  const claude = s.providerById('claude')
+  assert.equal(claude.label, 'Claude')
+  assert.equal(claude.glyph, '✦')
+  for (const command of ['claude', 'claude --resume', '  claude --model sonnet']) assert.equal(s.providerForCommand(command), claude, command)
+  assert.deepEqual(s.providers.map((p) => p.id), ['claude'])
+})
+
+test('a command that matches no provider is a plain shell command', () => {
+  for (const command of ['npm run dev', 'claude-code-router start', 'echo claude', 'mclaude', 'C:\\bin\\claude.exe', '', undefined]) {
+    assert.equal(s.providerForCommand(command), undefined, String(command))
+  }
+  assert.equal(s.providerById('gemini'), undefined)
+  assert.equal(s.providerById(undefined), undefined)
+})
+
+test('providerOfWin: the saved provider wins, else the startup command decides', () => {
+  assert.equal(s.providerOfWin({ provider: 'claude', startup: undefined })?.id, 'claude')
+  assert.equal(s.providerOfWin({ provider: undefined, startup: 'claude --resume' })?.id, 'claude')
+  assert.equal(s.providerOfWin({ provider: 'gone', startup: 'claude' })?.id, 'claude', 'an id this version does not know is ignored')
+  assert.equal(s.providerOfWin({ provider: undefined, startup: 'npm test' }), undefined)
+})
+
+test('a program title and a typed command are recognised through the registry', () => {
+  assert.equal(s.providerForTitle('Claude Code')?.id, 'claude')
+  assert.equal(s.providerForTitle('Fix login bug'), undefined)
+  assert.equal(s.isAgentCommand('C:\\bin\\claude.cmd -p hi'), true)
+  assert.equal(s.isAgentCommand('claudette'), false)
+})
+
+test('a terminal opened with an agent startup remembers its provider; a plain one has none', () => {
+  const agent = s.openTerminal({ cwd: 'C:\\a', startup: 'claude --resume' })
+  const plain = s.openTerminal({ cwd: 'C:\\a', startup: 'npm run dev' })
+  const bare = s.openTerminal({ cwd: 'C:\\a' })
+  assert.equal(byId(agent).provider, 'claude')
+  assert.equal(byId(plain).provider, undefined)
+  assert.equal(byId(bare).provider, undefined)
+  s.duplicateWin(agent)
+  assert.equal(wins()[0].provider, 'claude', 'a duplicate keeps it')
+})
+
+test('a conversation id is remembered only from the provider the window runs', () => {
+  const id = s.openTerminal({ cwd: 'C:\\a', startup: 'claude' })
+  const rt = fakeRuntime(id)
+  s.runtimes.set(id, rt)
+  s.applyAgentSignal(rt, { ...signal('working'), provider: 'gemini', session: SESSION })
+  assert.equal(byId(id).agentSession, undefined, "another provider's conversation is not this window's")
+  s.applyAgentSignal(rt, { ...signal('working'), session: SESSION })
+  assert.equal(byId(id).agentSession, SESSION)
 })
 
 test('duplicates and saved layouts start fresh conversations', () => {
@@ -865,6 +924,34 @@ const LAYOUT_KEY = 'dsh.web-terminal.layout.v1'
 const PREFS_KEY = 'dsh.web-terminal.prefs.v1'
 const goodWin = (id, extra = {}) => ({ id, title: id, shell: 'default', cwd: 'C:\\x', x: 0, y: 0, w: 0.5, h: 0.5, z: 1, pinned: false, maximized: false, minimized: false, ...extra })
 
+test('windows saved before providers existed get their provider from the startup command', async () => {
+  const f = await loadStore({ fresh: true })
+  window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({
+    wins: [
+      goodWin('old', { startup: 'claude --resume', agentSession: SESSION }),
+      goodWin('plain', { startup: 'npm run dev' }),
+      goodWin('none'),
+      goodWin('saved', { startup: 'claude', provider: 'claude' }),
+      goodWin('unknown', { startup: 'claude', provider: 'gone' }),
+      goodWin('lying', { startup: 'npm test', provider: 'gone' }),
+      goodWin('typed', { startup: 'npm test', provider: 5 }),
+    ],
+    zTop: 9,
+  }))
+  f.hydrate()
+  const provider = (id) => f.getWins().find((w) => w.id === id).provider
+  assert.equal(provider('old'), 'claude', 'inferred')
+  assert.equal(f.getWins().find((w) => w.id === 'old').agentSession, SESSION, 'its conversation stays')
+  assert.equal(provider('plain'), undefined)
+  assert.equal(provider('none'), undefined)
+  assert.equal(provider('saved'), 'claude')
+  assert.equal(provider('unknown'), 'claude', 'an id this version does not know falls back to the startup command')
+  assert.equal(provider('lying'), undefined)
+  assert.equal(provider('typed'), undefined)
+  f.closeAll()
+  await settle()
+})
+
 test('corrupt layout JSON still restores the preferences and keeps a copy of the bad value', async () => {
   const f = await loadStore({ fresh: true })
   // Seed after the (slow) load and hydrate in the same tick: a save timer left by an earlier test cannot overwrite the seed in between.
@@ -947,23 +1034,23 @@ test('stored windows are validated: bad ids and geometry are dropped, a missing 
 test('a failed host probe is retried, and a refresh drops the stale settings file', async () => {
   const f = await loadStore({ fresh: true })
   const calls = []
-  const info = (file) => () => Promise.resolve({ ok: true, json: async () => ({ agent: { claudeSettings: file } }) })
+  const info = (file) => () => Promise.resolve({ ok: true, json: async () => ({ providers: { claude: { available: true, launch: { settingsPath: file } } } }) })
   const answers = [() => Promise.reject(new Error('offline')), () => Promise.resolve({ ok: false }), info('C:\\h\\settings-1.json'), info('C:\\h\\settings-2.json')]
   const realFetch = globalThis.fetch
   globalThis.fetch = (...args) => (calls.push(args), answers[calls.length - 1]())
   try {
     await f.hostInfoReady(1000)
-    assert.equal(f.hostInfo.agent, undefined, 'first probe failed')
+    assert.equal(f.hostInfo.providers, undefined, 'first probe failed')
     await f.hostInfoReady(1000)
-    assert.equal(f.hostInfo.agent, undefined, 'second probe answered with an error status')
+    assert.equal(f.hostInfo.providers, undefined, 'second probe answered with an error status')
     await f.hostInfoReady(1000)
-    assert.equal(f.hostInfo.agent.claudeSettings, 'C:\\h\\settings-1.json', 'a later call retries and succeeds')
+    assert.equal(f.hostInfo.providers.claude.launch.settingsPath, 'C:\\h\\settings-1.json', 'a later call retries and succeeds')
     await f.hostInfoReady(1000)
     assert.equal(calls.length, 3, 'a good answer is not asked for again')
     f.refreshHostInfo() // the host restarted
-    assert.equal(f.hostInfo.agent, undefined, 'the dead host file is not used while the new probe is in flight')
+    assert.equal(f.hostInfo.providers, undefined, 'the dead host file is not used while the new probe is in flight')
     await f.hostInfoReady(1000)
-    assert.equal(f.hostInfo.agent.claudeSettings, 'C:\\h\\settings-2.json')
+    assert.equal(f.hostInfo.providers.claude.launch.settingsPath, 'C:\\h\\settings-2.json')
   } finally {
     globalThis.fetch = realFetch
   }
@@ -1048,4 +1135,24 @@ test('toggleMaximize twice restores the layout (focus mode)', () => {
   s.toggleMaximize(a)
   const after = s.getWins().find((win) => win.id === a)
   assert.deepEqual({ x: after.x, y: after.y, w: after.w, h: after.h, max: after.maximized }, { x, y, w, h, max: false })
+})
+
+test('a provider that needs nothing launched ({}) counts as prepared; an unprepared one (null) is asked about again', async () => {
+  const f = await loadStore({ fresh: true })
+  let calls = 0
+  const realFetch = globalThis.fetch
+  const answers = [{ claude: { available: true, launch: { settingsPath: 'C:\h\s.json' } }, zero: { available: false, launch: {} } }, { claude: { available: true, launch: { settingsPath: 'C:\h\s.json' } }, broken: { available: true, launch: null } }]
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ providers: answers[Math.min(calls++, 1)] }) })
+  try {
+    await f.hostInfoReady(1000)
+    await f.hostInfoReady(1000)
+    assert.equal(calls, 1, 'every provider prepared: not asked again')
+    f.refreshHostInfo() // the host restarted; its second answer leaves one provider unprepared
+    await f.hostInfoReady(1000)
+    assert.equal(calls, 2)
+    await f.hostInfoReady(1000)
+    assert.equal(calls, 3, 'a provider the host could not prepare is asked about again')
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })

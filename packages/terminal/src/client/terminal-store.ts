@@ -12,7 +12,8 @@
 //   search.ts       find-in-terminal
 //   layouts.ts      saved layouts
 //   broadcast.ts    send to several terminals
-//   launch.ts       startup command rewriting (agent hooks)
+//   launch.ts       what a conversation id may look like
+//   providers.ts    agent providers: how each is recognised, launched and shown
 //   preferences.ts  folders, favourites, on/off switches
 //   appearance.ts   font and colour preferences
 //   theme.ts        xterm palette and surface measurement
@@ -31,6 +32,7 @@ export * from './search.ts'
 export * from './layouts.ts'
 export * from './broadcast.ts'
 export * from './launch.ts'
+export * from './providers.ts'
 export * from './prompt-ready.ts'
 export * from './preferences.ts'
 export * from './subagents.ts'

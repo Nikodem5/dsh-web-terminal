@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
-import { closeSendMenu, getSendRequest, sendSelection, sendTargets, sendToNewClaude, setSendCodeBlock, subscribeSend } from './send-to.ts'
+import { closeSendMenu, getSendRequest, sendSelection, sendTargets, sendToNewAgent, setSendCodeBlock, subscribeSend } from './send-to.ts'
+import { providers } from './providers.ts'
 import { getPrefs, getRuntime, getVersion, subscribe } from './terminal-store.ts'
 import { Pop } from './popover.tsx'
 
-type Item = { kind: 'copy' } | { kind: 'target'; id: string } | { kind: 'new' }
+type Item = { kind: 'copy' } | { kind: 'target'; id: string } | { kind: 'new'; provider: string }
 
-/** The picker: Copy, the other terminals (agents first), a new Claude terminal. Arrows + Enter, Esc cancels. */
+/** The picker: Copy, the other terminals (agents first), a new terminal for each agent provider. Arrows + Enter, Esc cancels. */
 export function SendMenu(): ReactElement | null {
   const req = useSyncExternalStore(subscribeSend, getSendRequest, getSendRequest)
   useSyncExternalStore(subscribe, getVersion, getVersion)
@@ -35,7 +36,7 @@ export function SendMenu(): ReactElement | null {
 
   if (req === null) return null
   const targets = sendTargets(req.sourceId)
-  const items: Item[] = [{ kind: 'copy' }, ...targets.map((t): Item => ({ kind: 'target', id: t.id })), { kind: 'new' }]
+  const items: Item[] = [{ kind: 'copy' }, ...targets.map((t): Item => ({ kind: 'target', id: t.id })), ...providers.map((p): Item => ({ kind: 'new', provider: p.id }))]
 
   const back = () => getRuntime(req.sourceId)?.term.focus()
   const choose = (item: Item) => {
@@ -43,7 +44,7 @@ export function SendMenu(): ReactElement | null {
     if (item.kind === 'copy') {
       navigator.clipboard?.writeText(req.text).catch(() => {})
       back()
-    } else if (item.kind === 'new') sendToNewClaude(req.text, req.sourceId)
+    } else if (item.kind === 'new') sendToNewAgent(req.text, req.sourceId, item.provider)
     else if (!sendSelection(req.text, item.id)) back()
   }
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -64,8 +65,9 @@ export function SendMenu(): ReactElement | null {
 
   const row = (item: Item, index: number): ReactElement => {
     const t = item.kind === 'target' ? targets.find((x) => x.id === item.id) : undefined
+    const agent = item.kind === 'new' ? providers.find((p) => p.id === item.provider) : undefined
     return (
-      <button key={item.kind === 'target' ? item.id : item.kind} type="button" tabIndex={-1} className="wt-item wt-link wt-send-item" data-active={index === active} onMouseEnter={() => setActive(index)} onClick={() => choose(item)}>
+      <button key={item.kind === 'target' ? item.id : item.kind === 'new' ? `new-${item.provider}` : item.kind} type="button" tabIndex={-1} className="wt-item wt-link wt-send-item" data-active={index === active} onMouseEnter={() => setActive(index)} onClick={() => choose(item)}>
         {item.kind === 'copy' ? <span className="wt-grow">Copy</span> : null}
         {t !== undefined ? (
           <>
@@ -74,7 +76,7 @@ export function SendMenu(): ReactElement | null {
             {t.agent ? <span className="wt-state">agent</span> : null}
           </>
         ) : null}
-        {item.kind === 'new' ? <span className="wt-grow">✦ New Claude terminal here</span> : null}
+        {agent !== undefined ? <span className="wt-grow">{`${agent.glyph} New ${agent.label} terminal here`}</span> : null}
       </button>
     )
   }

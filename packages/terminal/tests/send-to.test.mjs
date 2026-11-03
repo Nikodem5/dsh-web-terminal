@@ -170,10 +170,10 @@ test('Ctrl+Shift+S opens the picker with a selection and passes through without 
   assert.equal(s.getSendRequest()?.sourceId, src.id)
 })
 
-test('send to a new Claude terminal waits for the typed command, a quiet screen and paste mode', async () => {
+test('send to a new agent terminal waits for the typed command, a quiet screen and paste mode', async () => {
   Object.assign(s.startupTiming, { minMs: 20, settleMs: 40, maxMs: 300 })
   const src = await open({ cwd: 'C:\\proj' })
-  s.sendToNewClaude('boom', src.id)
+  s.sendToNewAgent('boom', src.id, 'claude')
   const win = await until(() => s.getWins().find((w) => w.startup === 'claude'), 'the new window')
   assert.equal(win.cwd, 'C:\\proj')
   // The view renders the window (creating its runtime); here the test does.

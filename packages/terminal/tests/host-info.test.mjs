@@ -50,5 +50,5 @@ test('/info reports where node was found', async () => {
   assert.equal(body.node.available, true)
   assert.equal(typeof body.node.path, 'string')
   assert.ok(body.node.path.length > 0)
-  assert.equal(typeof body.claude.available, 'boolean', 'claude is still reported')
+  assert.equal(typeof body.providers.claude.available, 'boolean', 'claude is still reported')
 })

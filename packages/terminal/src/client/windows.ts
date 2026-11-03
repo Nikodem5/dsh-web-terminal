@@ -3,6 +3,7 @@
 
 import { emit, focusWin, hostInfo, nextZ, persistSoon, prefs, runtimes, store, updateWin } from './state.ts'
 import { displayName } from './names.ts'
+import { providerForCommand } from './providers.ts'
 import { noteFolder, noteSsh } from './preferences.ts'
 import { disposeRuntime } from './runtime.ts'
 import { sshTitle } from './ssh.ts'
@@ -43,6 +44,8 @@ export function openTerminal(options: OpenOptions = {}): string {
     shell: ssh !== undefined ? 'ssh' : (options.shell ?? 'default'),
     cwd: cwd.length > 0 || ssh !== undefined ? cwd : (hostInfo.cwd ?? ''),
     startup: ssh !== undefined ? undefined : options.startup,
+    // The agent the startup command starts, remembered so its resume and signals stay tied to it.
+    provider: ssh !== undefined ? undefined : providerForCommand(options.startup)?.id,
     ssh,
     ...(options.rect ?? { x: 0.04 + step, y: 0.04 + step, w: 0.5, h: 0.55 }),
     z: nextZ(),
