@@ -558,7 +558,7 @@ await sleep(20)
   check(prevented && q('.wt-send') !== null, 'right-click on a selection opens the Send to menu')
   window.Element.prototype.getBoundingClientRect = orig
   const labels = qa('.wt-send .wt-send-item').map((el) => el.textContent)
-  check(labels[0] === 'Copy' && labels.some((l) => l.includes('Agent A')) && labels[labels.length - 1].includes('New Claude terminal'), `the menu lists Copy, the other terminals and a new Claude terminal (${labels.join(' | ')})`)
+  check(labels[0] === 'Copy' && labels.some((l) => l.includes('Agent A')) && labels.some((l) => l.includes('New Claude terminal')) && labels[labels.length - 1].includes('New Antigravity terminal'), `the menu lists Copy, the other terminals and a new Claude terminal (${labels.join(' | ')})`)
   check(q('.wt-send .wt-send-item[data-active="true"]')?.textContent.includes('Agent A'), 'the agent terminal is preselected')
   q('.wt-send').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await sleep(40)
@@ -717,7 +717,7 @@ await sleep(20)
 // ── SSH terminals ──
 {
   const sshBtn = byText('.wt-bar button', 'SSH')
-  check(sshBtn !== undefined && sshBtn.classList.contains('wt-btn-ssh') && sshBtn.previousElementSibling === byText('.wt-bar button', 'Claude'), 'the toolbar has an SSH button right after Claude')
+  check(sshBtn !== undefined && sshBtn.classList.contains('wt-btn-ssh') && sshBtn.previousElementSibling === byText('.wt-bar button', 'Antigravity'), 'the toolbar has an SSH button right after the agent buttons')
   const before = qa('.wt-win').length
   click(sshBtn)
   await sleep(30)
