@@ -42,6 +42,8 @@ export interface WinState extends Rect {
   cwd: string
   /** Command typed into a freshly spawned shell (e.g. `claude`). */
   startup?: string
+  /** Id of the agent provider the startup command starts (see providers.ts); unset for a plain shell command. */
+  provider?: string
   /** Set for an SSH window (then `shell` is `ssh` and `cwd` is empty: it is a folder on this machine). */
   ssh?: SshTarget
   z: number
@@ -192,14 +194,21 @@ export interface HostInfo {
   shell?: string
   shells?: { id: string; label: string }[]
   cwd?: string
-  claude?: { available?: boolean; path?: string | null }
+  /** Per agent provider (key = provider id): its executable on PATH and how to launch it. */
+  providers?: Record<string, ProviderHostInfo>
   /** `node` on the host's PATH; the status-line wrapper needs it. */
   node?: { available?: boolean; path?: string | null }
   /** The `ssh` client on the host's PATH and the concrete aliases in its ~/.ssh/config. */
   ssh?: { available?: boolean; path?: string | null; hosts?: SshHost[] }
   maxSessions?: number
-  /** Files the host generated for agents; claudeSettings is null when it could not write one. */
-  agent?: { claudeSettings?: string | null }
+}
+
+/** What the host reports for one agent provider. */
+export interface ProviderHostInfo {
+  available?: boolean
+  path?: string | null
+  /** What the client adds to the command (Claude: `{settingsPath}`); `{}` when nothing is needed, null when the host could not prepare it. */
+  launch?: Record<string, unknown> | null
 }
 
 /** One alias from ~/.ssh/config, for display. */

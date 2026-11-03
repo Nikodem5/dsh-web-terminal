@@ -11,7 +11,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { emit, hostInfo, hostInfoReady, prefs, refreshHostInfo, runtimes, store, updateWin } from './state.ts'
 import { cleanTitle, displayName } from './names.ts'
 import { SSH_LOST, noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
-import { withAgentHooks } from './launch.ts'
+import { providerOfWin } from './providers.ts'
 import { applySubagents } from './subagent-state.ts'
 import { applyEdits, notifyEdits } from './edits-api.ts'
 import { startupTiming, startupWait } from './prompt-ready.ts'
@@ -367,7 +367,7 @@ export function ensureRuntime(win: WinState): Runtime {
           // An ssh window has no startup typing: its remote command went to ssh as an argument.
           const startup = rt.ssh ? undefined : store.wins.find((w) => w.id === rt.id)?.startup
           if (frame.created === true && startup !== undefined && startup.trim().length > 0) {
-            // Wait for the host probe first: it names the agent-hook settings file, and on a cold app
+            // Wait for the host probe first: it names what an agent needs to launch (Claude's hook settings file), and on a cold app
             // start it can answer after the shell is already up.
             void hostInfoReady().then(() => {
               // Type once the shell has printed and gone quiet (its prompt is up), not after a fixed delay:
@@ -382,8 +382,9 @@ export function ensureRuntime(win: WinState): Runtime {
                 }
                 stopStartup()
                 // Read the session when typing, not at attach: a slow probe may have delayed us.
-                const session = store.wins.find((w) => w.id === rt.id)?.agentSession
-                const command = withAgentHooks(startup, hostInfo.agent?.claudeSettings, session)
+                const win = store.wins.find((w) => w.id === rt.id)
+                const provider = win === undefined ? undefined : providerOfWin(win)
+                const command = provider === undefined ? startup : provider.launch(startup, hostInfo.providers?.[provider.id]?.launch, win?.agentSession)
                 socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
                 rt.startupSentAt = Date.now()
               }

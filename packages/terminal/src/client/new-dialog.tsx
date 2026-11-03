@@ -6,6 +6,7 @@ import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { browseFolder, canBrowse } from './actions.ts'
 import type { WorkspaceChoice } from './workspaces.ts'
+import { providers } from './providers.ts'
 import { forgetRecent, forgetSsh, getPrefs, hostInfo, openTerminal, quickText, resolveSsh, sshKey, sshLabel, toggleFavourite, toggleSshFavourite } from './terminal-store.ts'
 import type { SshTarget } from './terminal-store.ts'
 
@@ -19,12 +20,7 @@ interface Props {
   onClose: () => void
 }
 
-const STARTUPS = [
-  { label: 'None', value: '' },
-  { label: 'claude', value: 'claude' },
-  { label: 'claude --resume', value: 'claude --resume' },
-  { label: 'claude --continue', value: 'claude --continue' },
-]
+const STARTUPS = [{ label: 'None', value: '' }, ...providers.flatMap((p) => p.presets.map((value) => ({ label: value, value })))]
 
 export function NewTerminalDialog({ startup: presetStartup, mode: firstMode = 'local', workspaces = [], onClose }: Props): ReactElement {
   const prefs = getPrefs()

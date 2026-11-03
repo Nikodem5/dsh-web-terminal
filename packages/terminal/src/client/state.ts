@@ -9,6 +9,7 @@
 // a layout follows window resizes and sidebar toggles.
 
 import { cleanSsh, cleanSshList } from './ssh.ts'
+import { providerById, providerForCommand } from './providers.ts'
 import type { FontPrefs, HostInfo, LayoutWin, Prefs, Rect, Runtime, SavedLayout, Store, WinState } from './types.ts'
 
 // ── persistence ────────────────────────────────────────────────────────────
@@ -114,6 +115,9 @@ function cleanWin(raw: unknown, index: number): WinState | undefined {
   if (!isObj(raw) || typeof raw.id !== 'string' || raw.id.length === 0 || !isRect(raw)) return undefined
   // Re-validated on load: a hand-edited or damaged target is dropped rather than handed to ssh.
   const ssh = cleanSsh(raw.ssh)
+  const startup = typeof raw.startup === 'string' ? raw.startup : undefined
+  // Windows saved before providers existed have none: it is what the startup command starts. An id this version does not know is dropped the same way.
+  const provider = typeof raw.provider === 'string' && providerById(raw.provider) !== undefined ? raw.provider : providerForCommand(startup)?.id
   return {
     id: raw.id,
     title: str(raw.title, 'Terminal'),
@@ -121,7 +125,8 @@ function cleanWin(raw: unknown, index: number): WinState | undefined {
     autoName: typeof raw.autoName === 'string' ? raw.autoName : undefined,
     shell: ssh !== undefined ? 'ssh' : raw.shell === 'ssh' ? 'default' : str(raw.shell, 'default'),
     cwd: str(raw.cwd, ''),
-    startup: typeof raw.startup === 'string' ? raw.startup : undefined,
+    startup,
+    provider,
     ssh,
     x: raw.x,
     y: raw.y,
@@ -268,21 +273,27 @@ export function loadHostInfo(): void {
     })
 }
 
-/** Drop what the host told us and probe again; the old settings file path may belong to a dead host. */
+/** Drop what the host told us and probe again; the old launch files may belong to a dead host. */
 export function refreshHostInfo(): void {
-  hostInfo = { ...hostInfo, agent: undefined }
+  hostInfo = { ...hostInfo, providers: undefined }
   infoRequested = false
   loadHostInfo()
+}
+
+/** The probe has not seen every provider prepared (a null launch hint, or none at all). */
+function launchPending(): boolean {
+  const answered = hostInfo.providers
+  return answered === undefined || Object.values(answered).some((entry) => entry.launch == null)
 }
 
 /**
  * Resolves once the host probe has answered (or failed, or `timeoutMs` passed).
  * The probe is slow on a cold start (it looks shells up on PATH), and a startup command typed
- * before it arrives would miss the host's agent-hook settings file. An answered probe that named no
- * settings file is asked again, since the host may only have been starting up.
+ * before it arrives would miss what the host prepared for agents (Claude's hook settings file). An answered probe
+ * that left a provider unprepared is asked again, since the host may only have been starting up.
  */
 export function hostInfoReady(timeoutMs = 10_000): Promise<void> {
-  if (infoRequested && !infoPending && typeof hostInfo.agent?.claudeSettings !== 'string') refreshHostInfo()
+  if (infoRequested && !infoPending && launchPending()) refreshHostInfo()
   else loadHostInfo()
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<void>((resolve) => {

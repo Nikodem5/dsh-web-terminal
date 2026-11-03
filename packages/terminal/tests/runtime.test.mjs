@@ -334,7 +334,7 @@ test('a host restart refreshes the probe, so the next Restart uses the new host 
   const files = ['C:\\h\\claude-settings-1.json', 'C:\\h\\claude-settings-2.json']
   let calls = 0
   const realFetch = globalThis.fetch
-  globalThis.fetch = async () => ({ ok: true, json: async () => ({ agent: { claudeSettings: files[Math.min(calls++, 1)] } }) })
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ providers: { claude: { launch: { settingsPath: files[Math.min(calls++, 1)] } } } }) })
   try {
     const { id, rt, sock } = await start({ startup: 'claude' })
     sock.push(attached({ created: true }))
@@ -357,10 +357,10 @@ test('a host restart refreshes the probe, so the next Restart uses the new host 
   }
 })
 
-test('a startup command typed after a probe that named no settings file asks the host again', async () => {
+test('a startup command typed after a probe that left a provider unprepared asks the host again', async () => {
   let calls = 0
   const realFetch = globalThis.fetch
-  globalThis.fetch = async () => ({ ok: true, json: async () => ({ agent: { claudeSettings: ++calls === 1 ? null : 'C:\\h\\claude-settings-9.json' } }) })
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ providers: { claude: { launch: ++calls === 1 ? null : { settingsPath: 'C:\\h\\claude-settings-9.json' } } } }) })
   try {
     s.refreshHostInfo() // forget what earlier tests learned
     await s.hostInfoReady(1000) // settles with no settings file

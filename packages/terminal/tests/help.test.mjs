@@ -23,7 +23,7 @@ const base = () => ({
   version: '0.1.0',
   platform: 'win32',
   node: { available: true, path: 'C:\\node\\node.exe' },
-  claude: { available: true, path: 'C:\\bin\\claude.exe' },
+  agents: [{ command: 'claude', info: { available: true, path: 'C:\\bin\\claude.exe' } }],
   ssh: { available: true, path: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', hosts: [{}, {}, {}] },
   statusLine: { enabled: true, reason: null },
   shellIntegration: true,
@@ -51,7 +51,7 @@ test('buildDiagnostics: one plain line per fact', () => {
 test('buildDiagnostics: problems are spelled out', () => {
   const d = base()
   d.node = { available: false, path: null }
-  d.claude = { available: false, path: null }
+  d.agents = [{ command: 'claude', info: { available: false, path: null } }]
   d.statusLine = { enabled: false, reason: 'node not on PATH' }
   d.shellIntegration = false
   d.focused = { name: 'x', markersSeen: false }
@@ -69,7 +69,7 @@ test('buildDiagnostics: problems are spelled out', () => {
 })
 
 test('buildDiagnostics: an old host or no answer yet shows "unknown", never a false "not found"', () => {
-  const d = { ...base(), version: undefined, node: undefined, claude: undefined, statusLine: undefined, focused: null }
+  const d = { ...base(), version: undefined, node: undefined, agents: [{ command: 'claude', info: undefined }], statusLine: undefined, focused: null }
   const text = h.buildDiagnostics(d)
   assert.match(text, /^Plugin version: unknown$/m)
   assert.match(text, /^node: unknown/m)

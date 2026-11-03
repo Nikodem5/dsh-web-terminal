@@ -1,6 +1,7 @@
 // dsh-web-terminal — window names: folder labels and the program-derived title.
 
 import { runtimes } from './state.ts'
+import { providerForTitle } from './providers.ts'
 import type { WinState } from './types.ts'
 
 /** Last path segment, for compact folder labels. */
@@ -32,7 +33,9 @@ export function cleanTitle(raw: string, cwd: string): string | undefined {
   if (SHELL_NAME.test(t)) return undefined
   // Some shells title the window with just the current directory's name.
   if (cwd.length > 0 && t.toLowerCase() === baseName(cwd).toLowerCase()) return undefined
-  if (/^Claude Code$/i.test(t)) return cwd.length > 0 ? `Claude · ${baseName(cwd)}` : 'Claude'
+  // An agent's own title is its product name: shown as "<agent> · <folder>".
+  const agent = providerForTitle(t)
+  if (agent !== undefined) return cwd.length > 0 ? `${agent.label} · ${baseName(cwd)}` : agent.label
   return t.length > 60 ? `${t.slice(0, 59)}…` : t
 }
 

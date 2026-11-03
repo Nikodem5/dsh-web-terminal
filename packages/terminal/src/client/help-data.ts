@@ -152,7 +152,8 @@ export interface DiagnosticsInput {
   version: string | null | undefined
   platform: string | undefined
   node: { available?: boolean; path?: string | null } | undefined
-  claude: { available?: boolean; path?: string | null } | undefined
+  /** One agent provider's executable on the host's PATH, in the order the UI lists them; `info` is undefined until the host answers. */
+  agents: { command: string; info: { available?: boolean; path?: string | null } | undefined }[]
   /** The ssh client and how many hosts ~/.ssh/config lists; undefined for a host that predates ssh support. */
   ssh: { available?: boolean; path?: string | null; hosts?: unknown[] } | undefined
   /** From /stats; undefined until the first answer. */
@@ -190,7 +191,7 @@ export function diagnosticRows(d: DiagnosticsInput): DiagnosticRow[] {
     { label: 'Plugin version', value: d.version ?? 'unknown' },
     { label: 'Platform', value: d.platform ?? 'unknown' },
     { label: 'node', value: found(d.node), bad: d.node?.available === false },
-    { label: 'claude', value: found(d.claude), bad: d.claude?.available === false },
+    ...d.agents.map((a) => ({ label: a.command, value: found(a.info), bad: a.info?.available === false })),
     { label: 'ssh', value: found(d.ssh) },
     { label: 'ssh config hosts', value: d.ssh?.hosts === undefined ? 'unknown (host has not answered)' : String(d.ssh.hosts.length) },
     { label: 'Status-line wrapper', value: wrapper, bad: d.statusLine?.enabled === false },

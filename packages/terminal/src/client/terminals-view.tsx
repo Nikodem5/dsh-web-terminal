@@ -22,6 +22,7 @@ import { MissionOverlay, missionPlan, useMissionControl } from './mission-view.t
 import type { MissionPlan } from './mission-view.tsx'
 import { Sidebar } from './sidebar.tsx'
 import { StatsBar } from './stats-bar.tsx'
+import { providers } from './providers.ts'
 import { ensureStyles } from './styles.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
 import {
@@ -579,7 +580,9 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
       <div className="wt-bar" data-toolbar="true">
         <div className="wt-bar-left">
           <button type="button" className="wt-btn" data-variant="primary" onClick={() => setDialog({})}>＋ New terminal</button>
-          <button type="button" className="wt-btn wt-btn-claude" title="New terminal that runs `claude`" onClick={() => setDialog({ startup: 'claude' })}>✦ Claude</button>
+          {providers.map((p) => (
+            <button key={p.id} type="button" className={`wt-btn ${p.buttonClass}`} title={`New terminal that runs \`${p.command}\``} onClick={() => setDialog({ startup: p.startup })}>{`${p.glyph} ${p.label}`}</button>
+          ))}
           <button type="button" className="wt-btn wt-btn-ssh" title="Open a terminal on another machine over ssh" onClick={() => setDialog({ mode: 'ssh' })}>⇄ SSH</button>
           <span className="wt-sep" />
           <div className="wt-seg">
@@ -607,7 +610,10 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           {wins.length > 0 ? (
             <button type="button" className="wt-btn wt-btn-danger" title="Close every terminal and end their shells" onClick={() => requestCloseAll()}>Close all</button>
           ) : null}
-          {hostInfo.claude !== undefined && hostInfo.claude.available !== true ? <span className="wt-note">`claude` not found on PATH</span> : null}
+          {providers.map((p) => {
+            const probe = hostInfo.providers?.[p.id]
+            return probe !== undefined && probe.available !== true ? <span key={p.id} className="wt-note">{`\`${p.command}\` not found on PATH`}</span> : null
+          })}
           <div className="wt-menu-wrap" onPointerDown={(e) => e.stopPropagation()}>
             <button type="button" className="wt-btn wt-btn-icon" data-on={menu === 'settings'} title="Font and notification settings" onClick={() => setMenu(menu === 'settings' ? null : 'settings')}>Aa</button>
             {menu === 'settings' ? <SettingsMenu /> : null}

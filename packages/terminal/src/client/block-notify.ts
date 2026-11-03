@@ -8,6 +8,7 @@ import { blockDuration, formatDuration } from './blocks.ts'
 import type { Block } from './blocks.ts'
 import { raiseAttention, unattended } from './attention.ts'
 import type { Alert } from './attention.ts'
+import { isAgentCommand } from './providers.ts'
 import { emit, persistSoon, prefs } from './state.ts'
 import type { Runtime } from './types.ts'
 
@@ -18,11 +19,6 @@ export function setCommandNotifySeconds(seconds: number): void {
   prefs.commandNotifySec = COMMAND_NOTIFY_CHOICES.includes(seconds) ? seconds : 10
   emit()
   persistSoon()
-}
-
-/** `claude`, `claude --resume`, `C:\bin\claude.exe ...`: the agent itself. */
-export function isAgentCommand(command: string): boolean {
-  return /^\s*(?:\S*[\\/])?claude(?:\.(?:exe|cmd|ps1))?(?=\s|$)/i.test(command)
 }
 
 export interface CommandAlertInput {

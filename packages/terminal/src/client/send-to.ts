@@ -1,4 +1,4 @@
-// dsh-web-terminal — send the selection of one terminal to another (or to a new Claude terminal).
+// dsh-web-terminal — send the selection of one terminal to another (or to a new agent terminal).
 //
 // Right-click a selection (or Ctrl+Shift+S) opens a picker of the other terminals; the text lands in
 // the target as a paste, without Enter, so the user adds context and submits. The pure parts (target
@@ -7,6 +7,7 @@
 import { emit, focusWin, persistSoon, prefs, runtimes, store } from './state.ts'
 import { displayName } from './names.ts'
 import { openTerminal } from './windows.ts'
+import { providerById, providerForCommand } from './providers.ts'
 import { isOverview } from './mission.ts'
 import type { Activity, Runtime, WinState } from './types.ts'
 
@@ -23,10 +24,10 @@ export interface TargetInfo {
   activity: Activity
 }
 
-/** Whether a window runs an agent: one that reported (and has not ended), else one started as `claude`. */
+/** Whether a window runs an agent: one that reported (and has not ended), else one started as a provider's command (`claude`). */
 export function isAgentTarget(startup: string | undefined, agent: { state: string } | undefined): boolean {
   if (agent !== undefined) return agent.state !== 'ended'
-  return /^\s*claude(?=\s|$)/.test(startup ?? '')
+  return providerForCommand(startup) !== undefined
 }
 
 /** Terminals that can receive a send: not the source, connected; agents first, otherwise in list order. */
@@ -111,19 +112,19 @@ export function sendSelection(selection: string, targetId: string): boolean {
   return true
 }
 
-/** How long a fresh Claude gets to come up before the send is given up (the text is copied instead). */
-export const NEW_CLAUDE_TIMEOUT_MS = 60_000
-/** Output must have been quiet this long, after the `claude` command was typed, before the send. */
-export const NEW_CLAUDE_SETTLE_MS = 800
+/** How long a fresh agent gets to come up before the send is given up (the text is copied instead). */
+export const NEW_AGENT_TIMEOUT_MS = 60_000
 
 /**
- * Open a Claude terminal beside the source (same folder and shell) and send once it is ready: its
- * startup command has been typed, its screen has gone quiet and it switched bracketed paste on (Claude
- * does so when its prompt is up; the shell's own paste mode was switched off to run the command).
+ * Open a terminal for an agent beside the source (same folder and shell) and send once the provider says
+ * it is ready (its `ready` check: for Claude, startup command typed, screen quiet, bracketed paste on).
+ * @param providerId - which agent to open (see providers.ts).
  */
-export function sendToNewClaude(selection: string, sourceId: string): void {
+export function sendToNewAgent(selection: string, sourceId: string, providerId: string): void {
+  const provider = providerById(providerId)
+  if (provider === undefined) return
   const source = store.wins.find((w) => w.id === sourceId)
-  const id = openTerminal({ cwd: source?.cwd, shell: source?.shell, startup: 'claude' })
+  const id = openTerminal({ cwd: source?.cwd, shell: source?.shell, startup: provider.startup })
   const started = Date.now()
   const timer = setInterval(() => {
     // The window's runtime appears when the view renders it; a closed window ends the wait.
@@ -131,20 +132,15 @@ export function sendToNewClaude(selection: string, sourceId: string): void {
     const rt = runtimes.get(id)
     if (rt === undefined) return
     const now = Date.now()
-    if (now - started > NEW_CLAUDE_TIMEOUT_MS) {
+    if (now - started > NEW_AGENT_TIMEOUT_MS) {
       clearInterval(timer)
       navigator.clipboard?.writeText(selection).catch(() => {})
       return
     }
-    if (!claudeReady(rt, now)) return
+    if (!provider.ready(rt, now)) return
     clearInterval(timer)
     sendSelection(selection, id)
   }, 200)
-}
-
-function claudeReady(rt: Runtime, now: number): boolean {
-  if (rt.startupSentAt === undefined || rt.socket?.readyState !== WebSocket.OPEN) return false
-  return now - Math.max(rt.startupSentAt, rt.lastOutputAt) >= NEW_CLAUDE_SETTLE_MS && rt.term.modes.bracketedPasteMode
 }
 
 // ── the picker's state (one at a time, shared by the right-click and the shortcut) ──

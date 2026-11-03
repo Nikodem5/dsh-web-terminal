@@ -294,7 +294,8 @@ Restart the desktop app: plugins load at boot.
 | `lib/paths.js`, `lib/open.js` | Clickable paths: existence check with cwd rules; opening in an editor from an argv (no shell) |
 | `src/client/paths.ts`, `path-links.ts` | Path detection (pure) and the xterm link provider |
 | `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
-| `lib/agent-signals.js` | Provider-neutral agent signals: Claude hook adapter, the generated `--settings` file |
+| `lib/agent-signals.js` | Provider-neutral agent signals: the states, the secret's names, normalising a signal body |
+| `lib/providers/index.js`, `lib/providers/claude.js`, `src/client/providers.ts` | Agent providers: the host registry (id, PATH commands, hook adapter, launch preparation, extra routes) with Claude Code as the first entry, and its client counterpart (command match, launch rewrite, button, window name, readiness) |
 | `lib/hook-post.js` | Command-hook forwarder Claude runs for `SessionStart` (HTTP hooks are ignored there) |
 | `lib/statusline.js` | Status-line wrapper Claude runs: posts usage / sub-agent tasks to the host, relays the user's own line |
 | `lib/edits.js` | Pure per-terminal "files the agent changed" store (validates the PostToolUse edit payload, cap 500) |
@@ -349,11 +350,11 @@ for a brand-new shell, which is when the startup command runs; `agent` is the la
 ### Agent signals
 
 Each shell gets a random secret in `DSH_WT_TOKEN`. The host runs a small HTTP server on `127.0.0.1` (random port)
-and writes `~/.dsh/web-terminal/claude-settings-<pid>.json` (`/api/dsh-web-terminal/info` reports the path as
-`agent.claudeSettings`). That file subscribes Claude Code HTTP hooks to `POST /signal/claude` and sends the secret in
-the `x-dsh-wt-token` header (interpolated from the environment). The body is Claude's hook JSON; a small adapter
-(`lib/agent-signals.js`) maps events to a state. Any other tool can report by POSTing
-`{"state":"needs-you","detail":"..."}` to `/signal/<provider>` with the same header. Requests with an unknown secret
+and each provider prepares its launch files; Claude's is `~/.dsh/web-terminal/claude-settings-<pid>.json`
+(`/api/dsh-web-terminal/info` reports it as `providers.claude.launch.settingsPath`). That file subscribes Claude Code HTTP hooks to `POST /signal/claude` and sends the secret in
+the `x-dsh-wt-token` header (interpolated from the environment). The body is Claude's hook JSON; the provider's adapter
+(`lib/providers/claude.js`) maps events to a state. Any other tool can report by POSTing
+`{"state":"needs-you","detail":"..."}` to `/signal/<provider>` with the same header (a provider with no adapter accepts only that neutral body). Requests with an unknown secret
 get 401; bodies over 64 KB get 413.
 
 Claude Code runs only `command` hooks for `SessionStart` (an HTTP hook there is silently ignored), so the settings file
