@@ -77,7 +77,7 @@ async function startHost({ env = {}, home = mkdtempSync(join(root, 'home')) } = 
   http.on('upgrade', (req, socket, head) => routes.upgrade.find((r) => r.path === '/terminal/ws').handler(req, socket, head))
   await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
   const info = await call('/api/dsh-web-terminal/info')
-  const settings = JSON.parse(readFileSync(info.agent.claudeSettings, 'utf8'))
+  const settings = JSON.parse(readFileSync(info.providers.claude.launch.settingsPath, 'utf8'))
   let stopped = false
   const host = {
     home,

@@ -4,8 +4,11 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AGENT_STATES, CLAUDE_HOOK_EVENTS, CLAUDE_SUBAGENT_EVENTS, SESSION_ID, TOKEN_ENV, TOKEN_HEADER, buildClaudeSettings, claudeAdapter, normalizeSignal } from '../lib/agent-signals.js'
+import { AGENT_STATES, SESSION_ID, TOKEN_ENV, TOKEN_HEADER } from '../lib/agent-signals.js'
+import { CLAUDE_HOOK_EVENTS, CLAUDE_SUBAGENT_EVENTS, buildClaudeSettings, claudeAdapter } from '../lib/providers/claude.js'
+import { registry } from '../lib/providers/index.js'
 
+const normalizeSignal = (provider, body) => registry.normalize(provider, body)
 const claude = (body) => normalizeSignal('claude', body)
 
 test('a prompt, or a tool finishing after approval, means working', () => {

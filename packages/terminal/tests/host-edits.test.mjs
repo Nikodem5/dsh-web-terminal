@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
 import { EDIT_MATCHER, MAX_EDITS, createEdits, parseEdit } from '../lib/edits.js'
-import { buildClaudeSettings } from '../lib/agent-signals.js'
+import { buildClaudeSettings } from '../lib/providers/claude.js'
 
 const testHome = join(dirname(fileURLToPath(import.meta.url)), '..', '.test-home-edits')
 process.env.DSH_HOME = testHome
@@ -86,8 +86,8 @@ let cachedSettings
 async function settings() {
   if (cachedSettings) return cachedSettings
   const route = routes.http.find((r) => r.path === '/api/dsh-web-terminal/info')
-  const { agent } = await new Promise((resolve) => route.handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
-  cachedSettings = JSON.parse(readFileSync(agent.claudeSettings, 'utf8'))
+  const { providers } = await new Promise((resolve) => route.handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
+  cachedSettings = JSON.parse(readFileSync(providers.claude.launch.settingsPath, 'utf8'))
   return cachedSettings
 }
 

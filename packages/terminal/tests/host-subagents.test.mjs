@@ -97,8 +97,8 @@ const infoOf = () =>
 let cachedSettings
 async function settings() {
   if (cachedSettings) return cachedSettings
-  const { agent } = await infoOf()
-  cachedSettings = JSON.parse(readFileSync(agent.claudeSettings, 'utf8'))
+  const { providers } = await infoOf()
+  cachedSettings = JSON.parse(readFileSync(providers.claude.launch.settingsPath, 'utf8'))
   return cachedSettings
 }
 

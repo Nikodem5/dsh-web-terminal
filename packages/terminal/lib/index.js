@@ -3,7 +3,7 @@
 // Gives the harness web GUI a real PTY: one WebSocket route (/terminal/ws)
 // bridges a browser xterm.js instance to a native terminal process owned by
 // this host process, plus a tiny /api/dsh-web-terminal/info probe the panel
-// uses to label itself and decide whether a `claude` executable is on PATH.
+// uses to label itself and decide which agent executables (`claude`...) are on PATH.
 //
 // Why a plugin and not the built-in PTY tools: `ctx.terminals` (dsh-terminal)
 // is owner-fenced to an agent and has no declarative auto-start, so a
@@ -20,12 +20,13 @@ import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
-import { TOKEN_ENV, TOKEN_HEADER, buildClaudeSettings, normalizeSignal } from './agent-signals.js'
+import { TOKEN_ENV, TOKEN_HEADER } from './agent-signals.js'
+import { registry } from './providers/index.js'
 import { originAllowed, parseExtraOrigins } from './shared/origin.js'
 import { createGitBashResolver } from './git-bash.js'
 import { createSshHosts } from './ssh-config.js'
@@ -34,7 +35,6 @@ import { createProcessTable } from './process-table.js'
 import { trimReplay } from './replay.js'
 import { createSubagents } from './subagents.js'
 import { createEdits } from './edits.js'
-import { userStatusLine } from './statusline.js'
 import { OpenError, createOpener } from './open.js'
 import { MAX_CANDIDATES, linuxCwd, resolveCandidates } from './paths.js'
 import { createTokenTotals } from './token-totals.js'
@@ -67,11 +67,6 @@ const PLUGIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 
 /** The stats route the stats bar polls. */
 const STATS_PATH = '/api/dsh-web-terminal/stats'
-/** Absolute path of the status-line wrapper Claude runs. */
-const STATUSLINE_SCRIPT = fileURLToPath(new URL('./statusline.js', import.meta.url))
-const HOOK_POST_SCRIPT = fileURLToPath(new URL('./hook-post.js', import.meta.url))
-/** Refresh interval (s) for the wrapper when the user's own status line sets none. */
-const DEFAULT_REFRESH_S = 10
 /** Usage state is saved at most this often (ms), and once more on unload. */
 const USAGE_SAVE_MS = 30_000
 
@@ -161,7 +156,7 @@ function readConfig() {
   }
 }
 
-/** Where this plugin keeps files it generates (the Claude `--settings` file, saved usage). */
+/** Where this plugin keeps files it generates (a provider's launch files, saved usage). */
 function dataDir() {
   return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'web-terminal')
 }
@@ -452,23 +447,6 @@ function apply(ctx) {
     session.subTimer = setTimeout(flush, wait)
     session.subTimer.unref?.()
   }
-  /** Sub-agent hooks and the end of the Claude session. @returns true when the event was a sub-agent one (no agent state to derive). */
-  const trackSubagents = (session, body) => {
-    switch (body?.hook_event_name) {
-      case 'SubagentStart':
-        if (session.subagents.start(body)) notifySubagents(session)
-        return true
-      case 'SubagentStop':
-        if (session.subagents.stop(body)) notifySubagents(session)
-        return true
-      case 'SessionEnd':
-        if (session.subagents.endAll()) notifySubagents(session)
-        return false
-      default:
-        return false
-    }
-  }
-
   /** Send the changed-file list to the attached browser, at most once per throttle window. */
   const notifyEdits = (session) => {
     if (session.editTimer) return
@@ -481,6 +459,15 @@ function apply(ctx) {
     if (wait <= 0) return flush()
     session.editTimer = setTimeout(flush, wait)
     session.editTimer.unref?.()
+  }
+
+  /** What a provider's routes and hooks may call back into. */
+  const hostApi = {
+    notifySubagents,
+    notifyEdits,
+    ingestUsage: (id, body) => {
+      if (usage.ingest(id, body)) usageDirty = true
+    },
   }
 
   const signalServer = createServer((req, res) => {
@@ -512,23 +499,15 @@ function apply(ctx) {
       } catch {
         return reply(400)
       }
-      if (match[1] === 'subagents') {
-        // The sub-agent status line's payload: the live task list.
-        if (session.subagents.ingestTasks(body)) notifySubagents(session)
+      const call = { id, session, body }
+      // Endpoints a provider owns that carry something other than an agent state (edits, usage, sub-agents).
+      const route = registry.route(match[1])
+      if (route !== undefined) {
+        route.handler(call, hostApi)
         return reply(204)
       }
-      if (match[1] === 'claude-edit') {
-        // A file the agent changed: not an agent state.
-        if (session.edits.ingest(body)) notifyEdits(session)
-        return reply(204)
-      }
-      if (match[1] === 'claude' && trackSubagents(session, body)) return reply(204)
-      if (match[1] === 'usage') {
-        // The status line's payload: limits and cost, not an agent state.
-        if (usage.ingest(id, body)) usageDirty = true
-        return reply(204)
-      }
-      const signal = normalizeSignal(match[1], body)
+      if (registry.get(match[1])?.intercept?.(call, hostApi) === true) return reply(204)
+      const signal = registry.normalize(match[1], body)
       if (signal !== undefined) {
         session.agent = { ...signal, at: Date.now() }
         send(session.ws, { type: 'agent', ...session.agent })
@@ -538,42 +517,33 @@ function apply(ctx) {
     req.on('error', () => reply(400))
   })
   signalServer.on('error', () => resolveReady?.())
-  /** Path of the Claude `--settings` file for this host process; null if it could not be written. */
-  let claudeSettingsPath = null
+  /** What each provider wrote at start, by provider id (see `Provider.prepare`). */
+  const prepared = new Map()
+  /** Variables the providers add to every terminal's shell. */
+  const providerEnv = () => Object.assign({}, ...[...prepared.values()].map((p) => p.env))
   /** `node` as found on PATH for the status-line wrapper (undefined when missing). */
   let nodeBin
   let resolveReady
   const signalReady = new Promise((resolve) => {
     resolveReady = resolve
     signalServer.listen(0, '127.0.0.1', async () => {
-      // The wrapper runs under `node`; without it on PATH keep the user's own status line.
+      // Hooks that are commands run under `node`.
       const nodePath = await resolveOnPath('node')
       nodeBin = nodePath
       if (disposed) {
         try { signalServer.close() } catch {}
         return resolve()
       }
-      try {
-        mkdirSync(dir, { recursive: true })
-        // Settings files of host processes that no longer exist are litter.
-        for (const name of readdirSync(dir)) {
-          const stale = /^claude-settings-(\d+)\.json$/.exec(name)
-          if (stale !== null && Number(stale[1]) !== process.pid && !pidAlive(Number(stale[1]))) rmSync(join(dir, name), { force: true })
+      const env = { dir, pid: process.pid, base: `http://127.0.0.1:${signalServer.address().port}/signal`, nodePath, pidAlive }
+      for (const provider of registry.list()) {
+        try {
+          const result = provider.prepare?.(env)
+          if (result === undefined) continue
+          prepared.set(provider.id, result)
+          if (result.statusLineReason !== undefined) statusLineReason = result.statusLineReason
+        } catch {
+          // One provider that cannot write its files does not take the others down.
         }
-        const file = join(dir, `claude-settings-${process.pid}.json`)
-        const base = `http://127.0.0.1:${signalServer.address().port}/signal`
-        const statusLine =
-          nodePath === undefined
-            ? undefined
-            : { script: STATUSLINE_SCRIPT, url: `${base}/usage`, refreshInterval: userStatusLine()?.refreshInterval ?? DEFAULT_REFRESH_S }
-        statusLineReason = statusLine === undefined ? 'node not on PATH' : null
-        // SessionStart only runs command hooks, and the sub-agent status line is a command too: both need node.
-        const hookScript = nodePath === undefined ? undefined : HOOK_POST_SCRIPT
-        const subagentLine = nodePath === undefined ? undefined : { script: STATUSLINE_SCRIPT, url: `${base}/subagents` }
-        writeFileSync(file, `${JSON.stringify(buildClaudeSettings(`${base}/claude`, { statusLine, hookScript, subagentLine, editUrl: `${base}/claude-edit` }), null, 2)}\n`)
-        claudeSettingsPath = file
-      } catch {
-        statusLineReason = 'settings file could not be written'
       }
       resolve()
     })
@@ -600,7 +570,17 @@ function apply(ctx) {
           }),
         )
       ).filter((entry) => entry !== undefined)
-      const claudePath = await resolveOnPath('claude')
+      const providers = Object.fromEntries(
+        await Promise.all(
+          registry.list().map(async (provider) => {
+            let path
+            for (const command of provider.commands) if ((path = await resolveOnPath(command)) !== undefined) break
+            // No prepare step: nothing to inject, so the client can launch it as typed ({} = ready, null = files could not be written).
+            const launch = provider.prepare === undefined ? {} : (prepared.get(provider.id)?.launch ?? null)
+            return [provider.id, { available: path !== undefined, path: path ?? null, launch }]
+          }),
+        ),
+      )
       const sshPath = await findSsh()
       writeJson(res, 200, {
         ok: true,
@@ -609,11 +589,10 @@ function apply(ctx) {
         shell: defaultShellSpec().file,
         shells,
         cwd: homedir(),
-        claude: { available: claudePath !== undefined, path: claudePath ?? null },
+        providers,
         node: { available: nodeBin !== undefined, path: nodeBin ?? null },
         ssh: { available: sshPath !== undefined, path: sshPath ?? null, hosts: sshHosts.get() },
         maxSessions: MAX_SESSIONS,
-        agent: { claudeSettings: claudeSettingsPath },
         sessions: [...sessions.entries()].map(([id, session]) => ({ id, exited: session.exited, cwd: session.cwd, shell: session.shellId })),
       })
     },
@@ -898,7 +877,7 @@ function apply(ctx) {
         const handle = await ctx.subprocess.spawnTerminal({
           argv: [file, ...shell.args],
           cwd,
-          env: { ...terminalEnv(token), ...shell.env },
+          env: { ...terminalEnv(token), ...providerEnv(), ...shell.env },
           rows: rows > 0 ? rows : DEFAULT_ROWS,
           cols: cols > 0 ? cols : DEFAULT_COLS,
           graceMs: GRACE_MS,
@@ -1034,7 +1013,7 @@ function apply(ctx) {
     clearInterval(usageTimer)
     saveUsage(true)
     try { signalServer.close() } catch {}
-    if (claudeSettingsPath !== null) rmSync(claudeSettingsPath, { force: true })
+    for (const result of prepared.values()) safeCall(() => result.dispose?.())
     for (const id of [...sessions.keys()]) destroy(id)
     for (const client of server.clients) {
       try { client.terminate() } catch {}

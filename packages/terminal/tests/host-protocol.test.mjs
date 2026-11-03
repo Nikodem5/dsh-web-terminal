@@ -275,7 +275,7 @@ test('/info lists live sessions and platform shells', async () => {
   const info = await infoOf()
   assert.equal(info.ok, true)
   assert.equal(info.maxSessions, 24)
-  assert.equal(typeof info.claude.available, 'boolean')
+  assert.equal(typeof info.providers.claude.available, 'boolean')
   assert.ok(Array.isArray(info.shells))
   assert.ok(info.sessions.some((s) => s.id === id && s.exited === false))
   ws.close()
@@ -285,9 +285,9 @@ test('/info lists live sessions and platform shells', async () => {
 
 /** Read the generated Claude settings file the way `claude --settings` would. */
 async function settingsFile() {
-  const { agent } = await infoOf()
-  assert.ok(agent.claudeSettings, 'info reports the generated settings file')
-  return JSON.parse(readFileSync(agent.claudeSettings, 'utf8'))
+  const { providers } = await infoOf()
+  assert.ok(providers.claude.launch.settingsPath, 'info reports the generated settings file')
+  return JSON.parse(readFileSync(providers.claude.launch.settingsPath, 'utf8'))
 }
 
 /** POST to the plugin's signal server, at the URL from the settings file, as a Claude hook would. */
@@ -308,8 +308,8 @@ async function postSignal({ token, body, path = '/signal/claude', method = 'POST
 const latestToken = () => spawned.at(-1).spec.env.DSH_WT_TOKEN
 
 test('/info points at a generated Claude settings file with HTTP hooks', async () => {
-  const { agent } = await infoOf()
-  assert.ok(existsSync(agent.claudeSettings))
+  const { providers } = await infoOf()
+  assert.ok(existsSync(providers.claude.launch.settingsPath))
   const hook = (await settingsFile()).hooks.PermissionRequest[0].hooks[0]
   assert.equal(hook.type, 'http')
   assert.match(hook.url, /^http:\/\/127\.0\.0\.1:\d+\/signal\/claude$/)

@@ -80,7 +80,7 @@ function getInfo() {
 }
 
 const probe = await getInfo()
-console.log(`GET /info -> shells=${JSON.stringify(probe.shells)} claude=${probe.claude.available}`)
+console.log(`GET /info -> shells=${JSON.stringify(probe.shells)} claude=${probe.providers.claude.available}`)
 
 // Real server: the harness's webserver does exactly this for upgrade routes.
 const server = createServer()
