@@ -795,7 +795,7 @@ test('the registry finds a provider by id and by the command that starts it', ()
   assert.equal(claude.label, 'Claude')
   assert.equal(claude.glyph, '✦')
   for (const command of ['claude', 'claude --resume', '  claude --model sonnet']) assert.equal(s.providerForCommand(command), claude, command)
-  assert.deepEqual(s.providers.map((p) => p.id), ['claude'])
+  assert.deepEqual(s.providers.map((p) => p.id), ['claude', 'antigravity'])
 })
 
 test('a command that matches no provider is a plain shell command', () => {
@@ -1155,4 +1155,36 @@ test('a provider that needs nothing launched ({}) counts as prepared; an unprepa
   } finally {
     globalThis.fetch = realFetch
   }
+})
+
+test('Antigravity: recognised by its command, path and exe title', () => {
+  const agy = s.providerById('antigravity')
+  assert.equal(agy.label, 'Antigravity')
+  assert.notEqual(agy.glyph, s.providerById('claude').glyph)
+  for (const c of ['agy', 'agy -c', '  agy --model x']) assert.equal(s.providerForCommand(c), agy, c)
+  for (const c of ['agyx', 'echo agy', 'C:\\bin\\agy.exe']) assert.equal(s.providerForCommand(c), undefined, c)
+  assert.equal(s.isAgentCommand('C:\\bin\\agy.exe --help'), true)
+  assert.equal(s.providerForTitle('C:\\Users\\me\\AppData\\Local\\agy\\agy.exe'), agy)
+  assert.deepEqual(agy.presets, ['agy', 'agy -c'])
+})
+
+test('Antigravity launch: known id, else -c after a turn, else as typed; explicit flags stay', () => {
+  const agy = s.providerById('antigravity')
+  const id = 'd68c6b12-644d-4dea-93aa-b1ead1117390'
+  assert.equal(agy.launch('agy', {}, id, true), `agy --conversation ${id}`)
+  assert.equal(agy.launch('agy --model x', {}, id), `agy --conversation ${id} --model x`)
+  assert.equal(agy.launch('agy', {}, null, true), 'agy -c')
+  assert.equal(agy.launch('agy', {}, null, false), 'agy')
+  assert.equal(agy.launch('agy', {}, 'bad id; rm', false), 'agy')
+  for (const c of ['agy -c', 'agy --continue', 'agy --conversation abc', 'agy --conversation=abc']) assert.equal(agy.launch(c, {}, id, true), c, c)
+  assert.equal(agy.launch('npm test', {}, id, true), 'npm test')
+})
+
+test('Antigravity is ready once agy reported idle after the command was typed', () => {
+  const agy = s.providerById('antigravity')
+  const open = { readyState: WebSocket.OPEN }
+  assert.equal(agy.ready({ startupSentAt: undefined, socket: open, agent: { provider: 'antigravity', state: 'idle' } }, 0), false)
+  assert.equal(agy.ready({ startupSentAt: 1, socket: open, agent: undefined }, 0), false)
+  assert.equal(agy.ready({ startupSentAt: 1, socket: open, agent: { provider: 'antigravity', state: 'working' } }, 0), false)
+  assert.equal(agy.ready({ startupSentAt: 1, socket: open, agent: { provider: 'antigravity', state: 'idle' } }, 0), true)
 })

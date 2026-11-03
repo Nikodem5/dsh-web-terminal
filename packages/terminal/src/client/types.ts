@@ -56,6 +56,8 @@ export interface WinState extends Rect {
   gen?: number
   /** Latest conversation id the agent in this window reported; a fresh shell resumes it. */
   agentSession?: string
+  /** The agent in this window has had at least one turn (a provider without a conversation id reopens with its "continue" flag). */
+  hadTurn?: boolean
   /** Last real grid size (after a fit); a terminal created before its page opens starts at this size. */
   cols?: number
   rows?: number

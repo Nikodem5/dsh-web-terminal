@@ -10,7 +10,7 @@ const VIEW_CSS = `
 .wt-view { --wt-accent: #4d6bfe; --wt-work: #5b8cff; --wt-wait: #f0b429; --wt-idle: #22c55e; --wt-dead: #ef4444; --wt-urgent: #ff6b3d;
   --wt-line: #333844; --wt-surface: #1b1d23; --wt-deep: #14161b;
   --wt-text: #e8eaed; --wt-dim: #9aa0a6; --wt-hover: #ffffff14; --wt-field: #101216; color-scheme: dark;
-  --wt-ssh: #8fa3bf; --wt-claude: #d97757; --wt-claude-fg: #1f1410; --wt-agents: #b79cff; --wt-agents-solid: #7c5cf0; --wt-tool: #2dd4bf; --wt-tool-solid: #14b8a6; --wt-tool-fg: #06201d; --wt-warn: #f0b429; --wt-danger: #ff6b6b;
+  --wt-ssh: #8fa3bf; --wt-claude: #d97757; --wt-claude-fg: #1f1410; --wt-agy: #4f8cff; --wt-agy-fg: #08142b; --wt-agents: #b79cff; --wt-agents-solid: #7c5cf0; --wt-tool: #2dd4bf; --wt-tool-solid: #14b8a6; --wt-tool-fg: #06201d; --wt-warn: #f0b429; --wt-danger: #ff6b6b;
   position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; width: 100%; height: 100%; overflow: hidden; background: var(--wt-surface); color: var(--wt-text); font-family: var(--ds-font-family-sans, system-ui, sans-serif); }
 /* Text colours follow the MEASURED background (data-scheme is set from it), so a theme whose tokens disagree with color-scheme can never give white-on-white. */
 .wt-view[data-scheme="light"] { --wt-ssh: #4a5f7d; --wt-text: #1f2328; --wt-dim: #5b636c; --wt-hover: #2631480f; --wt-field: #ffffff; --wt-surface: #f6f7f9; --wt-deep: #ffffff; --wt-line: #d0d7de; --wt-agents: #5b32b8; --wt-agents-solid: #6d3fd1; --wt-tool: #0f766e; --wt-tool-solid: #0f766e; --wt-tool-fg: #fff; --wt-warn: #9a6700; --wt-danger: #cf222e; color-scheme: light; }
@@ -49,6 +49,8 @@ const VIEW_CSS = `
 .wt-view .wt-btn.wt-btn-preset:hover:not(:disabled) { background-color: color-mix(in srgb, var(--wt-text) 16%, transparent); }
 .wt-view .wt-btn.wt-btn-claude { background-color: var(--wt-claude); border-color: transparent; color: var(--wt-claude-fg); font-weight: 600; }
 .wt-view .wt-btn.wt-btn-claude:hover:not(:disabled) { background-color: var(--wt-claude); filter: brightness(1.08); }
+.wt-view .wt-btn.wt-btn-agy { background-color: var(--wt-agy); border-color: transparent; color: var(--wt-agy-fg); font-weight: 600; }
+.wt-view .wt-btn.wt-btn-agy:hover:not(:disabled) { background-color: var(--wt-agy); filter: brightness(1.08); }
 .wt-view .wt-btn.wt-btn-ssh { border-color: color-mix(in srgb, var(--wt-ssh) 55%, transparent); background-color: color-mix(in srgb, var(--wt-ssh) 12%, transparent); color: var(--wt-ssh); }
 .wt-view .wt-btn.wt-btn-ssh:hover:not(:disabled) { background-color: color-mix(in srgb, var(--wt-ssh) 24%, transparent); }
 .wt-view .wt-btn.wt-btn-tool { border-color: color-mix(in srgb, var(--wt-tool) 55%, transparent); background-color: color-mix(in srgb, var(--wt-tool) 11%, transparent); color: var(--wt-tool); }

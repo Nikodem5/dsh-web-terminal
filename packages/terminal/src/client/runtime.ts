@@ -297,6 +297,9 @@ export function ensureRuntime(win: WinState): Runtime {
     const params = new URLSearchParams({ id: `${rt.id}-${current.gen ?? 0}`, shell: current.shell })
     if (current.cwd.length > 0) params.set('cwd', current.cwd)
     if (!prefs.shellIntegration) params.set('integration', '0')
+    // Tells the host which provider's output to read (it only does for ones that report there, and never for ssh).
+    const kind = current.ssh === undefined ? providerOfWin(current) : undefined
+    if (kind !== undefined) params.set('provider', kind.id)
     if (current.ssh !== undefined) for (const [key, value] of Object.entries(sshParams(current.ssh))) params.set(key, value)
     // Always explicit: before the page opens there is no fit, and the xterm grid is what the host must match.
     const fitted = rt.opened && dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)
@@ -384,7 +387,7 @@ export function ensureRuntime(win: WinState): Runtime {
                 // Read the session when typing, not at attach: a slow probe may have delayed us.
                 const win = store.wins.find((w) => w.id === rt.id)
                 const provider = win === undefined ? undefined : providerOfWin(win)
-                const command = provider === undefined ? startup : provider.launch(startup, hostInfo.providers?.[provider.id]?.launch, win?.agentSession)
+                const command = provider === undefined ? startup : provider.launch(startup, hostInfo.providers?.[provider.id]?.launch, win?.agentSession, win?.hadTurn)
                 socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
                 rt.startupSentAt = Date.now()
               }

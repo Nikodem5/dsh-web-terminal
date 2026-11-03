@@ -8,6 +8,7 @@
 
 import { emit, focusWin, prefs, runtimes, store, updateWin } from './state.ts'
 import { isSessionId } from './launch.ts'
+import { providerById } from './providers.ts'
 import { displayName } from './names.ts'
 import type { Activity, AgentInfo, AgentSignal, AgentState, AttentionLevel, Conn, Runtime, WinState } from './types.ts'
 
@@ -202,17 +203,27 @@ function refreshActivity(rt: Runtime): boolean {
  * said yet) is skipped: that conversation does not exist on disk, and resuming it would fail.
  */
 function rememberSession(rt: Runtime, signal: AgentSignal): void {
-  if (signal.state === 'idle' || signal.state === 'ended' || !isSessionId(signal.session)) return
+  if (!isSessionId(signal.session)) return
+  // An `ended` signal names a conversation that exists only for a provider that says so (agy prints its id on the way out).
+  if (signal.state === 'idle' || (signal.state === 'ended' && providerById(signal.provider)?.sessionOnEnd !== true)) return
   const win = store.wins.find((w) => w.id === rt.id)
   // A conversation belongs to the provider that started it: another provider's id is no use to this window's command.
   if (win === undefined || (win.provider !== undefined && win.provider !== signal.provider)) return
   if (win.agentSession !== signal.session) updateWin(rt.id, { agentSession: signal.session })
 }
 
+/** Remember that this window's agent has had a turn, once (it survives a reload with the saved window). */
+function noteTurn(rt: Runtime, signal: AgentSignal): void {
+  if (signal.state !== 'working' && signal.state !== 'finished' && signal.state !== 'failed') return
+  const win = store.wins.find((w) => w.id === rt.id)
+  if (win !== undefined && win.hadTurn !== true) updateWin(rt.id, { hadTurn: true })
+}
+
 /** An agent reported a state. */
 export function applyAgentSignal(rt: Runtime, signal: AgentSignal): void {
   const prev = rt.agent?.state
   rememberSession(rt, signal)
+  noteTurn(rt, signal)
   rt.agent = { provider: signal.provider, state: signal.state, detail: signal.detail, since: signal.at ?? Date.now() }
   rt.hungRaised = false
   // A new turn, or the answer to a prompt, means whatever raised attention has been dealt with.
@@ -232,6 +243,7 @@ export function applyAgentSignal(rt: Runtime, signal: AgentSignal): void {
 export function restoreAgent(rt: Runtime, signal: AgentSignal | null | undefined): void {
   if (signal === null || signal === undefined) return
   rememberSession(rt, signal)
+  noteTurn(rt, signal)
   rt.agent = { provider: signal.provider, state: signal.state, detail: signal.detail, since: signal.at ?? Date.now() }
   rt.hungRaised = false
   const alert = alertFor(undefined, signal)
