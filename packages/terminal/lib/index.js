@@ -434,6 +434,30 @@ function apply(ctx) {
   // Agent signals arrive on a small loopback-only HTTP server of our own rather than on the
   // harness web server: hooks run outside the browser, so they carry no app auth cookie, and a
   // dedicated listener keeps the per-terminal secret as the only credential.
+  /**
+   * Start reading a terminal's output for agent signals, when the client says it was started as a provider that
+   * reports there (`Provider.observe`). Unknown ids, ssh windows and sessions already watched are ignored.
+   */
+  const watchOutput = (session, providerId) => {
+    if (session.observer !== null || session.shellId === 'ssh' || typeof providerId !== 'string') return
+    const observe = registry.get(providerId)?.observe
+    if (typeof observe !== 'function') return
+    try {
+      session.observer = observe()
+      session.observerProvider = providerId
+    } catch {}
+  }
+  /** Feed one chunk to the session's observer; a failing observer is dropped, the terminal carries on. */
+  const observeOutput = (session, text) => {
+    try {
+      for (const signal of session.observer.feed(text)) {
+        session.agent = { provider: session.observerProvider, ...signal, at: Date.now() }
+        send(session.ws, { type: 'agent', ...session.agent })
+      }
+    } catch {
+      session.observer = null
+    }
+  }
   /** Send the sub-agent list to the attached browser, at most once per throttle window. */
   const notifySubagents = (session) => {
     if (session.subTimer) return
@@ -845,6 +869,7 @@ function apply(ctx) {
       }
       session.ws = ws
       session.lastActive = Date.now()
+      watchOutput(session, url.searchParams.get('provider'))
       stopDrainWatch(session)
       dropPending(session)
       send(ws, { type: 'attached', created: false, replay: replayOf(session), exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list(), edits: session.edits.list() })
@@ -887,7 +912,8 @@ function apply(ctx) {
           safeCall(() => handle.terminate())
           throw new Error('plugin unloaded')
         }
-        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null, pendingText: '', flushTimer: null }
+        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, observer: null, observerProvider: null, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null, pendingText: '', flushTimer: null }
+        watchOutput(created, url.searchParams.get('provider'))
         sessions.set(id, created)
         tokens.set(token, id)
         return created
@@ -915,6 +941,7 @@ function apply(ctx) {
         live.replay += text
         if (live.replay.length > REPLAY_LIMIT + REPLAY_SLACK) live.replay = trimReplay(live.replay, REPLAY_LIMIT)
         live.lastActive = Date.now()
+        if (live.observer !== null) observeOutput(live, text)
         forwardData(live, text)
       })
       handle.done.then(
