@@ -80,7 +80,7 @@ terminal does: the same dots, the same two attention levels, notifications and c
   edited. `agy` has to be on the host's PATH; the help panel's diagnostics show whether it was found.
 - **What it reports.** `working`, `blocked` (shown as **Needs you**, with agy's own message as the badge tooltip and the
   notification text), `done` (**Finished**), `failed` and `idle`. Nothing else: **no usage or limits, no changed-file marks,
-  no sub-agents.** The stats bar counts the terminal by status like any other, and the Agents panel stays empty for it.
+  no sub-agents.** The stats bar counts the terminal by status like any other, and the Agents button and panel are hidden while it has focus.
 - **Only when started from here.** An `agy` you type by hand into a plain shell shows no state (the dot stays Running or
   Idle), the same as a hand-typed `claude`; so does one run over ssh.
 - **Start-up sign-in blip.** `agy` briefly reports a sign-in prompt (`kind=auth`, a blocked state) at every start. The host
@@ -122,7 +122,7 @@ empty string returns to the automatic name.
 
 ### Sub-agents panel (right)
 `Agents` in the toolbar (with a badge of running sub-agents) opens a panel beside the terminal list, remembered in the
-preferences. Claude only: Antigravity reports no sub-agents. Sub-agents Claude spawned are grouped by terminal (click a group header to focus its window); each row shows
+preferences. The button and panel show only while the focused terminal's provider reports sub-agents (Claude does, Antigravity does not, so they are hidden while an Antigravity terminal has focus and come back when another terminal does); a plain shell or ssh terminal keeps them. Sub-agents Claude spawned are grouped by terminal (click a group header to focus its window); each row shows
 status, label, type, short model name (`haiku-5-5`), elapsed time (ticking while running) and tokens. Running ones come
 first; completed ones are dimmed and drop off about five minutes after they end. The stats bar adds `N agents` while any
 run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;

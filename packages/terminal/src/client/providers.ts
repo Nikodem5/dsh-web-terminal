@@ -42,6 +42,8 @@ export interface AgentProvider {
   sessionOnEnd?: boolean
   /** Whether a terminal started with `startup` has its agent up and takes a paste (a send waits for it). */
   ready(rt: Runtime, now: number): boolean
+  /** This provider reports sub-agents: its terminals get the Agents button and panel. Absent means it never does. */
+  subagents?: true
 }
 
 // ── Claude Code ──
@@ -109,6 +111,7 @@ const claude: AgentProvider = {
   title: /^Claude Code$/i,
   launch: claudeLaunch,
   ready: claudeReady,
+  subagents: true,
 }
 
 // ── Antigravity CLI ──
@@ -169,6 +172,16 @@ export function providerForCommand(startup: string | undefined): AgentProvider |
 /** The provider a window runs: the one saved with it, else the one its startup command starts. */
 export function providerOfWin(win: Pick<WinState, 'provider' | 'startup'>): AgentProvider | undefined {
   return providerById(win.provider) ?? providerForCommand(win.startup)
+}
+
+/**
+ * Whether the Agents button and panel belong with this terminal. A terminal that runs a provider
+ * without the `subagents` capability has none to show; a plain shell or ssh window (no provider) and
+ * no focused terminal at all keep them, as they always had.
+ */
+export function showsSubagents(win: Pick<WinState, 'provider' | 'startup'> | undefined): boolean {
+  const provider = win === undefined ? undefined : providerOfWin(win)
+  return provider === undefined || provider.subagents === true
 }
 
 /** The provider whose program set this terminal title, or undefined. */

@@ -1293,6 +1293,18 @@ test('Antigravity: recognised by its command, path and exe title', () => {
   assert.deepEqual(agy.presets, ['agy', 'agy -c'])
 })
 
+test('showsSubagents: only Claude has the capability; a plain shell, ssh or no focus keeps the Agents panel', () => {
+  assert.equal(s.providerById('claude').subagents, true)
+  assert.equal(s.providerById('antigravity').subagents, undefined)
+  assert.equal(s.showsSubagents({ provider: 'claude', startup: 'claude' }), true)
+  assert.equal(s.showsSubagents({ provider: undefined, startup: 'claude --resume' }), true)
+  assert.equal(s.showsSubagents({ provider: 'antigravity', startup: 'agy' }), false)
+  assert.equal(s.showsSubagents({ provider: undefined, startup: 'agy -c' }), false)
+  assert.equal(s.showsSubagents({ provider: undefined, startup: 'npm test' }), true, 'a plain shell command')
+  assert.equal(s.showsSubagents({ provider: undefined, startup: undefined }), true, 'a plain shell or ssh window')
+  assert.equal(s.showsSubagents(undefined), true, 'no terminal focused')
+})
+
 test('Antigravity launch: known id, else -c after a turn, else as typed; explicit flags stay', () => {
   const agy = s.providerById('antigravity')
   const id = 'd68c6b12-644d-4dea-93aa-b1ead1117390'

@@ -476,6 +476,41 @@ click(byText('.wt-bar button', 'Agents'))
 await sleep(40)
 check(q('.wt-agents') === null, 'the Agents button closes the panel')
 
+// an Antigravity terminal reports no sub-agents: with it focused the Agents button is gone and an open panel
+// does not claim "No sub-agents running"; focusing the Claude terminal brings both back
+{
+  const winCount = qa('.wt-win').length
+  click(byText('.wt-bar button', 'Agents'))
+  await sleep(40)
+  check(q('.wt-agents') !== null, 'the panel is open before an Antigravity terminal takes focus')
+  click(byText('.wt-bar button', 'Antigravity'))
+  await sleep(40)
+  click(byText('.wt-dialog button', 'Open'))
+  await until(() => qa('.wt-win').length === winCount + 1)
+  await sleep(40)
+  check(qa('.wt-win').length === winCount + 1 && byText('.wt-bar button', 'Agents') === undefined, 'the Agents button is hidden while an Antigravity terminal has focus')
+  check(q('.wt-agents') === null && !doc.body.textContent.includes('No sub-agents running'), 'an open panel is not shown for it (no misleading "No sub-agents running")')
+  const rowOf = (name) => qa('.wt-li').find((el) => el.textContent.startsWith(name))
+  click(rowOf('Terminal 2'))
+  await sleep(40)
+  check(byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'a plain shell terminal keeps the Agents button and the open panel')
+  click(rowOf('Terminal 3'))
+  await sleep(40)
+  check(byText('.wt-bar button', 'Agents') === undefined && q('.wt-agents') === null, 'focusing the Antigravity terminal again hides them')
+  click(rowOf('Agent A'))
+  await sleep(40)
+  check(byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'focusing the Claude terminal brings the button and the open panel back')
+  click(byText('.wt-bar button', 'Agents'))
+  await sleep(40)
+  check(q('.wt-agents') === null, 'the Agents button still closes the panel')
+  click(rowOf('Terminal 3').querySelector('[title="Close"]'))
+  await sleep(40)
+  const confirmBtn = byText('.wt-dialog button', 'Close')
+  if (confirmBtn !== undefined) click(confirmBtn)
+  await until(() => qa('.wt-win').length === winCount)
+  check(qa('.wt-win').length === winCount, 'the Antigravity terminal is closed again')
+}
+
 // toolbar stability: it is a full-width row above the columns, outside the shrinking area, and toggling panels never touches it
 {
   const toolbarShape = () => {
