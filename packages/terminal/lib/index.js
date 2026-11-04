@@ -129,6 +129,8 @@ const DEFAULTS = {
   subagentSweepMs: 5000,
   /** At most one `edits` frame per terminal in this window. */
   editThrottleMs: 300,
+  /** A provider's `kind: 'auth'` signal waits this long for a later one before it is applied (agy shows it briefly at every start). */
+  authHoldMs: 3000,
 }
 
 /** Read one positive number from the environment, else the default. */
@@ -152,6 +154,7 @@ function readConfig() {
     subagentThrottleMs: envNumber('DSH_WT_SUBAGENT_THROTTLE_MS', DEFAULTS.subagentThrottleMs),
     subagentSweepMs: envNumber('DSH_WT_SUBAGENT_SWEEP_MS', DEFAULTS.subagentSweepMs),
     editThrottleMs: envNumber('DSH_WT_EDIT_THROTTLE_MS', DEFAULTS.editThrottleMs),
+    authHoldMs: envNumber('DSH_WT_AUTH_HOLD_MS', DEFAULTS.authHoldMs),
     allowedOrigins: parseExtraOrigins(process.env.DSH_WT_ALLOWED_ORIGINS),
   }
 }
@@ -447,12 +450,33 @@ function apply(ctx) {
       session.observerProvider = providerId
     } catch {}
   }
+  /** Drop a pending auth hold. */
+  const cancelAuthHold = (session) => {
+    clearTimeout(session.authTimer)
+    session.authTimer = null
+  }
+  /** Make one observed signal the session's state and tell the attached browser. */
+  const applyObserved = (session, signal) => {
+    session.agent = { provider: session.observerProvider, ...signal, at: Date.now() }
+    send(session.ws, { type: 'agent', ...session.agent })
+  }
   /** Feed one chunk to the session's observer; a failing observer is dropped, the terminal carries on. */
   const observeOutput = (session, text) => {
     try {
       for (const signal of session.observer.feed(text)) {
-        session.agent = { provider: session.observerProvider, ...signal, at: Date.now() }
-        send(session.ws, { type: 'agent', ...session.agent })
+        if (signal.kind === 'auth') {
+          // Held back: a later signal supersedes it, else it applies when the hold ends. A repeat does not extend it.
+          if (session.authTimer === null) {
+            session.authTimer = setTimeout(() => {
+              session.authTimer = null
+              if (!session.exited) applyObserved(session, signal)
+            }, config.authHoldMs)
+            session.authTimer.unref?.()
+          }
+          continue
+        }
+        cancelAuthHold(session)
+        applyObserved(session, signal)
       }
     } catch {
       session.observer = null
@@ -752,6 +776,7 @@ function apply(ctx) {
     usage.removeSession(id)
     clearTimeout(session.subTimer)
     clearTimeout(session.editTimer)
+    cancelAuthHold(session)
     session.edits.clear()
     stopDrainWatch(session)
     dropPending(session)
@@ -912,7 +937,7 @@ function apply(ctx) {
           safeCall(() => handle.terminate())
           throw new Error('plugin unloaded')
         }
-        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, observer: null, observerProvider: null, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null, pendingText: '', flushTimer: null }
+        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, observer: null, observerProvider: null, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null, pendingText: '', flushTimer: null, authTimer: null }
         watchOutput(created, url.searchParams.get('provider'))
         sessions.set(id, created)
         tokens.set(token, id)
@@ -947,6 +972,7 @@ function apply(ctx) {
       handle.done.then(
         (outcome) => {
           live.exited = true
+          cancelAuthHold(live)
           live.lastActive = Date.now()
           live.exitCode = outcome?.exitCode ?? null
           if (live.subagents.endAll()) notifySubagents(live)

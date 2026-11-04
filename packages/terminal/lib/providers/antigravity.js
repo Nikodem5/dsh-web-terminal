@@ -38,7 +38,7 @@ function signalOf(body) {
   if (state === undefined) return undefined
   const detail = clean(decode(fields.get('msg') ?? ''))
   const signal = { state, detail: state === 'needs-you' || state === 'finished' ? detail : '' }
-  // agy shows kind=auth for a moment at every start; the consumer decides whether to wait before raising it.
+  // agy shows kind=auth for a moment at every start; the host holds it back and drops it if another signal follows soon.
   if (state === 'needs-you' && fields.get('kind') === 'auth') signal.kind = 'auth'
   return signal
 }

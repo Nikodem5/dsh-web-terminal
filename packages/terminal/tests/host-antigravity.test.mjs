@@ -14,6 +14,8 @@ import { registry } from '../lib/providers/index.js'
 
 const testHome = join(dirname(fileURLToPath(import.meta.url)), '..', '.test-home-antigravity')
 process.env.DSH_HOME = testHome
+process.env.DSH_WT_AUTH_HOLD_MS = '600'
+const HOLD = 600
 
 const strictCtx = (base) => new Proxy(base, {
   get(target, prop) {
@@ -70,14 +72,13 @@ const until = async (predicate, ms = 20000) => {
   return false
 }
 
-async function open(query = '') {
-  const id = `ag${Date.now()}x${++seq}`
+async function open(query = '', id = `ag${Date.now()}x${++seq}`) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?id=${id}${query}`)
   const frames = []
   ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))
   await new Promise((resolve, reject) => { ws.on('open', resolve); ws.on('error', reject) })
   await until(() => frames.some((f) => f.type === 'attached'))
-  return { ws, frames, handle: spawned.at(-1).handle, spec: spawned.at(-1).spec }
+  return { ws, frames, id, handle: spawned.at(-1).handle, spec: spawned.at(-1).spec }
 }
 
 const working = '\x1b]7501;state=working:app=antigravity\x07'
@@ -134,4 +135,99 @@ test('an observer that throws is contained: output still flows', async () => {
   assert.ok(await until(() => t.frames.filter((f) => f.type === 'data').map((f) => f.data).join('') === 'onetwo'))
   assert.equal(agents(t.frames).length, 0)
   t.ws.close()
+})
+
+// agy shows kind=auth for a moment at every start: the host holds it back for DSH_WT_AUTH_HOLD_MS.
+const auth = '\x1b]7501;state=blocked:kind=auth:app=antigravity\x07'
+const permission = '\x1b]7501;state=blocked:kind=permission:app=antigravity\x07'
+
+test('auth followed by working within the hold gives only working', async () => {
+  const t = await open('&provider=antigravity')
+  t.handle.output.emit('data', Buffer.from(auth))
+  await sleep(100)
+  assert.equal(agents(t.frames).length, 0)
+  t.handle.output.emit('data', Buffer.from(working))
+  assert.ok(await until(() => agents(t.frames).length === 1))
+  await sleep(HOLD + 300)
+  assert.deepEqual(agents(t.frames).map((f) => f.state), ['working'])
+  t.ws.close()
+})
+
+test('auth and working in one chunk gives only working', async () => {
+  const t = await open('&provider=antigravity')
+  t.handle.output.emit('data', Buffer.from(auth + working))
+  assert.ok(await until(() => agents(t.frames).length === 1))
+  await sleep(HOLD + 300)
+  assert.deepEqual(agents(t.frames).map((f) => f.state), ['working'])
+  t.ws.close()
+})
+
+test('auth alone gives needs-you after the hold, stamped when it is sent', async () => {
+  const t = await open('&provider=antigravity')
+  const start = Date.now()
+  t.handle.output.emit('data', Buffer.from(auth))
+  await sleep(HOLD / 2)
+  assert.equal(agents(t.frames).length, 0)
+  assert.ok(await until(() => agents(t.frames).length === 1))
+  const frame = agents(t.frames)[0]
+  assert.equal(frame.state, 'needs-you')
+  assert.equal(frame.kind, 'auth')
+  assert.equal(frame.provider, 'antigravity')
+  assert.ok(frame.at - start >= HOLD - 50, `sent after ${frame.at - start} ms`)
+  t.ws.close()
+})
+
+test('a second auth signal does not extend the hold or send twice', async () => {
+  const t = await open('&provider=antigravity')
+  const start = Date.now()
+  t.handle.output.emit('data', Buffer.from(auth))
+  await sleep(HOLD * 2 / 3)
+  t.handle.output.emit('data', Buffer.from(auth))
+  assert.ok(await until(() => agents(t.frames).length === 1))
+  assert.ok(Date.now() - start < HOLD * 1.5, `arrived after ${Date.now() - start} ms`)
+  await sleep(HOLD + 200)
+  assert.equal(agents(t.frames).length, 1)
+  t.ws.close()
+})
+
+test('a permission prompt is not delayed', async () => {
+  const t = await open('&provider=antigravity')
+  t.handle.output.emit('data', Buffer.from(permission))
+  assert.ok(await until(() => agents(t.frames).length === 1, HOLD / 2))
+  assert.equal(agents(t.frames)[0].state, 'needs-you')
+  assert.equal(agents(t.frames)[0].kind, undefined)
+  t.ws.close()
+})
+
+test('a browser attaching during the hold sees no agent, and the held signal reaches it once applied', async () => {
+  const first = await open('&provider=antigravity')
+  first.handle.output.emit('data', Buffer.from(auth))
+  first.ws.close()
+  const second = await open('&provider=antigravity', first.id)
+  assert.equal(second.frames.find((f) => f.type === 'attached').agent, null)
+  assert.ok(await until(() => agents(second.frames).length === 1))
+  second.ws.close()
+  const third = await open('&provider=antigravity', first.id)
+  assert.equal(third.frames.find((f) => f.type === 'attached').agent.state, 'needs-you')
+  third.ws.close()
+})
+
+test('the session exiting during the hold sends nothing', async () => {
+  const t = await open('&provider=antigravity')
+  t.handle.output.emit('data', Buffer.from(auth))
+  t.handle.terminate()
+  assert.ok(await until(() => t.frames.some((f) => f.type === 'exit')))
+  await sleep(HOLD + 300)
+  assert.equal(agents(t.frames).length, 0)
+  t.ws.close()
+})
+
+test('the hold firing with no browser attached does not throw, and the next browser gets the state', async () => {
+  const first = await open('&provider=antigravity')
+  first.handle.output.emit('data', Buffer.from(auth))
+  first.ws.close()
+  await sleep(HOLD + 300)
+  const second = await open('&provider=antigravity', first.id)
+  assert.equal(second.frames.find((f) => f.type === 'attached').agent.kind, 'auth')
+  second.ws.close()
 })
