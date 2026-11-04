@@ -6,7 +6,8 @@ import { openTerminal } from './windows.ts'
 import type { LayoutWin, SavedLayout } from './types.ts'
 
 function snapshotWins(): LayoutWin[] {
-  return store.wins.map((w) => {
+  // Minimized terminals are not part of a layout.
+  return store.wins.filter((w) => !w.minimized).map((w) => {
     const g = w.maximized && w.restore !== undefined ? w.restore : w
     return {
       // Only a manual name is pinned; an auto-named window keeps its current name as a placeholder until the program sets one.
@@ -21,7 +22,7 @@ function snapshotWins(): LayoutWin[] {
       w: g.w,
       h: g.h,
       pinned: w.pinned,
-      minimized: w.minimized,
+      minimized: false,
     }
   })
 }
@@ -29,8 +30,9 @@ function snapshotWins(): LayoutWin[] {
 /** Save (or overwrite) the open windows as a named layout. */
 export function saveLayout(name: string): void {
   const trimmed = name.trim()
-  if (trimmed.length === 0 || store.wins.length === 0) return
-  const entry: SavedLayout = { name: trimmed, savedAt: Date.now(), wins: snapshotWins() }
+  const wins = snapshotWins()
+  if (trimmed.length === 0 || wins.length === 0) return
+  const entry: SavedLayout = { name: trimmed, savedAt: Date.now(), wins }
   prefs.layouts = [...prefs.layouts.filter((l) => l.name !== trimmed), entry]
   emit()
   persistSoon()

@@ -28,6 +28,7 @@ export function LayoutsMenu(): ReactElement {
   const prefs = getPrefs()
   const [name, setName] = useState('')
   const wins = getWins()
+  const savable = wins.some((w) => !w.minimized)
   const save = () => {
     saveLayout(name)
     setName('')
@@ -63,13 +64,13 @@ export function LayoutsMenu(): ReactElement {
           className="wt-input wt-grow"
           value={name}
           placeholder="Layout name"
-          disabled={wins.length === 0}
+          disabled={!savable}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') save()
           }}
         />
-        <button type="button" className="wt-btn" disabled={wins.length === 0 || name.trim().length === 0} onClick={save}>Save</button>
+        <button type="button" className="wt-btn" disabled={!savable || name.trim().length === 0} onClick={save}>Save</button>
       </div>
       <div style={{ fontSize: 11, color: 'var(--wt-dim)' }}>
         Saves each window's name, folder, shell, startup command, position and pin. The same name overwrites.
