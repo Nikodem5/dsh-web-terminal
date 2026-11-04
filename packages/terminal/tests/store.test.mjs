@@ -850,6 +850,112 @@ test('duplicates and saved layouts start fresh conversations', () => {
   assert.ok(!JSON.stringify(s.getPrefs().layouts.find((l) => l.name === 'conv')).includes(SESSION))
 })
 
+// ── antigravity transitions, had-a-turn flag, conversation id on end ──
+
+const agy = (state, extra = {}) => ({ provider: 'antigravity', state, detail: '', ...extra })
+
+test('working then idle: the dot goes idle, nothing is raised, the state is kept', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, agy('working'))
+  assert.equal(rt.activity, 'working')
+  s.applyAgentSignal(rt, agy('idle'))
+  assert.equal(rt.agent.state, 'idle')
+  assert.equal(rt.agent.provider, 'antigravity')
+  assert.equal(rt.activity, 'idle')
+  assert.equal(rt.attention, false)
+  assert.equal(s.alertFor('working', agy('idle')), undefined)
+  assert.equal(s.deriveActivity({ conn: 'live', agent: rt.agent, hostBusy: true }), 'idle', 'idle is idle even with a program running')
+})
+
+test('blocked then working: the flag is cleared and the dot goes back to working', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, agy('needs-you', { detail: 'Run command?' }))
+  assert.equal(rt.agent.state, 'needs-you')
+  assert.equal(rt.activity, 'needs-you')
+  assert.equal(rt.attention, true)
+  assert.equal(rt.attentionLevel, 'urgent')
+  s.applyAgentSignal(rt, agy('working'))
+  assert.equal(rt.agent.state, 'working')
+  assert.equal(rt.activity, 'working')
+  assert.equal(rt.attention, false)
+  assert.equal(rt.attentionLevel, null)
+  assert.equal(s.deriveActivity({ conn: 'live', agent: rt.agent, hostBusy: false }), 'working')
+})
+
+test('noteTurn: working, finished and failed mark the window as having had a turn; idle and needs-you do not', () => {
+  for (const state of ['working', 'finished', 'failed']) {
+    const rt = terminalWithRuntime()
+    s.applyAgentSignal(rt, agy(state))
+    assert.equal(byId(rt.id).hadTurn, true, state)
+  }
+  for (const state of ['idle', 'needs-you', 'ended']) {
+    const rt = terminalWithRuntime()
+    s.applyAgentSignal(rt, agy(state))
+    assert.equal(byId(rt.id).hadTurn, undefined, state)
+  }
+  // Restoring after a reload counts the same way.
+  const restored = terminalWithRuntime()
+  s.restoreAgent(restored, agy('finished'))
+  assert.equal(byId(restored.id).hadTurn, true)
+})
+
+test('hadTurn is saved with the window and survives hydrating it again', async () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, agy('working'))
+  const deadline = Date.now() + 10_000
+  const savedWin = () => JSON.parse(window.localStorage.getItem(LAYOUT_KEY) ?? '{"wins":[]}').wins.find((w) => w.id === rt.id)
+  while (savedWin()?.hadTurn !== true && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+  assert.equal(savedWin().hadTurn, true)
+  const f = await loadStore({ fresh: true })
+  window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({
+    wins: [goodWin('turned', { hadTurn: true }), goodWin('fresh'), goodWin('junk', { hadTurn: 'yes' }), goodWin('off', { hadTurn: false })],
+    zTop: 4,
+  }))
+  f.hydrate()
+  const had = (id) => f.getWins().find((w) => w.id === id).hadTurn
+  assert.equal(had('turned'), true)
+  assert.equal(had('fresh'), undefined)
+  assert.equal(had('junk'), undefined, 'only a real true is kept')
+  assert.equal(had('off'), undefined)
+  f.closeAll()
+  await settle()
+})
+
+test('sessionOnEnd: an ended signal stores its conversation for antigravity, not for claude', () => {
+  const agyWin = s.openTerminal({ cwd: 'C:\a', startup: 'agy' })
+  const agyRt = fakeRuntime(agyWin)
+  s.runtimes.set(agyWin, agyRt)
+  assert.equal(byId(agyWin).provider, 'antigravity')
+  s.applyAgentSignal(agyRt, agy('ended', { session: SESSION }))
+  assert.equal(byId(agyWin).agentSession, SESSION)
+
+  const claudeWin = s.openTerminal({ cwd: 'C:\a', startup: 'claude' })
+  const claudeRt = fakeRuntime(claudeWin)
+  s.runtimes.set(claudeWin, claudeRt)
+  s.applyAgentSignal(claudeRt, { ...signal('ended'), session: SESSION })
+  assert.equal(byId(claudeWin).agentSession, undefined)
+})
+
+test('an idle signal never stores its conversation, even for antigravity', () => {
+  const id = s.openTerminal({ cwd: 'C:\a', startup: 'agy' })
+  const rt = fakeRuntime(id)
+  s.runtimes.set(id, rt)
+  s.applyAgentSignal(rt, agy('idle', { session: SESSION }))
+  assert.equal(byId(id).agentSession, undefined)
+})
+
+test('an ended signal from another provider is not stored in an antigravity window', () => {
+  const id = s.openTerminal({ cwd: 'C:\a', startup: 'agy' })
+  const rt = fakeRuntime(id)
+  s.runtimes.set(id, rt)
+  s.applyAgentSignal(rt, { ...signal('working'), session: SESSION })
+  assert.equal(byId(id).agentSession, undefined)
+  s.applyAgentSignal(rt, agy('ended', { provider: 'gemini', session: SESSION }))
+  assert.equal(byId(id).agentSession, undefined)
+  s.applyAgentSignal(rt, agy('ended', { session: 'x; rm -rf ~' }))
+  assert.equal(byId(id).agentSession, undefined, 'an unsafe id is still refused')
+})
+
 // ── preferences added with attention ──
 
 test('setHungMinutes clamps to 0..240; sound and notify toggle', () => {
