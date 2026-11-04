@@ -83,7 +83,15 @@ globalThis.cancelAnimationFrame = window.cancelAnimationFrame.bind(window)
 
 window.document.oninput = null // makes 'oninput' in document true, as in a real browser
 // react must be the copy react-dom itself loads, or elements are rejected as "from an older version".
-const domEntry = profileRequire.resolve('react-dom/client')
+// A fresh checkout or CI has no profile, so it falls back to the repo's development copy.
+const resolveDomEntry = () => {
+  try {
+    return profileRequire.resolve('react-dom/client')
+  } catch {
+    return createRequire(import.meta.url).resolve('react-dom/client')
+  }
+}
+const domEntry = resolveDomEntry()
 const domRequire = createRequire(pathToFileURL(domEntry).href)
 const React = domRequire('react')
 const jsxRuntime = domRequire('react/jsx-runtime')
