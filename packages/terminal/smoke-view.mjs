@@ -541,6 +541,31 @@ check(q('.wt-agents') === null, 'the Agents button closes the panel')
   await sleep(30)
 }
 
+// narrow window: the toolbar wraps instead of pushing its right-hand controls past the edge (jsdom has no layout, so this
+// reads the rules that decide it; the real widths were measured in a browser)
+{
+  const savedWidth = dom.window.innerWidth
+  dom.window.innerWidth = 1280
+  dom.window.dispatchEvent(new dom.window.Event('resize'))
+  await sleep(30)
+  const style = (selector) => dom.window.getComputedStyle(q(selector))
+  const bar = style('.wt-page > .wt-bar')
+  check(bar.flexWrap === 'wrap' && bar.height !== '44px', 'at 1280 px the toolbar may wrap and grow past one row')
+  for (const region of ['.wt-bar-left', '.wt-bar-right']) {
+    const s = style(region)
+    check(s.flexWrap === 'wrap' && s.minWidth === '0px' && s.flexShrink !== '0', `at 1280 px ${region} can shrink and wrap`)
+  }
+  const labels = qa('.wt-page > .wt-bar button').map((b) => b.textContent.trim())
+  for (const label of ['New terminal', 'Claude', 'Antigravity', 'SSH', 'Layouts', 'Broadcast', 'Aa', 'Overview', 'Agents', '☰']) {
+    check(labels.some((text) => text.includes(label)), `at 1280 px the toolbar still has ${label}`)
+  }
+  check(q('.wt-page > .wt-bar button[aria-label="Help"]') !== null, 'at 1280 px the toolbar still has Help')
+  check(qa('.wt-page > .wt-bar button').every((b) => dom.window.getComputedStyle(b).display !== 'none'), 'at 1280 px no toolbar control is hidden')
+  dom.window.innerWidth = savedWidth
+  dom.window.dispatchEvent(new dom.window.Event('resize'))
+  await sleep(30)
+}
+
 // No Workspaces from the shell: the dialog falls back to the folder of the session last viewed in the chat header.
 workspaceItems = []
 render()

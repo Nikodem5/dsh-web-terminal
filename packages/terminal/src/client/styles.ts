@@ -20,13 +20,14 @@ const VIEW_CSS = `
 .wt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
 /* The page is a main-panel entry: it fills the main area. On macOS the window chrome overlaps the top strip, and entry pages pad their top by the frame's clearance (Windows reserves its caption outside the page). */
-[data-platform="darwin"] .wt-page > .wt-bar:first-child { padding-top: var(--dsh-frame-top-clearance, 0px); height: calc(44px + var(--dsh-frame-top-clearance, 0px)); }
+[data-platform="darwin"] .wt-page > .wt-bar:first-child { padding-top: calc(6px + var(--dsh-frame-top-clearance, 0px)); min-height: calc(44px + var(--dsh-frame-top-clearance, 0px)); }
 
 /* toolbar */
-.wt-bar { flex: none; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; box-sizing: border-box; border-bottom: 0.5px solid var(--wt-line); position: relative; z-index: 30; background: var(--wt-surface); }
-/* Row 1: left and right never change width or wrap; only the middle (chips) flexes and clips. Row 2 (.wt-statsrow) holds the stats bar. */
-.wt-bar-left, .wt-bar-right { flex: none; display: flex; align-items: center; gap: 6px; }
-.wt-bar-mid { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 10px; }
+.wt-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; min-height: 44px; padding: 6px 12px; box-sizing: border-box; border-bottom: 0.5px solid var(--wt-line); position: relative; z-index: 30; background: var(--wt-surface); }
+/* Row 1: when the regions do not fit they wrap onto more rows, and a region wraps inside itself when narrower than its controls, so every control stays reachable. The right region stays at the right edge. The stats bar is in .wt-statsrow. */
+.wt-bar-left, .wt-bar-right { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.wt-bar-right { margin-left: auto; justify-content: flex-end; }
+.wt-bar-mid { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .wt-bar-mid > * { flex: none; }
 .wt-statsrow { flex: none; display: flex; align-items: center; height: 26px; padding: 0 12px; box-sizing: border-box; overflow: hidden; border-bottom: 0.5px solid var(--wt-line); background: color-mix(in srgb, var(--wt-text) 4%, var(--wt-surface)); container-type: inline-size; container-name: wtbar; }
 .wt-statsrow > .wt-stats { flex: 0 1 auto; min-width: 0; height: 100%; }
