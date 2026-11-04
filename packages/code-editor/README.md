@@ -1,6 +1,32 @@
 # dsh-code-editor
 
-A Monaco-based code editor and reviewer for the DeepSeek Harness web GUI. Two halves:
+A Monaco code editor and reviewer for the DeepSeek Harness web GUI: browse and edit files in folders
+you register, review what an agent changed, and run git from the same page. Everything runs locally;
+no data leaves your machine.
+
+## Install
+
+```powershell
+dsh plugin --profile web add dsh-code-editor
+```
+
+Restart the GUI afterwards. Use `--profile desktop` for the desktop app.
+Remove it with `dsh plugin --profile web remove dsh-code-editor`.
+
+Requires DSH 0.1.2-rc.1 or newer, Node.js 22+, and `git` on `PATH` for the git features.
+No native builds and no postinstall scripts, so installing cannot leave a half-configured profile.
+
+## What you get
+
+- Explorer, tabs, diff view and a Markdown preview (sanitized, no remote images)
+- Safe saving: a file changed on disk since you opened it is refused instead of overwritten
+- Git: status, stage/unstage/discard, commit and amend, branches, history, fetch/pull/push
+- "Changed by an agent" markers for files an agent edited in a Terminals window
+- Search across a folder, quick open, and nested repositories
+
+## How it is built
+
+Two halves:
 
 - **Host** (`lib/index.js`, this section): confined file and git routes plus a live-update WebSocket.
 - **Client** (`lib/client.js`, built from `src/` by `build.mjs`): the "Code" page.
