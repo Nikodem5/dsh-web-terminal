@@ -2,7 +2,7 @@
   "name": "dsh-web-terminal",
   "version": "0.1.0",
   "private": true,
-  "description": "Interactive PTY terminal inside the DeepSeek Harness web GUI, with a one-click Claude launcher for subscription sign-in (claude login).",
+  "description": "Interactive PTY terminals inside the DeepSeek Harness web GUI, with one-click launchers for Claude Code (subscription sign-in via claude login) and Antigravity CLI.",
   "author": "Nikodem Marcinkiewicz",
   "repository": {
     "type": "git",
