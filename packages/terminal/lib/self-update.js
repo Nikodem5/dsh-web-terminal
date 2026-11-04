@@ -16,9 +16,11 @@ const LOG_LINES = 200
 /** Absolute path of the detached relaunch helper. */
 const RELAUNCH_SCRIPT = fileURLToPath(new URL('./relaunch.js', import.meta.url))
 
-/** `<home>/profiles/<profile>/node_modules/<pkg>` -> {home, profile}, or null for any other layout. */
+/** `<home>/profiles/<profile>/node_modules/<pkg>` -> {home, profile}, or null for any other layout.
+ *  A scoped package adds one level (`node_modules/@scope/<pkg>`), so skip the scope segment before testing. */
 export function profileOf(pluginDir) {
-  const modules = dirname(pluginDir)
+  let modules = dirname(pluginDir)
+  if (basename(modules).startsWith('@')) modules = dirname(modules)
   if (basename(modules) !== 'node_modules') return null
   const profileDir = dirname(modules)
   const profiles = dirname(profileDir)

@@ -1,5 +1,5 @@
 {
-  "name": "dsh-web-terminal",
+  "name": "@nikodem5/dsh-web-terminal",
   "version": "0.1.0",
   "private": false,
   "description": "Multi-terminal workspace inside the DeepSeek Harness web GUI: draggable PTY windows for running several coding agents side by side, with attention states, usage stats, command blocks and SSH.",
