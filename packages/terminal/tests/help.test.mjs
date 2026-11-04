@@ -149,3 +149,17 @@ test('the agent-mark help says only Claude reports edits', () => {
   const need = h.AGENT_MARK_HELP.find((m) => m.how === 'Needs Claude hooks')
   assert.match(need.what, /Antigravity terminals do not/)
 })
+
+test('the agent help covers each provider, the resume caveat and what a hand-typed agent gets', async () => {
+  const built = await build({ entryPoints: [join(root, 'src', 'client', 'providers.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })
+  const { providers } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+  const text = h.AGENT_HELP.map((m) => `${m.how} ${m.what}`).join('\n')
+  for (const p of providers) {
+    assert.ok(text.includes(p.label), `${p.label} is described`)
+    assert.ok(text.includes(`\`${p.command}\``), `${p.command} is named as the command`)
+  }
+  assert.match(text, /agy -c/)
+  assert.match(text, /two Antigravity terminals in one folder/)
+  assert.match(text, /fake a status/)
+  assert.match(text, /Started by hand/)
+})

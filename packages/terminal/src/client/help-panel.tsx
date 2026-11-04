@@ -10,6 +10,7 @@ import { getStats, subscribeStats } from './stats.ts'
 import {
   ACTIVITY_ORDER,
   ACTIVITY_TITLE,
+  AGENT_HELP,
   AGENT_MARK_HELP,
   ATTENTION_LEGEND,
   BLOCK_ACTIONS,
@@ -161,6 +162,15 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
 
         <Section title="SSH terminals">
           {SSH_HELP.map((m) => (
+            <div key={m.how} className="wt-help-row">
+              <span className="wt-help-how">{m.how}</span>
+              <span>{m.what}</span>
+            </div>
+          ))}
+        </Section>
+
+        <Section title="Agent terminals">
+          {AGENT_HELP.map((m) => (
             <div key={m.how} className="wt-help-row">
               <span className="wt-help-how">{m.how}</span>
               <span>{m.what}</span>

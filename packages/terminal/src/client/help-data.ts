@@ -57,6 +57,16 @@ export const SSH_HELP: readonly MouseAction[] = [
   { how: 'Not available over ssh yet', what: `Ctrl+click on file paths (they live on the remote machine), agent status and badges (${AGENT_NAMES})` },
 ]
 
+/** What starting and reading an agent looks like, per provider (README: Knowing what your agents are doing). Each line is checked against providers.ts and lib/providers/. */
+export const AGENT_HELP: readonly MouseAction[] = [
+  { how: providers.map((p) => `${p.glyph} ${p.label}`).join(' · '), what: `Toolbar buttons that open the New terminal dialog preset to the agent's command (${providers.map((p) => `\`${p.command}\``).join(', ')}); the same commands are chips in the dialog` },
+  { how: 'Claude', what: 'Status, usage, sub-agents and changed files, reported by hooks that are added with --settings when it is started from here. A terminal that remembers a conversation resumes it (--resume <id>)' },
+  { how: 'Antigravity', what: 'Status only (working, needs you, finished), read from the terminal output of agy itself; no usage, sub-agents or changed-file marks. Only in a terminal started as `agy` from here' },
+  { how: 'Antigravity: reopening', what: 'Resumes with --conversation <id> once agy has printed one on a clean exit. With none, a terminal that had a turn reopens with `agy -c`, the latest conversation in that folder, so two Antigravity terminals in one folder can open the same one' },
+  { how: 'Antigravity: trust', what: 'Its status is read from terminal output, so a program that prints the same sequence in an Antigravity terminal can fake a status dot or alert. It can only mislead' },
+  { how: 'Started by hand', what: 'An agent you type into a plain shell, or run over ssh, reports nothing: the dot shows only Running or Idle (over ssh, Connected)' },
+]
+
 export interface AttentionLegend {
   level: 'urgent' | 'quiet'
   badge: string
