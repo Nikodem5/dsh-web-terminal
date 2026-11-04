@@ -243,7 +243,7 @@ test('heartbeat: a responsive socket stays open across many intervals', async ()
 
 // ── backpressure ──
 
-test('backpressure: a congested socket stops receiving data frames and gets one resync after draining', async () => {
+test('backpressure: a congested socket stops receiving data frames and is repainted by a resync after draining', async () => {
   const host = await startHost({ DSH_WT_HIGH_WATER: String(64 * 1024), DSH_WT_LOW_WATER: String(16 * 1024), DSH_WT_DRAIN_MS: '20' })
   const { ws, frames } = await host.connect(`id=${freshId()}`)
   await until(() => frames.length > 0)
@@ -257,16 +257,23 @@ test('backpressure: a congested socket stops receiving data frames and gets one 
   }
   handle.emit('LAST')
   ws._socket.resume()
-  assert.ok(await until(() => frames.some((f) => f.type === 'resync')), 'resync arrives after the socket drains')
+  // The OS can absorb part of the burst, so the socket may drain and congest again mid-burst: that is one resync per
+  // congestion, each repainting the whole replay. What must hold is that the client ends up with the latest output.
+  const resyncs = () => frames.filter((f) => f.type === 'resync')
+  const shows = (text) => {
+    const last = frames.findLastIndex((f) => f.type === 'resync')
+    return (last >= 0 && frames[last].replay.endsWith(text)) || frames.slice(last + 1).some((f) => f.type === 'data' && f.data.includes(text))
+  }
+  assert.ok(await until(() => resyncs().length > 0), 'resync arrives after the socket drains')
+  assert.ok(await until(() => shows('LAST')), 'the latest output reaches the client')
   await sleep(150)
-  assert.equal(frames.filter((f) => f.type === 'resync').length, 1)
-  const resync = frames.find((f) => f.type === 'resync')
-  assert.equal(resync.replay.length, 400_000)
-  assert.ok(resync.replay.endsWith('zzzLAST'))
-  assert.ok(frames.filter((f) => f.type === 'data').length < chunks, 'some frames were dropped instead of queued')
+  assert.equal(resyncs()[0].replay.length, 400_000)
+  const dataFrames = frames.filter((f) => f.type === 'data').length
+  assert.ok(dataFrames < chunks, 'some frames were dropped instead of queued')
+  assert.ok(dataFrames + resyncs().length <= chunks + 1, 'each resync pays for at least one dropped chunk')
   // Forwarding resumes after the resync.
   handle.emit('after')
-  assert.ok(await until(() => frames.some((f) => f.type === 'data' && f.data === 'after')))
+  assert.ok(await until(() => shows('after')))
   ws.close()
 })
 
