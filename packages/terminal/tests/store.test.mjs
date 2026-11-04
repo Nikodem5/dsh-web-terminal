@@ -867,6 +867,25 @@ test('working then idle: the dot goes idle, nothing is raised, the state is kept
   assert.equal(s.deriveActivity({ conn: 'live', agent: rt.agent, hostBusy: true }), 'idle', 'idle is idle even with a program running')
 })
 
+test('blocked then idle: the prompt is gone, so the flag is cleared (agy skips working on a deny, Esc or sign-in)', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, agy('needs-you', { detail: 'Sign in required' }))
+  assert.equal(rt.attention, true)
+  s.applyAgentSignal(rt, agy('idle'))
+  assert.equal(rt.activity, 'idle')
+  assert.equal(rt.attention, false)
+})
+
+test('idle keeps a flag it did not answer: failed and finished stay until seen', () => {
+  for (const state of ['failed', 'finished']) {
+    const rt = terminalWithRuntime()
+    s.applyAgentSignal(rt, agy(state))
+    assert.equal(rt.attention, true, state)
+    s.applyAgentSignal(rt, agy('idle'))
+    assert.equal(rt.attention, true, state)
+  }
+})
+
 test('blocked then working: the flag is cleared and the dot goes back to working', () => {
   const rt = terminalWithRuntime()
   s.applyAgentSignal(rt, agy('needs-you', { detail: 'Run command?' }))

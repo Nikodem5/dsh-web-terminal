@@ -227,7 +227,8 @@ export function applyAgentSignal(rt: Runtime, signal: AgentSignal): void {
   rt.agent = { provider: signal.provider, state: signal.state, detail: signal.detail, since: signal.at ?? Date.now() }
   rt.hungRaised = false
   // A new turn, or the answer to a prompt, means whatever raised attention has been dealt with.
-  if (signal.state === 'working') clearAttention(rt)
+  // agy goes from blocked straight to idle when a prompt is denied, cancelled or resolved elsewhere.
+  if (signal.state === 'working' || (signal.state === 'idle' && prev === 'needs-you')) clearAttention(rt)
   const alert = alertFor(prev, signal)
   refreshActivity(rt)
   if (alert !== undefined) raiseAttention(rt, alert)
