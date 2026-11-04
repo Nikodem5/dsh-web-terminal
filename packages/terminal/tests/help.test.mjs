@@ -131,3 +131,21 @@ test('the agent-mark help describes the marker, its lifetime and its requirement
   assert.match(text, /code editor/)
   assert.match(text, /terminal is open/)
 })
+
+test('help text that lists the agents names every provider the UI offers, not just Claude', async () => {
+  const built = await build({ entryPoints: [join(root, 'src', 'client', 'providers.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })
+  const { providers } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+  assert.ok(providers.length >= 2)
+  const send = h.MOUSE_ACTIONS.find((m) => m.how === 'Right-click a selection')
+  const ssh = h.SSH_HELP.find((m) => m.how === 'Not available over ssh yet')
+  for (const p of providers) {
+    assert.ok(send.what.includes(p.label), `the send-menu row names ${p.label}`)
+    assert.ok(ssh.what.includes(p.label), `the ssh row names ${p.label}`)
+  }
+  assert.doesNotMatch(send.what, /new Claude terminal/)
+})
+
+test('the agent-mark help says only Claude reports edits', () => {
+  const need = h.AGENT_MARK_HELP.find((m) => m.how === 'Needs Claude hooks')
+  assert.match(need.what, /Antigravity terminals do not/)
+})

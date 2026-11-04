@@ -2,8 +2,12 @@
 // mouse actions, legends and the diagnostics report. Plain data and pure functions, so the
 // panel (help-panel.tsx) stays layout only and the tests can load this file without a DOM.
 
+import { providers } from './providers.ts'
 import { formatAge, formatClock } from './stats-format.ts'
 import type { Activity, Conn } from './types.ts'
+
+/** The agents the UI offers, named for running text ("Claude, Antigravity"): one list, so a new provider shows up in the help too. */
+const AGENT_NAMES = providers.map((p) => p.label).join(', ')
 
 /** What each status dot means. The windows, the list and the help legend all read this one table. */
 export const ACTIVITY_TITLE: Record<Activity, string> = {
@@ -35,7 +39,7 @@ export const MOUSE_ACTIONS: readonly MouseAction[] = [
   { how: 'Drag an edge or corner', what: 'Resize (not while pinned or maximized)' },
   { how: 'Ctrl+click a link or file path', what: 'Open it: links in the browser, paths in the target chosen in Aa: "Code (this app)" (the default for new users, falls back to VS Code when the Code plugin is not installed), VS Code, Cursor, ... (Cmd+click on macOS)' },
   { how: 'More menu ("..."): Review changes in this folder', what: "Open the window's folder (the shell's current folder when known) in the Code plugin, showing its uncommitted changes. Only shown when the Code plugin is installed, and not for ssh windows" },
-  { how: 'Right-click a selection', what: 'Send menu: copy, another terminal, or a new Claude terminal' },
+  { how: 'Right-click a selection', what: `Send menu: copy, another terminal, or a new agent terminal (${AGENT_NAMES})` },
   { how: 'Shift+right-click a selection', what: 'The same inside programs that use the mouse (they get plain right-clicks)' },
   { how: 'Shift+drag in the terminal', what: 'Select text inside programs that use the mouse (Windows / Linux)' },
   { how: 'Click "↓ N new lines"', what: 'Jump to where you left off' },
@@ -50,7 +54,7 @@ export const SSH_HELP: readonly MouseAction[] = [
   { how: 'Keys and passwords', what: 'The system ssh client does the login. A password or key passphrase is typed in the terminal; the plugin stores no secrets, only the host, port and command' },
   { how: 'Dot: Connected / Disconnected', what: 'Connected while the ssh session is up. Disconnected (ssh exit 255) means the link dropped or was never made: click Reconnect. There is no automatic retry' },
   { how: 'Other exit codes', what: 'The remote session ended normally (Exited); ↻ starts a new connection' },
-  { how: 'Not available over ssh yet', what: 'Ctrl+click on file paths (they live on the remote machine), Claude status and agent badges' },
+  { how: 'Not available over ssh yet', what: `Ctrl+click on file paths (they live on the remote machine), agent status and badges (${AGENT_NAMES})` },
 ]
 
 export interface AttentionLegend {
@@ -123,7 +127,7 @@ export interface AgentMarkHelp {
 export const AGENT_MARK_HELP: readonly AgentMarkHelp[] = [
   { how: '⚡ in the code editor', what: 'A file a Claude session in one of your open terminals changed (Edit, Write, MultiEdit, NotebookEdit). It shows in the explorer (folders above it get a faint dot), tabs, quick open and the CHANGES list; hover for the terminal, the time and the tool.' },
   { how: 'Temporary', what: 'The mark lasts while that terminal is open. Closing the terminal, or restarting its shell, removes it.' },
-  { how: 'Needs Claude hooks', what: 'Only Claude started through this plugin reports edits; shell commands and other editors are not marked.' },
+  { how: 'Needs Claude hooks', what: 'Only Claude started through this plugin reports edits; Antigravity terminals do not. Shell commands and other editors are not marked.' },
 ]
 
 // ── diagnostics ──
