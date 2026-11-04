@@ -175,13 +175,15 @@ export function providerOfWin(win: Pick<WinState, 'provider' | 'startup'>): Agen
 }
 
 /**
- * Whether the Agents button and panel belong with this terminal. A terminal that runs a provider
- * without the `subagents` capability has none to show; a plain shell or ssh window (no provider) and
- * no focused terminal at all keep them, as they always had.
+ * Whether the Agents button and panel belong on the page. The panel lists every terminal's sub-agents, so
+ * they go only when all open terminals run a provider without the `subagents` capability: a plain shell or
+ * ssh window (no provider) keeps them, as does an empty page.
  */
-export function showsSubagents(win: Pick<WinState, 'provider' | 'startup'> | undefined): boolean {
-  const provider = win === undefined ? undefined : providerOfWin(win)
-  return provider === undefined || provider.subagents === true
+export function showsSubagents(wins: readonly Pick<WinState, 'provider' | 'startup'>[]): boolean {
+  return wins.length === 0 || wins.some((win) => {
+    const provider = providerOfWin(win)
+    return provider === undefined || provider.subagents === true
+  })
 }
 
 /** The provider whose program set this terminal title, or undefined. */

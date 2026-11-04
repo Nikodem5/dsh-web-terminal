@@ -574,10 +574,9 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     setBcText('')
   }
   const runningAgents = runningSubagents()
-  // The panel is the open preference, shown while the focused terminal's provider reports sub-agents; focusing another brings it back.
   // A missing agent CLI is noted in the toolbar only while none is available.
   const warnAgents = warnsMissingAgents(providers.map((p) => hostInfo.providers?.[p.id]))
-  const agentsShown = showsSubagents(wins.find((w) => w.id === focusId))
+  const agentsShown = showsSubagents(wins)
   const needsYou = wins.filter((w) => w.id !== focusId && getRuntimeAttention(w.id)).length
 
   return (

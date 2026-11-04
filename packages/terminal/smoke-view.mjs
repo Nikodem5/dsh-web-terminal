@@ -483,8 +483,8 @@ check(q('.wt-agents') === null, 'the Agents button closes the panel')
   check(agyBtn !== undefined && !agyBtn.disabled, 'the button of a missing CLI is still shown and enabled')
 }
 
-// an Antigravity terminal reports no sub-agents: with it focused the Agents button is gone and an open panel
-// does not claim "No sub-agents running"; focusing the Claude terminal brings both back
+// the panel lists every terminal's sub-agents, so an Antigravity terminal beside others leaves it alone whichever
+// has focus (the all-Antigravity case, where it goes, is covered by showsSubagents in store.test.mjs)
 {
   const winCount = qa('.wt-win').length
   click(byText('.wt-bar button', 'Agents'))
@@ -495,18 +495,14 @@ check(q('.wt-agents') === null, 'the Agents button closes the panel')
   click(byText('.wt-dialog button', 'Open'))
   await until(() => qa('.wt-win').length === winCount + 1)
   await sleep(40)
-  check(qa('.wt-win').length === winCount + 1 && byText('.wt-bar button', 'Agents') === undefined, 'the Agents button is hidden while an Antigravity terminal has focus')
-  check(q('.wt-agents') === null && !doc.body.textContent.includes('No sub-agents running'), 'an open panel is not shown for it (no misleading "No sub-agents running")')
+  check(qa('.wt-win').length === winCount + 1 && byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'with other terminals open, a focused Antigravity terminal keeps the Agents button and panel')
   const rowOf = (name) => qa('.wt-li').find((el) => el.textContent.startsWith(name))
-  click(rowOf('Terminal 2'))
-  await sleep(40)
-  check(byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'a plain shell terminal keeps the Agents button and the open panel')
-  click(rowOf('Terminal 3'))
-  await sleep(40)
-  check(byText('.wt-bar button', 'Agents') === undefined && q('.wt-agents') === null, 'focusing the Antigravity terminal again hides them')
   click(rowOf('Agent A'))
   await sleep(40)
-  check(byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'focusing the Claude terminal brings the button and the open panel back')
+  check(byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'focusing the Claude terminal changes nothing')
+  click(rowOf('Terminal 3'))
+  await sleep(40)
+  check(byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'focusing the Antigravity terminal again changes nothing')
   click(byText('.wt-bar button', 'Agents'))
   await sleep(40)
   check(q('.wt-agents') === null, 'the Agents button still closes the panel')
