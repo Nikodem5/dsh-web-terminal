@@ -68,6 +68,26 @@ test('buildDiagnostics: problems are spelled out', () => {
   assert.deepEqual(rows.filter((r) => r.bad).map((r) => r.label), ['node', 'claude', 'Status-line wrapper', 'Terminals'])
 })
 
+test('buildDiagnostics: a missing agent is neutral while another is found, red when none is', () => {
+  const agents = (claude, agy) => [{ command: 'claude', info: claude }, { command: 'agy', info: agy }]
+  const found = { available: true, path: 'C:/bin/x.exe' }
+  const gone = { available: false, path: null }
+  const bad = (d) => h.diagnosticRows(d).filter((r) => r.bad).map((r) => r.label)
+  const one = { ...base(), agents: agents(found, gone) }
+  assert.match(h.buildDiagnostics(one), /^agy: not found$/m, 'still listed')
+  assert.deepEqual(bad(one), [])
+  assert.deepEqual(bad({ ...base(), agents: agents(gone, found) }), [])
+  assert.deepEqual(bad({ ...base(), agents: agents(gone, gone) }), ['claude', 'agy'])
+  assert.deepEqual(bad({ ...base(), agents: agents(found, found) }), [])
+})
+
+test('warnsMissingAgents: only when no provider was found', () => {
+  assert.equal(h.warnsMissingAgents([{ available: true }, { available: false }]), false)
+  assert.equal(h.warnsMissingAgents([{ available: false }, { available: false }]), true)
+  assert.equal(h.warnsMissingAgents([{ available: false }, undefined]), true, 'the other has not answered yet')
+  assert.equal(h.warnsMissingAgents([]), true)
+})
+
 test('buildDiagnostics: an old host or no answer yet shows "unknown", never a false "not found"', () => {
   const d = { ...base(), version: undefined, node: undefined, agents: [{ command: 'claude', info: undefined }], statusLine: undefined, focused: null }
   const text = h.buildDiagnostics(d)
@@ -130,4 +150,36 @@ test('the agent-mark help describes the marker, its lifetime and its requirement
   assert.equal(h.AGENT_MARK_HELP.length, 3)
   assert.match(text, /code editor/)
   assert.match(text, /terminal is open/)
+})
+
+test('help text that lists the agents names every provider the UI offers, not just Claude', async () => {
+  const built = await build({ entryPoints: [join(root, 'src', 'client', 'providers.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })
+  const { providers } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+  assert.ok(providers.length >= 2)
+  const send = h.MOUSE_ACTIONS.find((m) => m.how === 'Right-click a selection')
+  const ssh = h.SSH_HELP.find((m) => m.how === 'Not available over ssh yet')
+  for (const p of providers) {
+    assert.ok(send.what.includes(p.label), `the send-menu row names ${p.label}`)
+    assert.ok(ssh.what.includes(p.label), `the ssh row names ${p.label}`)
+  }
+  assert.doesNotMatch(send.what, /new Claude terminal/)
+})
+
+test('the agent-mark help says only Claude reports edits', () => {
+  const need = h.AGENT_MARK_HELP.find((m) => m.how === 'Needs Claude hooks')
+  assert.match(need.what, /Antigravity terminals do not/)
+})
+
+test('the agent help covers each provider, the resume caveat and what a hand-typed agent gets', async () => {
+  const built = await build({ entryPoints: [join(root, 'src', 'client', 'providers.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })
+  const { providers } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+  const text = h.AGENT_HELP.map((m) => `${m.how} ${m.what}`).join('\n')
+  for (const p of providers) {
+    assert.ok(text.includes(p.label), `${p.label} is described`)
+    assert.ok(text.includes(`\`${p.command}\``), `${p.command} is named as the command`)
+  }
+  assert.match(text, /agy -c/)
+  assert.match(text, /two Antigravity terminals in one folder/)
+  assert.match(text, /fake a status/)
+  assert.match(text, /Started by hand/)
 })

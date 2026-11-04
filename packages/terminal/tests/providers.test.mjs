@@ -11,7 +11,7 @@ const fake = (extra = {}) => ({ id: 'fake', label: 'Fake', commands: ['fakecli']
 test('Claude Code is built in, found by id and by its command', () => {
   assert.equal(registry.get('claude')?.label, 'Claude Code')
   assert.equal(registry.byCommand('claude')?.id, 'claude')
-  assert.deepEqual(registry.list().map((p) => p.id), ['claude'])
+  assert.deepEqual(registry.list().map((p) => p.id), ['claude', 'antigravity'])
 })
 
 test('an unknown id or command is no provider', () => {

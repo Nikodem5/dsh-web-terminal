@@ -57,7 +57,7 @@ window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
 window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
 // The host probe is slow on a cold start (it looks shells up on PATH): answer after the terminal attaches.
 const statsPayload = { ok: true, limits: { fiveHour: { usedPct: 42, resetsAt: Date.now() + 3600e3, outAt: Date.now() + 1800e3 }, sevenDay: { usedPct: 63, resetsAt: Date.now() + 86400e3, outAt: null }, sampledAt: Date.now() }, cost: { totalUsd: 12.34, terminals: 2 }, tokens: { total: 2_500_000_000, input: 1, output: 2, cacheRead: 3, cacheCreation: 4, asOf: Date.now() }, statusLine: { enabled: true, reason: null } }
-const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ version: '9.9.9', node: { available: true, path: 'C:\node\node.exe' }, shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', providers: { claude: { available: true, path: 'C:\\bin\\claude.exe', launch: { settingsPath: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' } } }, ssh: { available: true, path: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', hosts: [{ alias: 'homepc', hostName: '192.168.1.20', user: 'me', port: 2222 }, { alias: 'nas', hostName: null, user: null, port: null }] }, sessions: [] }) }))
+const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ version: '9.9.9', node: { available: true, path: 'C:\node\node.exe' }, shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', providers: { claude: { available: true, path: 'C:\\bin\\claude.exe', launch: { settingsPath: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' } }, antigravity: { available: false, path: null, launch: {} } }, ssh: { available: true, path: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', hosts: [{ alias: 'homepc', hostName: '192.168.1.20', user: 'me', port: 2222 }, { alias: 'nas', hostName: null, user: null, port: null }] }, sessions: [] }) }))
 const updatePayload = { ok: true, available: true, reason: null, repo: 'C:\src\dsh-web-terminal', installed: 'a'.repeat(40), head: 'b'.repeat(40), branch: 'main', canRelaunch: true, relaunchReason: null, running: false, step: null, log: [], ok: null, error: null }
 window.fetch = (url) => {
   if (String(url).endsWith('/stats')) return Promise.resolve({ ok: true, json: async () => statsPayload })
@@ -476,6 +476,56 @@ click(byText('.wt-bar button', 'Agents'))
 await sleep(40)
 check(q('.wt-agents') === null, 'the Agents button closes the panel')
 
+// agy is missing on this host but claude is found: no toolbar note, and the Antigravity button stays as it was (shown, enabled)
+{
+  check(!q('.wt-bar').textContent.includes('not found on PATH'), 'a missing provider shows no toolbar note while another is available')
+  const agyBtn = byText('.wt-bar button', 'Antigravity')
+  check(agyBtn !== undefined && !agyBtn.disabled, 'the button of a missing CLI is still shown and enabled')
+}
+
+// the panel lists every terminal's sub-agents, so an Antigravity terminal beside others leaves it alone whichever
+// has focus (the all-Antigravity case, where it goes, is covered by showsSubagents in store.test.mjs)
+{
+  const winCount = qa('.wt-win').length
+  click(byText('.wt-bar button', 'Agents'))
+  await sleep(40)
+  check(q('.wt-agents') !== null, 'the panel is open before an Antigravity terminal takes focus')
+  click(byText('.wt-bar button', 'Antigravity'))
+  await sleep(40)
+  click(byText('.wt-dialog button', 'Open'))
+  await until(() => qa('.wt-win').length === winCount + 1)
+  await sleep(40)
+  check(qa('.wt-win').length === winCount + 1 && byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'with other terminals open, a focused Antigravity terminal keeps the Agents button and panel')
+  const rowOf = (name) => qa('.wt-li').find((el) => el.textContent.startsWith(name))
+  const agySock = sockets[sockets.length - 1]
+  agySock.push({ type: 'attached', created: true, replay: '', exited: false, exitCode: null })
+  await sleep(40)
+  // a new agent shell is covered by a placeholder until the agent reports (the veil), in the mounted window
+  check(qa('.wt-win .wt-veil').some((el) => el.textContent === 'Starting Antigravity…'), 'a new Antigravity terminal shows a Starting placeholder over its shell')
+  click(rowOf('Agent A'))
+  await sleep(40)
+  check(byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'focusing the Claude terminal changes nothing')
+  // Antigravity repaints its interface in place, so output to it while it is out of front adds no "new" count to its row
+  agySock.push({ type: 'data', data: 'a\r\nb\r\nc\r\n' })
+  await sleep(120)
+  check(rowOf('Terminal 3')?.querySelector('.wt-unread') === null, 'an Antigravity terminal out of front shows no unread count')
+  agySock.push({ type: 'agent', provider: 'antigravity', state: 'idle', detail: '' })
+  await until(() => !qa('.wt-veil').some((el) => el.textContent === 'Starting Antigravity…'))
+  check(true, 'the placeholder goes once the agent reports')
+  click(rowOf('Terminal 3'))
+  await sleep(40)
+  check(byText('.wt-bar button', 'Agents') !== undefined && q('.wt-agents') !== null, 'focusing the Antigravity terminal again changes nothing')
+  click(byText('.wt-bar button', 'Agents'))
+  await sleep(40)
+  check(q('.wt-agents') === null, 'the Agents button still closes the panel')
+  click(rowOf('Terminal 3').querySelector('[title="Close"]'))
+  await sleep(40)
+  const confirmBtn = byText('.wt-dialog button', 'Close')
+  if (confirmBtn !== undefined) click(confirmBtn)
+  await until(() => qa('.wt-win').length === winCount)
+  check(qa('.wt-win').length === winCount, 'the Antigravity terminal is closed again')
+}
+
 // toolbar stability: it is a full-width row above the columns, outside the shrinking area, and toggling panels never touches it
 {
   const toolbarShape = () => {
@@ -500,6 +550,31 @@ check(q('.wt-agents') === null, 'the Agents button closes the panel')
   await sleep(30)
   check(q('.wt-agents') !== null && toolbarShape() === before && q('.wt-page > .wt-bar') === bar, 'opening the Agents panel keeps the same toolbar node and structure')
   click(byText('.wt-bar button', 'Agents'))
+  await sleep(30)
+}
+
+// narrow window: the toolbar wraps instead of pushing its right-hand controls past the edge (jsdom has no layout, so this
+// reads the rules that decide it; the real widths were measured in a browser)
+{
+  const savedWidth = dom.window.innerWidth
+  dom.window.innerWidth = 1280
+  dom.window.dispatchEvent(new dom.window.Event('resize'))
+  await sleep(30)
+  const style = (selector) => dom.window.getComputedStyle(q(selector))
+  const bar = style('.wt-page > .wt-bar')
+  check(bar.flexWrap === 'wrap' && bar.height !== '44px', 'at 1280 px the toolbar may wrap and grow past one row')
+  for (const region of ['.wt-bar-left', '.wt-bar-right']) {
+    const s = style(region)
+    check(s.flexWrap === 'wrap' && s.minWidth === '0px' && s.flexShrink !== '0', `at 1280 px ${region} can shrink and wrap`)
+  }
+  const labels = qa('.wt-page > .wt-bar button').map((b) => b.textContent.trim())
+  for (const label of ['New terminal', 'Claude', 'Antigravity', 'SSH', 'Layouts', 'Broadcast', 'Aa', 'Overview', 'Agents', '☰']) {
+    check(labels.some((text) => text.includes(label)), `at 1280 px the toolbar still has ${label}`)
+  }
+  check(q('.wt-page > .wt-bar button[aria-label="Help"]') !== null, 'at 1280 px the toolbar still has Help')
+  check(qa('.wt-page > .wt-bar button').every((b) => dom.window.getComputedStyle(b).display !== 'none'), 'at 1280 px no toolbar control is hidden')
+  dom.window.innerWidth = savedWidth
+  dom.window.dispatchEvent(new dom.window.Event('resize'))
   await sleep(30)
 }
 
@@ -558,7 +633,7 @@ await sleep(20)
   check(prevented && q('.wt-send') !== null, 'right-click on a selection opens the Send to menu')
   window.Element.prototype.getBoundingClientRect = orig
   const labels = qa('.wt-send .wt-send-item').map((el) => el.textContent)
-  check(labels[0] === 'Copy' && labels.some((l) => l.includes('Agent A')) && labels[labels.length - 1].includes('New Claude terminal'), `the menu lists Copy, the other terminals and a new Claude terminal (${labels.join(' | ')})`)
+  check(labels[0] === 'Copy' && labels.some((l) => l.includes('Agent A')) && labels.some((l) => l.includes('New Claude terminal')) && labels[labels.length - 1].includes('New Antigravity terminal'), `the menu lists Copy, the other terminals and a new Claude terminal (${labels.join(' | ')})`)
   check(q('.wt-send .wt-send-item[data-active="true"]')?.textContent.includes('Agent A'), 'the agent terminal is preselected')
   q('.wt-send').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await sleep(40)
@@ -685,7 +760,7 @@ await sleep(20)
   click(btn)
   await sleep(40)
   check(q('.wt-help') !== null, 'the Help button opens the panel')
-  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Status colours|Files changed by an agent|Stats bar|Diagnostics|Update from source', 'all eight sections render')
+  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Agent terminals|Status colours|Files changed by an agent|Stats bar|Diagnostics|Update from source', 'all nine sections render')
   const total = qa('.wt-help [data-shortcut]').length
   check(total >= 15 && qa('.wt-help-group').length >= 7, 'shortcuts are listed in groups')
   check(qa('.wt-help .wt-dot').map((d) => d.dataset.a).join(',') === 'working,needs-you,finished,running,idle,exited,offline,connected,disconnected', 'the legend draws every status dot with the real .wt-dot classes')
@@ -717,7 +792,7 @@ await sleep(20)
 // ── SSH terminals ──
 {
   const sshBtn = byText('.wt-bar button', 'SSH')
-  check(sshBtn !== undefined && sshBtn.classList.contains('wt-btn-ssh') && sshBtn.previousElementSibling === byText('.wt-bar button', 'Claude'), 'the toolbar has an SSH button right after Claude')
+  check(sshBtn !== undefined && sshBtn.classList.contains('wt-btn-ssh') && sshBtn.previousElementSibling === byText('.wt-bar button', 'Antigravity'), 'the toolbar has an SSH button right after the agent buttons')
   const before = qa('.wt-win').length
   click(sshBtn)
   await sleep(30)

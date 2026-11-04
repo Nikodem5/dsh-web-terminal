@@ -14,6 +14,7 @@
  * @property {(body: object) => ({state: string, detail: string}|undefined)} [adapter] - The provider's own hook payload -> neutral signal; undefined for an event that says nothing about state. Without one, only bodies that already carry a neutral `state` are accepted.
  * @property {(env: PrepareEnv) => (Prepared|undefined)} [prepare] - Run once when the signal server is listening: write whatever files the provider's hooks need. Absent for a provider that needs none (zero-config).
  * @property {(call: Call, host: HostApi) => boolean} [intercept] - Look at a `/signal/<id>` body before it is read as an agent state; return true when it was consumed.
+ * @property {() => ({feed: (text: string) => Array<{state: string, detail: string, kind?: string, session?: string}>})} [observe] - Create a parser for one terminal's output, for a provider that reports in the terminal stream instead of hooks. Called once per terminal the client says was started as this provider; `feed` gets each decoded chunk and returns the signals in it (a `kind: 'auth'` signal is held back by the host and dropped if another one follows soon). It must be cheap and must not throw (the host contains it if it does).
  * @property {Record<string, (call: Call, host: HostApi) => void>} [routes] - Extra `/signal/<name>` endpoints this provider owns (not agent states). Names share one namespace with provider ids.
  *
  * @typedef {object} PrepareEnv
@@ -41,6 +42,7 @@
  */
 import { normalizeSignal } from '../agent-signals.js'
 import { claude } from './claude.js'
+import { antigravity } from './antigravity.js'
 
 const ID = /^[a-z][a-z0-9-]{0,30}$/
 
@@ -92,5 +94,5 @@ export function createRegistry(initial = []) {
   }
 }
 
-/** The host's registry: Claude Code is built in. */
-export const registry = createRegistry([claude])
+/** The host's registry: Claude Code and the Antigravity CLI are built in. */
+export const registry = createRegistry([claude, antigravity])

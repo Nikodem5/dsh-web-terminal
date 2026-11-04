@@ -2,8 +2,12 @@
 // mouse actions, legends and the diagnostics report. Plain data and pure functions, so the
 // panel (help-panel.tsx) stays layout only and the tests can load this file without a DOM.
 
+import { providers } from './providers.ts'
 import { formatAge, formatClock } from './stats-format.ts'
 import type { Activity, Conn } from './types.ts'
+
+/** The agents the UI offers, named for running text ("Claude, Antigravity"): one list, so a new provider shows up in the help too. */
+const AGENT_NAMES = providers.map((p) => p.label).join(', ')
 
 /** What each status dot means. The windows, the list and the help legend all read this one table. */
 export const ACTIVITY_TITLE: Record<Activity, string> = {
@@ -35,7 +39,7 @@ export const MOUSE_ACTIONS: readonly MouseAction[] = [
   { how: 'Drag an edge or corner', what: 'Resize (not while pinned or maximized)' },
   { how: 'Ctrl+click a link or file path', what: 'Open it: links in the browser, paths in the target chosen in Aa: "Code (this app)" (the default for new users, falls back to VS Code when the Code plugin is not installed), VS Code, Cursor, ... (Cmd+click on macOS)' },
   { how: 'More menu ("..."): Review changes in this folder', what: "Open the window's folder (the shell's current folder when known) in the Code plugin, showing its uncommitted changes. Only shown when the Code plugin is installed, and not for ssh windows" },
-  { how: 'Right-click a selection', what: 'Send menu: copy, another terminal, or a new Claude terminal' },
+  { how: 'Right-click a selection', what: `Send menu: copy, another terminal, or a new agent terminal (${AGENT_NAMES})` },
   { how: 'Shift+right-click a selection', what: 'The same inside programs that use the mouse (they get plain right-clicks)' },
   { how: 'Shift+drag in the terminal', what: 'Select text inside programs that use the mouse (Windows / Linux)' },
   { how: 'Click "↓ N new lines"', what: 'Jump to where you left off' },
@@ -50,7 +54,17 @@ export const SSH_HELP: readonly MouseAction[] = [
   { how: 'Keys and passwords', what: 'The system ssh client does the login. A password or key passphrase is typed in the terminal; the plugin stores no secrets, only the host, port and command' },
   { how: 'Dot: Connected / Disconnected', what: 'Connected while the ssh session is up. Disconnected (ssh exit 255) means the link dropped or was never made: click Reconnect. There is no automatic retry' },
   { how: 'Other exit codes', what: 'The remote session ended normally (Exited); ↻ starts a new connection' },
-  { how: 'Not available over ssh yet', what: 'Ctrl+click on file paths (they live on the remote machine), Claude status and agent badges' },
+  { how: 'Not available over ssh yet', what: `Ctrl+click on file paths (they live on the remote machine), agent status and badges (${AGENT_NAMES})` },
+]
+
+/** What starting and reading an agent looks like, per provider (README: Knowing what your agents are doing). Each line is checked against providers.ts and lib/providers/. */
+export const AGENT_HELP: readonly MouseAction[] = [
+  { how: providers.map((p) => `${p.glyph} ${p.label}`).join(' · '), what: `Toolbar buttons that open the New terminal dialog preset to the agent's command (${providers.map((p) => `\`${p.command}\``).join(', ')}); the same commands are chips in the dialog` },
+  { how: 'Claude', what: 'Status, usage, sub-agents and changed files, reported by hooks that are added with --settings when it is started from here. A terminal that remembers a conversation resumes it (--resume <id>)' },
+  { how: 'Antigravity', what: 'Status only (working, needs you, finished), read from the terminal output of agy itself; no usage, sub-agents or changed-file marks. Only in a terminal started as `agy` from here' },
+  { how: 'Antigravity: reopening', what: 'Resumes with --conversation <id> once agy has printed one on a clean exit. With none, a terminal that had a turn reopens with `agy -c`, the latest conversation in that folder, so two Antigravity terminals in one folder can open the same one' },
+  { how: 'Antigravity: trust', what: 'Its status is read from terminal output, so a program that prints the same sequence in an Antigravity terminal can fake a status dot or alert. It can only mislead' },
+  { how: 'Started by hand', what: 'An agent you type into a plain shell, or run over ssh, reports nothing: the dot shows only Running or Idle (over ssh, Connected)' },
 ]
 
 export interface AttentionLegend {
@@ -123,7 +137,7 @@ export interface AgentMarkHelp {
 export const AGENT_MARK_HELP: readonly AgentMarkHelp[] = [
   { how: '⚡ in the code editor', what: 'A file a Claude session in one of your open terminals changed (Edit, Write, MultiEdit, NotebookEdit). It shows in the explorer (folders above it get a faint dot), tabs, quick open and the CHANGES list; hover for the terminal, the time and the tool.' },
   { how: 'Temporary', what: 'The mark lasts while that terminal is open. Closing the terminal, or restarting its shell, removes it.' },
-  { how: 'Needs Claude hooks', what: 'Only Claude started through this plugin reports edits; shell commands and other editors are not marked.' },
+  { how: 'Needs Claude hooks', what: 'Only Claude started through this plugin reports edits; Antigravity terminals do not. Shell commands and other editors are not marked.' },
 ]
 
 // ── diagnostics ──
@@ -174,6 +188,14 @@ function found(probe: { available?: boolean; path?: string | null } | undefined)
   return probe.available ? `found${probe.path ? ` (${probe.path})` : ''}` : 'not found'
 }
 
+/**
+ * A missing agent CLI is only worth a warning when none is usable: while at least one provider was found
+ * on PATH, the others are listed neutrally (no toolbar note, no red mark).
+ */
+export function warnsMissingAgents(probes: readonly ({ available?: boolean } | undefined)[]): boolean {
+  return !probes.some((probe) => probe?.available === true)
+}
+
 export interface DiagnosticRow {
   label: string
   value: string
@@ -187,11 +209,12 @@ export function diagnosticRows(d: DiagnosticsInput): DiagnosticRow[] {
   const wrapper = d.statusLine === undefined ? 'unknown (no stats answer yet)' : d.statusLine.enabled ? 'enabled' : `off: ${d.statusLine.reason ?? 'unknown reason'}`
   const markers = d.focused === null ? 'no terminal focused' : `${d.focused.markersSeen ? 'markers seen' : 'no markers yet'} in "${d.focused.name}"`
   const c = d.conns
+  const warnAgents = warnsMissingAgents(d.agents.map((a) => a.info))
   return [
     { label: 'Plugin version', value: d.version ?? 'unknown' },
     { label: 'Platform', value: d.platform ?? 'unknown' },
     { label: 'node', value: found(d.node), bad: d.node?.available === false },
-    ...d.agents.map((a) => ({ label: a.command, value: found(a.info), bad: a.info?.available === false })),
+    ...d.agents.map((a) => ({ label: a.command, value: found(a.info), bad: warnAgents && a.info?.available === false })),
     { label: 'ssh', value: found(d.ssh) },
     { label: 'ssh config hosts', value: d.ssh?.hosts === undefined ? 'unknown (host has not answered)' : String(d.ssh.hosts.length) },
     { label: 'Status-line wrapper', value: wrapper, bad: d.statusLine?.enabled === false },

@@ -12,6 +12,7 @@ import { emit, hostInfo, hostInfoReady, prefs, refreshHostInfo, runtimes, store,
 import { cleanTitle, displayName } from './names.ts'
 import { SSH_LOST, noteExit, noteHostBusy, noteHostRestart, noteUserInput, raiseAttention, restoreAgent, applyAgentSignal, tick } from './attention.ts'
 import { providerOfWin } from './providers.ts'
+import { liftVeil, shouldVeil, startVeil, clearVeilTimers } from './veil.ts'
 import { applySubagents } from './subagent-state.ts'
 import { applyEdits, notifyEdits } from './edits-api.ts'
 import { startupTiming, startupWait } from './prompt-ready.ts'
@@ -111,6 +112,8 @@ export function isTerminalReport(data: string): boolean {
 function setConn(rt: Runtime, conn: Conn, detail = ''): void {
   rt.conn = conn
   rt.detail = detail
+  // Nothing is coming to unveil a terminal that has exited, failed or lost its connection.
+  if (conn === 'exited' || conn === 'failed' || conn === 'lost') liftVeil(rt)
   tick()
   emit()
 }
@@ -297,6 +300,9 @@ export function ensureRuntime(win: WinState): Runtime {
     const params = new URLSearchParams({ id: `${rt.id}-${current.gen ?? 0}`, shell: current.shell })
     if (current.cwd.length > 0) params.set('cwd', current.cwd)
     if (!prefs.shellIntegration) params.set('integration', '0')
+    // Tells the host which provider's output to read (it only does for ones that report there, and never for ssh).
+    const kind = current.ssh === undefined ? providerOfWin(current) : undefined
+    if (kind !== undefined) params.set('provider', kind.id)
     if (current.ssh !== undefined) for (const [key, value] of Object.entries(sshParams(current.ssh))) params.set(key, value)
     // Always explicit: before the page opens there is no fit, and the xterm grid is what the host must match.
     const fitted = rt.opened && dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)
@@ -344,6 +350,7 @@ export function ensureRuntime(win: WinState): Runtime {
         }
         rt.attachedOnce = true
         stopStartup()
+        liftVeil(rt) // a reconnect: whatever this attach brings is the real screen
         attachedAt = Date.now()
         lastOutputAt = undefined
         // A fresh shell has no agent yet; a reattached one reports what its agent was last doing.
@@ -367,6 +374,9 @@ export function ensureRuntime(win: WinState): Runtime {
           // An ssh window has no startup typing: its remote command went to ssh as an argument.
           const startup = rt.ssh ? undefined : store.wins.find((w) => w.id === rt.id)?.startup
           if (frame.created === true && startup !== undefined && startup.trim().length > 0) {
+            const veilWin = store.wins.find((w) => w.id === rt.id)
+            const veilProvider = veilWin === undefined ? undefined : providerOfWin(veilWin)
+            if (veilProvider !== undefined && shouldVeil({ created: true, ssh: rt.ssh, startup, provider: veilProvider })) startVeil(rt, veilProvider.label)
             // Wait for the host probe first: it names what an agent needs to launch (Claude's hook settings file), and on a cold app
             // start it can answer after the shell is already up.
             void hostInfoReady().then(() => {
@@ -384,7 +394,7 @@ export function ensureRuntime(win: WinState): Runtime {
                 // Read the session when typing, not at attach: a slow probe may have delayed us.
                 const win = store.wins.find((w) => w.id === rt.id)
                 const provider = win === undefined ? undefined : providerOfWin(win)
-                const command = provider === undefined ? startup : provider.launch(startup, hostInfo.providers?.[provider.id]?.launch, win?.agentSession)
+                const command = provider === undefined ? startup : provider.launch(startup, hostInfo.providers?.[provider.id]?.launch, win?.agentSession, win?.hadTurn)
                 socket.send(JSON.stringify({ type: 'input', data: `${command}\r` }))
                 rt.startupSentAt = Date.now()
               }
@@ -577,6 +587,8 @@ export function disposeRuntime(id: string, kill: boolean): void {
   rt.killed = true
   if (rt.timer !== undefined) clearTimeout(rt.timer)
   rt.stopStartup?.()
+  liftVeil(rt)
+  clearVeilTimers(rt)
   try {
     if (kill && rt.socket?.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'kill' }))
     rt.socket?.close()

@@ -22,7 +22,8 @@ import { MissionOverlay, missionPlan, useMissionControl } from './mission-view.t
 import type { MissionPlan } from './mission-view.tsx'
 import { Sidebar } from './sidebar.tsx'
 import { StatsBar } from './stats-bar.tsx'
-import { providers } from './providers.ts'
+import { warnsMissingAgents } from './help-data.ts'
+import { providers, showsSubagents } from './providers.ts'
 import { ensureStyles } from './styles.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
 import {
@@ -573,6 +574,9 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     setBcText('')
   }
   const runningAgents = runningSubagents()
+  // A missing agent CLI is noted in the toolbar only while none is available.
+  const warnAgents = warnsMissingAgents(providers.map((p) => hostInfo.providers?.[p.id]))
+  const agentsShown = showsSubagents(wins)
   const needsYou = wins.filter((w) => w.id !== focusId && getRuntimeAttention(w.id)).length
 
   return (
@@ -612,7 +616,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           ) : null}
           {providers.map((p) => {
             const probe = hostInfo.providers?.[p.id]
-            return probe !== undefined && probe.available !== true ? <span key={p.id} className="wt-note">{`\`${p.command}\` not found on PATH`}</span> : null
+            return probe !== undefined && probe.available !== true && warnAgents ? <span key={p.id} className="wt-note">{`\`${p.command}\` not found on PATH`}</span> : null
           })}
           <div className="wt-menu-wrap" onPointerDown={(e) => e.stopPropagation()}>
             <button type="button" className="wt-btn wt-btn-icon" data-on={menu === 'settings'} title="Font and notification settings" onClick={() => setMenu(menu === 'settings' ? null : 'settings')}>Aa</button>
@@ -623,9 +627,11 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
             {menu === 'help' ? <HelpPanel onClose={closeHelp} /> : null}
           </div>
           <button type="button" className="wt-btn wt-btn-overview" data-on={plan !== null} title="Overview of every terminal (Ctrl+Shift+Space)" disabled={wins.length === 0} onClick={() => toggleOverview(focusId)}>▦ Overview</button>
-          <button type="button" className="wt-btn wt-btn-agents" data-on={prefs.agentsPanel} title={prefs.agentsPanel ? 'Hide the sub-agents panel' : 'Show the sub-agents panel'} onClick={() => setAgentsPanel(!prefs.agentsPanel)}>
-            Agents{runningAgents > 0 ? <span className="wt-btn-count">{runningAgents}</span> : null}
-          </button>
+          {agentsShown ? (
+            <button type="button" className="wt-btn wt-btn-agents" data-on={prefs.agentsPanel} title={prefs.agentsPanel ? 'Hide the sub-agents panel' : 'Show the sub-agents panel'} onClick={() => setAgentsPanel(!prefs.agentsPanel)}>
+              Agents{runningAgents > 0 ? <span className="wt-btn-count">{runningAgents}</span> : null}
+            </button>
+          ) : null}
           <button type="button" className="wt-btn wt-btn-icon" data-on={prefs.sidebar} title={prefs.sidebar ? 'Hide the terminal list' : 'Show the terminal list'} onClick={() => setSidebar(!prefs.sidebar)}>☰</button>
         </div>
       </div>
@@ -663,7 +669,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           </div>
         </div>
       </div>
-      {prefs.agentsPanel ? <AgentsPanel wins={wins} /> : null}
+      {prefs.agentsPanel && agentsShown ? <AgentsPanel wins={wins} /> : null}
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
       </div>
       <SendMenu />
