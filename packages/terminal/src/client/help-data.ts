@@ -188,6 +188,14 @@ function found(probe: { available?: boolean; path?: string | null } | undefined)
   return probe.available ? `found${probe.path ? ` (${probe.path})` : ''}` : 'not found'
 }
 
+/**
+ * A missing agent CLI is only worth a warning when none is usable: while at least one provider was found
+ * on PATH, the others are listed neutrally (no toolbar note, no red mark).
+ */
+export function warnsMissingAgents(probes: readonly ({ available?: boolean } | undefined)[]): boolean {
+  return !probes.some((probe) => probe?.available === true)
+}
+
 export interface DiagnosticRow {
   label: string
   value: string
@@ -201,11 +209,12 @@ export function diagnosticRows(d: DiagnosticsInput): DiagnosticRow[] {
   const wrapper = d.statusLine === undefined ? 'unknown (no stats answer yet)' : d.statusLine.enabled ? 'enabled' : `off: ${d.statusLine.reason ?? 'unknown reason'}`
   const markers = d.focused === null ? 'no terminal focused' : `${d.focused.markersSeen ? 'markers seen' : 'no markers yet'} in "${d.focused.name}"`
   const c = d.conns
+  const warnAgents = warnsMissingAgents(d.agents.map((a) => a.info))
   return [
     { label: 'Plugin version', value: d.version ?? 'unknown' },
     { label: 'Platform', value: d.platform ?? 'unknown' },
     { label: 'node', value: found(d.node), bad: d.node?.available === false },
-    ...d.agents.map((a) => ({ label: a.command, value: found(a.info), bad: a.info?.available === false })),
+    ...d.agents.map((a) => ({ label: a.command, value: found(a.info), bad: warnAgents && a.info?.available === false })),
     { label: 'ssh', value: found(d.ssh) },
     { label: 'ssh config hosts', value: d.ssh?.hosts === undefined ? 'unknown (host has not answered)' : String(d.ssh.hosts.length) },
     { label: 'Status-line wrapper', value: wrapper, bad: d.statusLine?.enabled === false },

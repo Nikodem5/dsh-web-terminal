@@ -77,7 +77,7 @@ terminal does: the same dots, the same two attention levels, notifications and c
 - **How it is started.** The host adds `AGY_CLI_OSC7501=on` to the environment of every local terminal's shell. With it, `agy`
   prints a status sequence (`ESC ] 7501 ; state=<state>... BEL`) whenever its state changes, and the host reads those from the
   output of terminals the browser says were started as `agy` (never ssh windows). Nothing in `agy`'s own configuration is
-  edited. `agy` has to be on the host's PATH; the help panel's diagnostics show whether it was found.
+  edited. `agy` has to be on the host's PATH; the help panel's diagnostics show whether it was found. A CLI that is not found gets a toolbar note ("`agy` not found on PATH") and a red diagnostics row only while no agent CLI at all was found; with at least one found, the missing one is listed in the diagnostics without colour and its button stays as it is.
 - **What it reports.** `working`, `blocked` (shown as **Needs you**, with agy's own message as the badge tooltip and the
   notification text), `done` (**Finished**), `failed` and `idle`. Nothing else: **no usage or limits, no changed-file marks,
   no sub-agents.** The stats bar counts the terminal by status like any other, and the Agents button and panel are hidden while it has focus.

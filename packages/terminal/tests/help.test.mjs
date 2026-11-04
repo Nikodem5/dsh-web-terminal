@@ -68,6 +68,26 @@ test('buildDiagnostics: problems are spelled out', () => {
   assert.deepEqual(rows.filter((r) => r.bad).map((r) => r.label), ['node', 'claude', 'Status-line wrapper', 'Terminals'])
 })
 
+test('buildDiagnostics: a missing agent is neutral while another is found, red when none is', () => {
+  const agents = (claude, agy) => [{ command: 'claude', info: claude }, { command: 'agy', info: agy }]
+  const found = { available: true, path: 'C:/bin/x.exe' }
+  const gone = { available: false, path: null }
+  const bad = (d) => h.diagnosticRows(d).filter((r) => r.bad).map((r) => r.label)
+  const one = { ...base(), agents: agents(found, gone) }
+  assert.match(h.buildDiagnostics(one), /^agy: not found$/m, 'still listed')
+  assert.deepEqual(bad(one), [])
+  assert.deepEqual(bad({ ...base(), agents: agents(gone, found) }), [])
+  assert.deepEqual(bad({ ...base(), agents: agents(gone, gone) }), ['claude', 'agy'])
+  assert.deepEqual(bad({ ...base(), agents: agents(found, found) }), [])
+})
+
+test('warnsMissingAgents: only when no provider was found', () => {
+  assert.equal(h.warnsMissingAgents([{ available: true }, { available: false }]), false)
+  assert.equal(h.warnsMissingAgents([{ available: false }, { available: false }]), true)
+  assert.equal(h.warnsMissingAgents([{ available: false }, undefined]), true, 'the other has not answered yet')
+  assert.equal(h.warnsMissingAgents([]), true)
+})
+
 test('buildDiagnostics: an old host or no answer yet shows "unknown", never a false "not found"', () => {
   const d = { ...base(), version: undefined, node: undefined, agents: [{ command: 'claude', info: undefined }], statusLine: undefined, focused: null }
   const text = h.buildDiagnostics(d)

@@ -57,7 +57,7 @@ window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} }
 window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })
 // The host probe is slow on a cold start (it looks shells up on PATH): answer after the terminal attaches.
 const statsPayload = { ok: true, limits: { fiveHour: { usedPct: 42, resetsAt: Date.now() + 3600e3, outAt: Date.now() + 1800e3 }, sevenDay: { usedPct: 63, resetsAt: Date.now() + 86400e3, outAt: null }, sampledAt: Date.now() }, cost: { totalUsd: 12.34, terminals: 2 }, tokens: { total: 2_500_000_000, input: 1, output: 2, cacheRead: 3, cacheCreation: 4, asOf: Date.now() }, statusLine: { enabled: true, reason: null } }
-const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ version: '9.9.9', node: { available: true, path: 'C:\node\node.exe' }, shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', providers: { claude: { available: true, path: 'C:\\bin\\claude.exe', launch: { settingsPath: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' } } }, ssh: { available: true, path: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', hosts: [{ alias: 'homepc', hostName: '192.168.1.20', user: 'me', port: 2222 }, { alias: 'nas', hostName: null, user: null, port: null }] }, sessions: [] }) }))
+const infoFetch = () => new Promise((resolve) => setTimeout(resolve, 900)).then(() => ({ ok: true, json: async () => ({ version: '9.9.9', node: { available: true, path: 'C:\node\node.exe' }, shells: [{ id: 'powershell', label: 'PowerShell' }], cwd: 'C:\\Users\\me', providers: { claude: { available: true, path: 'C:\\bin\\claude.exe', launch: { settingsPath: 'C:\\Users\\me\\.dsh\\web-terminal\\claude-settings-1.json' } }, antigravity: { available: false, path: null, launch: {} } }, ssh: { available: true, path: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', hosts: [{ alias: 'homepc', hostName: '192.168.1.20', user: 'me', port: 2222 }, { alias: 'nas', hostName: null, user: null, port: null }] }, sessions: [] }) }))
 const updatePayload = { ok: true, available: true, reason: null, repo: 'C:\src\dsh-web-terminal', installed: 'a'.repeat(40), head: 'b'.repeat(40), branch: 'main', canRelaunch: true, relaunchReason: null, running: false, step: null, log: [], ok: null, error: null }
 window.fetch = (url) => {
   if (String(url).endsWith('/stats')) return Promise.resolve({ ok: true, json: async () => statsPayload })
@@ -475,6 +475,13 @@ check(q('.wt-agents').textContent.includes('No sub-agents running') && !q('.wt-v
 click(byText('.wt-bar button', 'Agents'))
 await sleep(40)
 check(q('.wt-agents') === null, 'the Agents button closes the panel')
+
+// agy is missing on this host but claude is found: no toolbar note, and the Antigravity button stays as it was (shown, enabled)
+{
+  check(!q('.wt-bar').textContent.includes('not found on PATH'), 'a missing provider shows no toolbar note while another is available')
+  const agyBtn = byText('.wt-bar button', 'Antigravity')
+  check(agyBtn !== undefined && !agyBtn.disabled, 'the button of a missing CLI is still shown and enabled')
+}
 
 // an Antigravity terminal reports no sub-agents: with it focused the Agents button is gone and an open panel
 // does not claim "No sub-agents running"; focusing the Claude terminal brings both back

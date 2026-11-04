@@ -22,6 +22,7 @@ import { MissionOverlay, missionPlan, useMissionControl } from './mission-view.t
 import type { MissionPlan } from './mission-view.tsx'
 import { Sidebar } from './sidebar.tsx'
 import { StatsBar } from './stats-bar.tsx'
+import { warnsMissingAgents } from './help-data.ts'
 import { providers, showsSubagents } from './providers.ts'
 import { ensureStyles } from './styles.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
@@ -574,6 +575,8 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   }
   const runningAgents = runningSubagents()
   // The panel is the open preference, shown while the focused terminal's provider reports sub-agents; focusing another brings it back.
+  // A missing agent CLI is noted in the toolbar only while none is available.
+  const warnAgents = warnsMissingAgents(providers.map((p) => hostInfo.providers?.[p.id]))
   const agentsShown = showsSubagents(wins.find((w) => w.id === focusId))
   const needsYou = wins.filter((w) => w.id !== focusId && getRuntimeAttention(w.id)).length
 
@@ -614,7 +617,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           ) : null}
           {providers.map((p) => {
             const probe = hostInfo.providers?.[p.id]
-            return probe !== undefined && probe.available !== true ? <span key={p.id} className="wt-note">{`\`${p.command}\` not found on PATH`}</span> : null
+            return probe !== undefined && probe.available !== true && warnAgents ? <span key={p.id} className="wt-note">{`\`${p.command}\` not found on PATH`}</span> : null
           })}
           <div className="wt-menu-wrap" onPointerDown={(e) => e.stopPropagation()}>
             <button type="button" className="wt-btn wt-btn-icon" data-on={menu === 'settings'} title="Font and notification settings" onClick={() => setMenu(menu === 'settings' ? null : 'settings')}>Aa</button>
