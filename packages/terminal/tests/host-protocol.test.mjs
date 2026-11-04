@@ -327,6 +327,18 @@ test('every shell gets its own secret in its environment', async () => {
   b.ws.close()
 })
 
+test('a shell starts with the process PATH first, under a single PATH key', async () => {
+  const { ws, frames } = await connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  const env = spawned.at(-1).spec.env
+  const keys = Object.keys(env).filter((key) => key.toLowerCase() === 'path')
+  assert.equal(keys.length, 1)
+  // On Windows the registry's extra entries are appended; the entries the process had keep their place.
+  const ours = process.env.PATH ?? ''
+  assert.ok(env[keys[0]].startsWith(ours))
+  ws.close()
+})
+
 test('a signal with the right secret is pushed to the attached browser', async () => {
   const { ws, frames } = await connect(`id=${freshId()}`)
   await until(() => frames.length > 0)

@@ -130,7 +130,7 @@ test('without a user refresh interval the wrapper refreshes every 10 s', async (
 })
 
 test('without node on PATH the status line is left alone and /stats says why', async () => {
-  const host = await startHost({ env: { PATH: '' } })
+  const host = await startHost({ env: { PATH: '', DSH_WT_REGISTRY_PATH: '0' } })
   assert.equal(host.settings.statusLine, undefined)
   assert.ok(host.settings.hooks.Stop)
   assert.deepEqual((await host.stats()).statusLine, { enabled: false, reason: 'node not on PATH' })

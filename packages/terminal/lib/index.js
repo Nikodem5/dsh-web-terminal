@@ -32,6 +32,7 @@ import { createGitBashResolver } from './git-bash.js'
 import { createSshHosts } from './ssh-config.js'
 import { POSIX_SHELLS, WINDOWS_SHELLS, defaultShellSpec, shellSpec } from './shells.js'
 import { createProcessTable } from './process-table.js'
+import { createWindowsPath } from './windows-path.js'
 import { trimReplay } from './replay.js'
 import { createSubagents } from './subagents.js'
 import { createEdits } from './edits.js'
@@ -174,6 +175,9 @@ function pidAlive(pid) {
   }
 }
 
+/** Registry PATH merge for new terminals and PATH lookups (Windows only; cached ~30 s). */
+const windowsPath = createWindowsPath()
+
 /**
  * Environment the shell starts from.
  *
@@ -189,12 +193,16 @@ function pidAlive(pid) {
  * environment, including whatever keys launched the harness. That is the
  * ordinary meaning of "open a terminal", and it is why this panel is
  * human-driven and is not exposed as a model-callable tool.
+ *
+ * On Windows PATH is the process PATH plus whatever the registry's Machine/User PATH adds, so a CLI
+ * installed after the app launched is found (one cached async read; falls back to the process PATH).
  * @param token - this terminal's agent-signal secret.
  * @returns the environment override for one terminal spawn.
  */
-function terminalEnv(token) {
-  const env = {}
+async function terminalEnv(token) {
+  let env = {}
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value
+  env = await windowsPath.childEnv(env)
   // The per-terminal secret an agent's hooks send back with each signal.
   env[TOKEN_ENV] = token
   return env
@@ -209,12 +217,14 @@ function terminalEnv(token) {
  * @param command - bare executable name to look for.
  * @returns the first resolved absolute path, or undefined.
  */
-function resolveOnPath(command) {
+async function resolveOnPath(command) {
+  // The lister searches its own PATH, so on Windows it gets the registry-merged one.
+  const env = process.platform === 'win32' ? await windowsPath.childEnv(process.env) : undefined
   return new Promise((resolve) => {
     let child
     try {
       const lister = process.platform === 'win32' ? 'where.exe' : 'which'
-      child = spawn(lister, [command], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+      child = spawn(lister, [command], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env })
     } catch {
       resolve(undefined)
       return
@@ -927,7 +937,7 @@ function apply(ctx) {
         const handle = await ctx.subprocess.spawnTerminal({
           argv: [file, ...shell.args],
           cwd,
-          env: { ...terminalEnv(token), ...providerEnv(), ...shell.env },
+          env: { ...(await terminalEnv(token)), ...providerEnv(), ...shell.env },
           rows: rows > 0 ? rows : DEFAULT_ROWS,
           cols: cols > 0 ? cols : DEFAULT_COLS,
           graceMs: GRACE_MS,

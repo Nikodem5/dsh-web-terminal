@@ -434,6 +434,10 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
   (mapped back to its install root), then common folders (`%LOCALAPPDATA%\Programs\Git`, `Program Files`,
   `Program Files (x86)`, Scoop). `System32\bash.exe` (the WSL launcher) is never used. If none exists the Git Bash
   entry is hidden; a missing install is re-checked every 30 s.
+- **Windows PATH**: a CLI installed after the app launched is found without a restart. New terminals and the PATH
+  lookups (`claude`, `agy`, `ssh`...) get the process PATH followed by the registry's Machine then User `Path` entries
+  it lacks (read with `reg.exe query`, reused for 30 s; any failure leaves the process PATH as is).
+  `DSH_WT_REGISTRY_PATH=0` turns it off.
 - **Resize** needs the 0.2.x subprocess provider (the desktop app's); older hosts skip it.
 - **Security**: the PTY runs as you, unsandboxed, with the harness's full environment (credentials included) —
   that is what a terminal is. It is human-driven only and not exposed to model tool calls. The route is
