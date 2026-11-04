@@ -21,6 +21,7 @@ import { ACTIVITY_TITLE } from './help-data.ts'
 import { MissionOverlay, missionPlan, useMissionControl } from './mission-view.tsx'
 import type { MissionPlan } from './mission-view.tsx'
 import { Sidebar } from './sidebar.tsx'
+import { onTerminalDragOver, onTerminalDrop } from './drop-term.ts'
 import { StatsBar } from './stats-bar.tsx'
 import { warnsMissingAgents } from './help-data.ts'
 import { providers, showsSubagents } from './providers.ts'
@@ -437,7 +438,13 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
         </div>
       ) : null}
       {searching ? <FindBar id={win.id} /> : null}
-      <div className="wt-body" ref={bodyRef} onClick={() => rt.term.focus()} />
+      <div
+        className="wt-body"
+        ref={bodyRef}
+        onClick={() => rt.term.focus()}
+        onDragOver={(e) => onTerminalDragOver(e, win.ssh !== undefined)}
+        onDrop={(e) => onTerminalDrop(e, win.id, win.shell, win.ssh !== undefined)}
+      />
       {unreadPill(win.id) > 0 ? (
         <button type="button" className="wt-unread-pill" title="Jump to where you left off (Ctrl+Shift+U)" onClick={() => { jumpToUnread(win.id); rt.term.focus() }}>{pillText(unreadPill(win.id))}</button>
       ) : null}
