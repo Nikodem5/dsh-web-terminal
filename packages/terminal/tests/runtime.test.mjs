@@ -28,6 +28,7 @@ beforeEach(() => {
   FakeWebSocket.reset()
   // Shrunk bounds so the quiet-period tests stay fast; the real ones are unit-tested below.
   Object.assign(s.startupTiming, { minMs: 40, settleMs: 120, maxMs: 700 })
+  Object.assign(s.veilTiming, { timeoutMs: 5000, liftDelayMs: 30 })
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -967,4 +968,180 @@ test('unread: the overview is not looking; it keeps unread state and a pick show
     s.exitOverview()
     t.done()
   }
+})
+
+// ── the veil over a starting agent terminal ──
+
+const agy = { startup: 'agy' }
+/** start() waits for the newest socket: forget the earlier terminals' sockets first when a test opens several. */
+const startFresh = (opts) => { FakeWebSocket.reset(); return start(opts) }
+const veilEl = (rt) => rt.holder.querySelector('.wt-veil')
+const agySignal = (state) => ({ type: 'agent', provider: 'antigravity', state, detail: '' })
+
+test('shouldVeil: a new shell with a provider startup command, never a plain, ssh or reattached one', () => {
+  const claude = s.providerById('claude')
+  const antigravity = s.providerById('antigravity')
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: 'claude', provider: claude }), true)
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: 'agy', provider: antigravity }), true)
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: 'npm run dev', provider: undefined }), false, 'plain command')
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: '', provider: claude }), false, 'nothing is typed')
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: undefined, provider: claude }), false)
+  assert.equal(s.shouldVeil({ created: true, ssh: true, startup: 'claude', provider: claude }), false, 'ssh')
+  assert.equal(s.shouldVeil({ created: false, ssh: false, startup: 'claude', provider: claude }), false, 'reattach')
+})
+
+test('veilText names the provider', () => {
+  assert.equal(s.veilText('Antigravity'), 'Starting Antigravity…')
+})
+
+test('veil: a new Antigravity shell is veiled from attach, with a placeholder, and the terminal stays sized', async () => {
+  const { rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  assert.equal(rt.veiled, true)
+  const el = veilEl(rt)
+  assert.ok(el, 'a placeholder in the holder')
+  assert.equal(el.textContent, 'Starting Antigravity…')
+  assert.ok(rt.holder.querySelector('.xterm'), 'xterm stays attached, not display:none')
+  rt.term.paste('x') // keystrokes still reach the terminal
+  assert.ok(typed(sock, 'x'))
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: a new Claude shell is veiled with its own label', async () => {
+  const { rt, sock } = await startFresh({ startup: 'claude' })
+  sock.push(attached({ created: true }))
+  assert.equal(rt.veiled, true)
+  assert.equal(veilEl(rt).textContent, 'Starting Claude…')
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: not for a plain shell, an ssh window or a reattach to a live session', async () => {
+  const plain = await startFresh()
+  plain.sock.push(attached({ created: true }))
+  assert.ok(!plain.rt.veiled)
+  assert.equal(veilEl(plain.rt), null)
+
+  const ssh = await startFresh({ startup: 'claude', ssh: { host: 'homepc' } })
+  ssh.sock.push(attached({ created: true }))
+  assert.ok(!ssh.rt.veiled)
+  assert.equal(veilEl(ssh.rt), null)
+
+  const live = await startFresh(agy)
+  live.sock.push(attached({ created: false, replay: 'agy screen\r\n' }))
+  assert.ok(!live.rt.veiled)
+  assert.equal(veilEl(live.rt), null)
+  await flush(live.rt)
+  assert.equal(live.rt.term.buffer.active.getLine(0).translateToString(true), 'agy screen')
+})
+
+test('veil: the first agent signal of any state lifts it, after the repaint that follows an idle', async () => {
+  for (const state of ['idle', 'needs-you', 'working', 'failed', 'ended']) {
+    const { rt, sock } = await startFresh(agy)
+    sock.push(attached({ created: true }))
+    assert.equal(rt.veiled, true)
+    sock.push(agySignal(state))
+    // Not at once: the repaint that comes right after the signal has to land first.
+    assert.equal(rt.veiled, true, `${state}: still up for the repaint`)
+    await until(() => !rt.veiled, `${state} lifts the veil`)
+    assert.equal(veilEl(rt), null)
+    s.disposeRuntime(rt.id, false)
+  }
+})
+
+test('veil: a repaint arriving after the signal is on screen before the veil lifts', async () => {
+  const { rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  sock.push(agySignal('idle'))
+  sock.push({ type: 'data', data: '\x1b[Hagy logo' })
+  await until(() => !rt.veiled, 'the veil to lift')
+  assert.equal(rt.term.buffer.active.getLine(0).translateToString(true), 'agy logo', 'painted before it lifted')
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: restoreAgent (an agent state carried by the attach) lifts it too', async () => {
+  const { rt } = await startFresh(agy)
+  s.startVeil(rt, 'Antigravity')
+  s.restoreAgent(rt, { provider: 'antigravity', state: 'idle', detail: '' })
+  await until(() => !rt.veiled, 'the veil to lift')
+  assert.equal(veilEl(rt), null)
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: lifts by itself after the timeout when no signal comes', async () => {
+  Object.assign(s.veilTiming, { timeoutMs: 150 })
+  const { rt, sock } = await startFresh({ startup: 'claude' })
+  sock.push(attached({ created: true }))
+  assert.equal(rt.veiled, true)
+  await sleep(60)
+  assert.equal(rt.veiled, true)
+  await until(() => !rt.veiled, 'the timeout to lift the veil')
+  assert.equal(veilEl(rt), null)
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: the shell exiting, a failed connection or a lost one lifts it at once', async () => {
+  const a = await startFresh(agy)
+  a.sock.push(attached({ created: true }))
+  a.sock.push({ type: 'exit', exitCode: 1 })
+  assert.equal(a.rt.veiled, false)
+  assert.equal(veilEl(a.rt), null)
+
+  const b = await startFresh(agy)
+  b.sock.push(attached({ created: true }))
+  b.sock.push({ type: 'error', message: 'cannot start' })
+  assert.equal(b.rt.veiled, false)
+
+  const c = await startFresh(agy)
+  c.sock.push(attached({ created: true }))
+  c.sock.drop()
+  assert.equal(c.rt.veiled, false)
+  s.closeAll()
+})
+
+test('veil: a reconnect that reattaches the same shell lifts it', async () => {
+  const { rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  assert.equal(rt.veiled, true)
+  const next = await reconnect(sock)
+  next.push(attached({ created: false, replay: 'agy screen\r\n' }))
+  assert.equal(rt.veiled, false)
+  assert.equal(veilEl(rt), null)
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: the timers are cleared when the runtime is dropped', async () => {
+  Object.assign(s.veilTiming, { timeoutMs: 100 })
+  const { rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  sock.push(agySignal('idle')) // a lift is pending too
+  s.disposeRuntime(rt.id, false)
+  assert.equal(rt.veilTimeout, undefined)
+  assert.equal(rt.veilLift, undefined)
+  await sleep(250) // nothing fires on the disposed terminal
+  assert.ok(!rt.veiled)
+})
+
+test('veil: the holder carries it between windows and a restart veils the new shell again', async () => {
+  const { id, rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  const a = window.document.createElement('div')
+  const b = window.document.createElement('div')
+  window.document.body.append(a, b)
+  a.appendChild(rt.holder)
+  b.appendChild(rt.holder) // moved to another window, or into the overview
+  assert.ok(b.querySelector('.wt-veil'))
+  assert.equal(rt.veiled, true)
+  sock.push(agySignal('idle'))
+  await until(() => !rt.veiled, 'the veil to lift')
+  assert.equal(b.querySelector('.wt-veil'), null)
+
+  s.restartWin(id)
+  const fresh = s.ensureRuntime(s.getWins().find((w) => w.id === id))
+  const next = await until(() => (FakeWebSocket.last !== sock ? FakeWebSocket.last : undefined), 'the new shell socket')
+  next.push(attached({ created: true }))
+  assert.equal(fresh.veiled, true, 'a restart is a new shell')
+  assert.ok(veilEl(fresh))
+  a.remove()
+  b.remove()
+  s.disposeRuntime(id, false)
 })

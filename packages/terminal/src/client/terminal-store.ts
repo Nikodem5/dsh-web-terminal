@@ -9,6 +9,7 @@
 //   runtime.ts      xterm + WebSocket behind each window
 //   start.ts        reattach saved terminals at plugin start
 //   attention.ts    activity and "needs you" detection, notifications
+//   veil.ts         placeholder over an agent terminal until the agent is up
 //   search.ts       find-in-terminal
 //   layouts.ts      saved layouts
 //   broadcast.ts    send to several terminals
@@ -28,6 +29,7 @@ export * from './windows.ts'
 export * from './runtime.ts'
 export * from './start.ts'
 export * from './attention.ts'
+export * from './veil.ts'
 export * from './search.ts'
 export * from './layouts.ts'
 export * from './broadcast.ts'

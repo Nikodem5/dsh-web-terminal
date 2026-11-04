@@ -69,6 +69,8 @@ Status comes from the agent itself, not from guessing at output.
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
 
+- **A new agent terminal is covered while it starts.** A new shell started with a Claude or Antigravity command shows "Starting Claude…" (or "Starting Antigravity…") instead of the shell banner and the echoed command, until the agent reports its first state of any kind, or 5 s have passed, or the shell exits or the connection fails (so a failed start is visible). The terminal stays attached and sized underneath and keys still reach it. After the first signal the cover stays a moment (about 0.1 s) so Antigravity's repaint, which follows its first report, is on screen when it lifts. It never applies to plain shells, ssh windows, or a reattach to a live session or page reload. The shell banner stays above the agent's interface on the normal screen once the cover lifts.
+
 ### Antigravity CLI (`agy`)
 A terminal started with **◈ Antigravity** (or any startup command beginning with `agy`) reports its state like a Claude
 terminal does: the same dots, the same two attention levels, notifications and chime. It gets there differently, because

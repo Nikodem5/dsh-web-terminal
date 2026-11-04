@@ -156,6 +156,8 @@ const VIEW_CSS = `
 .wt-body { flex: 1; min-height: 0; padding: 8px; background: var(--wt-term-bg, var(--wt-deep)); }
 .wt-holder { width: 100%; height: 100%; }
 .wt-holder .xterm { height: 100%; }
+/* Covers a starting agent terminal (veil.ts); xterm stays laid out underneath so fit and resize keep working. */
+.wt-veil { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: var(--wt-term-bg, var(--wt-deep)); color: var(--wt-dim); font: 13px/1 var(--ds-font-family-sans, system-ui, sans-serif); letter-spacing: 0.02em; }
 .wt-holder .xterm-viewport { background-color: transparent !important; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--wt-dim) 45%, transparent) transparent; }
 .wt-holder .xterm-viewport::-webkit-scrollbar { width: 9px; }
 .wt-holder .xterm-viewport::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--wt-dim) 40%, transparent); border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }

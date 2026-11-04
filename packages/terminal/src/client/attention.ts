@@ -10,6 +10,7 @@ import { emit, focusWin, prefs, runtimes, store, updateWin } from './state.ts'
 import { isSessionId } from './launch.ts'
 import { providerById } from './providers.ts'
 import { displayName } from './names.ts'
+import { liftVeil } from './veil.ts'
 import type { Activity, AgentInfo, AgentSignal, AgentState, AttentionLevel, Conn, Runtime, WinState } from './types.ts'
 
 // ── pure decisions ─────────────────────────────────────────────────────────
@@ -226,6 +227,7 @@ export function applyAgentSignal(rt: Runtime, signal: AgentSignal): void {
   noteTurn(rt, signal)
   rt.agent = { provider: signal.provider, state: signal.state, detail: signal.detail, since: signal.at ?? Date.now() }
   rt.hungRaised = false
+  liftVeil(rt, true)
   // A new turn, or the answer to a prompt, means whatever raised attention has been dealt with.
   // agy goes from blocked straight to idle when a prompt is denied, cancelled or resolved elsewhere.
   if (signal.state === 'working' || (signal.state === 'idle' && prev === 'needs-you')) clearAttention(rt)
@@ -247,6 +249,7 @@ export function restoreAgent(rt: Runtime, signal: AgentSignal | null | undefined
   noteTurn(rt, signal)
   rt.agent = { provider: signal.provider, state: signal.state, detail: signal.detail, since: signal.at ?? Date.now() }
   rt.hungRaised = false
+  liftVeil(rt, true)
   const alert = alertFor(undefined, signal)
   refreshActivity(rt)
   if (alert !== undefined) raiseAttention(rt, alert, true)

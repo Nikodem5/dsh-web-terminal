@@ -142,6 +142,12 @@ export interface Runtime {
   lastInputAt: number
   /** When the startup command was typed into the shell (undefined until it is). */
   startupSentAt?: number
+  /** A placeholder covers the terminal while a new agent shell starts (veil.ts). */
+  veiled?: boolean
+  veilEl?: HTMLElement
+  /** The veil's timeout and the pending lift after the first signal. */
+  veilTimeout?: ReturnType<typeof setTimeout>
+  veilLift?: ReturnType<typeof setTimeout>
   /** What the agent in this terminal last reported; undefined for a plain shell. */
   agent: AgentInfo | undefined
   /** Claude sub-agents the host reports for this terminal (running, plus recently completed). */
