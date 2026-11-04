@@ -97,13 +97,14 @@ test('openTerminal puts the newest window first, focused, and on top', () => {
   assert.ok(byId(b).z > byId(a).z)
 })
 
-test('openTerminal defaults: numbered title, auto-named, cascaded geometry', () => {
+test('openTerminal defaults: numbered title, auto-named, placed in free space', () => {
   const a = s.openTerminal({ cwd: 'C:\\a' })
   const b = s.openTerminal({ cwd: 'C:\\b' })
   assert.equal(byId(a).title, 'Terminal 1')
   assert.equal(byId(a).nameManual, false)
   assert.equal(byId(b).title, 'Terminal 2')
-  assert.ok(byId(b).x > byId(a).x && byId(b).y > byId(a).y)
+  const [ra, rb] = [byId(a), byId(b)]
+  assert.ok(rb.x >= ra.x + ra.w || ra.x >= rb.x + rb.w || rb.y >= ra.y + ra.h || ra.y >= rb.y + rb.h, 'the second window does not cover the first')
 })
 
 test('an explicit title makes the name manual; duplicate keeps shell, folder and startup', () => {
