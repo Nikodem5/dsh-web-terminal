@@ -44,6 +44,12 @@ export interface AgentProvider {
   ready(rt: Runtime, now: number): boolean
   /** This provider reports sub-agents: its terminals get the Agents button and panel. Absent means it never does. */
   subagents?: true
+  /**
+   * This provider's terminal UI repaints in place on the normal buffer (cursor moves and line clears, no alternate
+   * screen), so its repaints register as new lines and a "new since you last looked" divider would land on top of
+   * its interface. Its terminals get no divider, unread count, pill or jump. Absent means the marks apply.
+   */
+  repaintsInPlace?: true
 }
 
 // ── Claude Code ──
@@ -152,6 +158,7 @@ const antigravity: AgentProvider = {
   launch: agyLaunch,
   ready: agyReady,
   sessionOnEnd: true,
+  repaintsInPlace: true,
 }
 
 // ── the registry ──
@@ -172,6 +179,11 @@ export function providerForCommand(startup: string | undefined): AgentProvider |
 /** The provider a window runs: the one saved with it, else the one its startup command starts. */
 export function providerOfWin(win: Pick<WinState, 'provider' | 'startup'>): AgentProvider | undefined {
   return providerById(win.provider) ?? providerForCommand(win.startup)
+}
+
+/** Whether the window now runs a provider whose terminal repaints in place; a window not in the store is a plain terminal. */
+export function repaintsInPlace(win: Pick<WinState, 'provider' | 'startup'> | undefined): boolean {
+  return win !== undefined && providerOfWin(win)?.repaintsInPlace === true
 }
 
 /**

@@ -730,10 +730,10 @@ test('newLinesSince / labels: counts from the blur-time cursor line, repaints ad
 })
 
 /** Two terminals, the page showing; `a` is looked at until `away()` focuses `b`. */
-async function twoTerminals() {
+async function twoTerminals(opts = { startup: undefined }) {
   window.document.hasFocus = () => true
   s.setViewMounted(true)
-  const a = await start({ startup: undefined })
+  const a = await start(opts)
   a.sock.push(attached())
   const idB = s.openTerminal({ cwd: 'C:\other' })
   const rtB = s.ensureRuntime(s.getWins().find((w) => w.id === idB))
@@ -832,6 +832,111 @@ test('unread: the pill shows when the divider is above the viewport and jumping 
     t.rt.term.scrollToLine = (l) => asked.push(l)
     assert.equal(s.jumpToUnread(t.id), true)
     assert.deepEqual(asked, [line])
+  } finally {
+    t.done()
+  }
+})
+
+/** What the views would show for the terminal right now: every surface of the feature. */
+const unreadSurfaces = (t) => ({ count: s.unreadCount(t.id), pill: s.unreadPill(t.id), divider: s.dividerLine(t.id) })
+const NOTHING = { count: 0, pill: 0, divider: -1 }
+
+/** Away, 80 lines of output, back: the sequence that draws everything the feature has. */
+async function awayAndBack(t) {
+  await t.out('prompt> ')
+  t.away()
+  await t.out(t.lines(80))
+  const whileAway = unreadSurfaces(t)
+  t.back()
+  return { whileAway, afterBack: unreadSurfaces(t) }
+}
+
+for (const opts of [{ startup: 'agy' }, { startup: 'agy -c' }, { startup: undefined, provider: 'antigravity' }]) {
+  test('unread: a provider that repaints in place (Antigravity) gets no divider, count, pill or jump: ' + JSON.stringify(opts), async () => {
+    const t = await twoTerminals(opts)
+    try {
+      // openTerminal derives the provider from the startup command; a saved window can carry one with none.
+      if (opts.provider !== undefined) s.updateWin(t.id, { provider: opts.provider })
+      assert.equal(s.providerOfWin(s.getWins().find((w) => w.id === t.id))?.id, 'antigravity', JSON.stringify(opts))
+      const { whileAway, afterBack } = await awayAndBack(t)
+      assert.deepEqual(afterBack, NOTHING, 'no divider or pill after coming back: ' + JSON.stringify(opts))
+      assert.deepEqual(whileAway, NOTHING, 'no sidebar or Overview count while away: ' + JSON.stringify(opts))
+      const asked = []
+      t.rt.term.scrollToLine = (l) => asked.push(l)
+      assert.equal(s.jumpToUnread(t.id), false, 'the jump is a no-op')
+      assert.deepEqual(asked, [])
+    } finally {
+      t.done()
+    }
+  })
+}
+
+for (const opts of [{ startup: 'claude' }, { startup: 'npm run dev' }, { startup: undefined }]) {
+  test('unread: Claude, plain command and plain shell windows keep the divider, count and pill: ' + JSON.stringify(opts), async () => {
+    const t = await twoTerminals(opts)
+    try {
+      const { whileAway, afterBack } = await awayAndBack(t)
+      assert.equal(whileAway.count, 80, JSON.stringify(opts))
+      assert.ok(afterBack.divider > 0, 'divider drawn: ' + JSON.stringify(opts))
+      assert.equal(afterBack.pill, 80, 'pill shown: ' + JSON.stringify(opts))
+      assert.equal(s.jumpToUnread(t.id), true)
+    } finally {
+      t.done()
+    }
+  })
+}
+
+test('unread: no mark comes back through a buffer change or a rebase on a repainting provider', async () => {
+  const t = await twoTerminals({ startup: 'agy' })
+  try {
+    await t.out('$ \r\n\x1b[?1049h') // a full-screen screen first (agy's sign-in)
+    t.away()
+    await t.out('\x1b[?1049l' + t.lines(5)) // back to the normal buffer while away: the onBufferChange path
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+    t.sock.push({ type: 'attached', created: false, replay: t.lines(20, 'old'), exited: false, exitCode: null, agent: null }) // the rebaseUnread path
+    await flush(t.rt)
+    await t.out(t.lines(5))
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+    t.back()
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: the capability is read from the window as it is now, not as it was when the runtime was built', async () => {
+  const t = await twoTerminals({ startup: 'npm run dev' })
+  try {
+    await t.out('$ ')
+    t.away()
+    await t.out(t.lines(7))
+    assert.equal(s.unreadCount(t.id), 7, 'a plain command counts')
+    s.updateWin(t.id, { startup: 'agy', provider: 'antigravity' }) // reassigned: a restart with another command
+    assert.deepEqual(unreadSurfaces(t), NOTHING, 'the marks already made are gone')
+    await t.out(t.lines(3))
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+    t.back()
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+    // And back to a plain command: it counts again from the next time the user leaves.
+    s.updateWin(t.id, { startup: 'npm run dev', provider: undefined })
+    t.away()
+    await t.out(t.lines(4))
+    assert.equal(s.unreadCount(t.id), 4)
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: a runtime whose window is gone from the store does not throw', async () => {
+  const t = await twoTerminals({ startup: 'agy' })
+  try {
+    await t.out('$ ')
+    t.away()
+    s.store.wins = s.store.wins.filter((w) => w.id !== t.id)
+    await t.out(t.lines(3))
+    assert.doesNotThrow(() => unreadSurfaces(t))
+    assert.doesNotThrow(() => s.jumpToUnread(t.id))
+    assert.doesNotThrow(() => s.rebaseUnread(t.rt))
   } finally {
     t.done()
   }
