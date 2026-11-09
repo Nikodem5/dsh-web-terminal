@@ -278,7 +278,8 @@ export function ensureRuntime(win: WinState): Runtime {
       return false
     }
     if (matchShortcut('copy-always', event) || (term.hasSelection() && matchShortcut('copy', event))) {
-      navigator.clipboard?.writeText(term.getSelection()).catch(() => {})
+      // Nothing selected: leave the clipboard alone (an empty write would wipe what the user copied elsewhere).
+      if (term.hasSelection()) navigator.clipboard?.writeText(term.getSelection()).catch(() => {})
       return false
     }
     // Ctrl+Shift+S: send the selection to another terminal (without one it stays a plain key).
