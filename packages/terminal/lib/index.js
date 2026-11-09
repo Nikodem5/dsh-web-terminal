@@ -33,7 +33,7 @@ import { createGitBashResolver } from './git-bash.js'
 import { createSshHosts } from './ssh-config.js'
 import { POSIX_SHELLS, WINDOWS_SHELLS, defaultShellSpec, shellSpec } from './shells.js'
 import { createProcessTable } from './process-table.js'
-import { createWindowsPath } from './windows-path.js'
+import { createWindowsPath, listerCwd } from './windows-path.js'
 import { trimReplay } from './replay.js'
 import { createSubagents } from './subagents.js'
 import { createEdits } from './edits.js'
@@ -225,7 +225,7 @@ async function resolveOnPath(command) {
     let child
     try {
       const lister = process.platform === 'win32' ? 'where.exe' : 'which'
-      child = spawn(lister, [command], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env })
+      child = spawn(lister, [command], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env, cwd: process.platform === 'win32' ? listerCwd() : undefined })
     } catch {
       resolve(undefined)
       return
