@@ -40,6 +40,12 @@ export function setTermTheme(mode: 'dark' | 'light' | 'auto'): void {
   persistSoon()
 }
 
+/** Re-read the palette of every live terminal when colours follow the app theme (the app theme changed under them). */
+export function applyAutoTermTheme(): void {
+  if (prefs.termTheme !== 'auto') return
+  for (const rt of runtimes.values()) rt.term.options.theme = termTheme()
+}
+
 export function setAutoFont(on: boolean): void {
   prefs.autoFont = on
   for (const rt of runtimes.values()) refit(rt)

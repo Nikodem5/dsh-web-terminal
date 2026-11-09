@@ -31,6 +31,7 @@ import { providers, showsSubagents } from './providers.ts'
 import { ensureStyles } from './styles.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
 import {
+  applyAutoTermTheme,
   arrange,
   baseName,
   broadcastLine,
@@ -506,6 +507,11 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     observer.observe(document.body, { attributes: true })
     return () => observer.disconnect()
   }, [])
+
+  // With terminal colours on "Follow the app", an app theme switch repaints the open terminals.
+  useEffect(() => {
+    applyAutoTermTheme()
+  }, [scheme])
 
   useEffect(() => {
     loadHostInfo()

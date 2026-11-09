@@ -125,3 +125,31 @@ test('a number setting is applied when you finish typing, not on every keystroke
   v.flushSync(() => field().dispatchEvent(new window.Event('input', { bubbles: true })))
   assert.equal(v.getPrefs().font.size, 21, 'a spinner step applies immediately')
 })
+
+// ── 5. terminal colours that follow the app theme ──
+
+test('open terminals repaint when the app theme changes and colours follow the app', async () => {
+  const html = doc.documentElement
+  html.setAttribute('data-ds-theme-source', 'test') // the harness publishes its resolved scheme
+  doc.body.setAttribute('data-ds-dark-theme', '')
+  try {
+    v.setTermTheme('auto')
+    const id = v.openTerminal({ cwd: 'C:\work' })
+    render()
+    const rt = await until(() => v.getRuntime(id), 'the runtime')
+    assert.equal(rt.term.options.theme.background, '#14161b', 'dark app, dark terminal')
+    doc.body.removeAttribute('data-ds-dark-theme')
+    await until(() => rt.term.options.theme.background === '#ffffff', 'the terminal to turn light')
+    doc.body.setAttribute('data-ds-dark-theme', '')
+    await until(() => rt.term.options.theme.background === '#14161b', 'the terminal to turn dark again')
+    // A fixed theme does not move with the app.
+    v.setTermTheme('dark')
+    doc.body.removeAttribute('data-ds-dark-theme')
+    await sleep(50)
+    assert.equal(rt.term.options.theme.background, '#14161b')
+  } finally {
+    html.removeAttribute('data-ds-theme-source')
+    doc.body.removeAttribute('data-ds-dark-theme')
+    v.setTermTheme('dark')
+  }
+})
