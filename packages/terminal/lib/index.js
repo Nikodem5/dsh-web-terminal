@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -39,9 +39,8 @@ import { createSubagents } from './subagents.js'
 import { createEdits } from './edits.js'
 import { OpenError, createOpener } from './open.js'
 import { MAX_CANDIDATES, linuxCwd, resolveCandidates } from './paths.js'
-import { createTokenTotals } from './token-totals.js'
 import { createCommandCache } from './command-cache.js'
-import { createUsage } from './usage.js'
+import { createUsageStore } from './usage-store.js'
 import { createSelfUpdate } from './self-update.js'
 import { safeCall } from './shared/safe-call.js'
 
@@ -339,33 +338,12 @@ function apply(ctx) {
   const pending = new Map()
   let disposed = false
 
-  // Usage the Claude status line reports, and the lifetime token total. Both survive restarts
-  // through usage.json so the stats bar is not empty until a terminal reports again.
-  const usage = createUsage()
-  const tokenTotals = createTokenTotals()
   // Resolved once: the async setup below must not follow a later change of DSH_HOME.
   const dir = dataDir()
-  const usageFile = join(dir, 'usage.json')
-  try {
-    const saved = JSON.parse(readFileSync(usageFile, 'utf8'))
-    usage.restore(saved?.usage)
-    tokenTotals.restore(saved?.tokens)
-  } catch {}
-  let usageDirty = false
-  let lastUsageSave = 0
-  /** Write usage.json if something changed; atomic so a crash never leaves half a file. */
-  const saveUsage = (force = false) => {
-    if (!usageDirty || (!force && Date.now() - lastUsageSave < USAGE_SAVE_MS)) return
-    usageDirty = false
-    lastUsageSave = Date.now()
-    try {
-      mkdirSync(dir, { recursive: true })
-      const tmp = `${usageFile}.${process.pid}.tmp`
-      writeFileSync(tmp, JSON.stringify({ version: 1, usage: usage.serialize(), tokens: tokenTotals.serialize() }))
-      renameSync(tmp, usageFile)
-    } catch {}
-  }
-  tokenTotals.onScanned(() => { usageDirty = true })
+  // Each provider's usage numbers (Claude: limits, cost, all-time tokens). They survive restarts
+  // through usage.json so the stats bar is not empty until a terminal reports again.
+  const usageStore = createUsageStore({ providers: registry.list(), dir, saveMs: USAGE_SAVE_MS })
+  const saveUsage = (force = false) => usageStore.save(force)
   const usageTimer = setInterval(() => saveUsage(), USAGE_SAVE_MS)
   usageTimer.unref?.()
   /** Why the status-line wrapper is not installed, or null when it is. */
@@ -561,9 +539,7 @@ function apply(ctx) {
   const hostApi = {
     notifySubagents,
     notifyEdits,
-    ingestUsage: (id, body) => {
-      if (usage.ingest(id, body)) usageDirty = true
-    },
+    ingestUsage: (providerId, id, body) => usageStore.ingest(providerId, id, body),
   }
 
   const signalServer = createServer((req, res) => {
@@ -699,13 +675,11 @@ function apply(ctx) {
     path: STATS_PATH,
     handler: async (_req, res) => {
       await signalReady
-      writeJson(res, 200, {
-        ok: true,
-        limits: usage.limits(),
-        cost: usage.cost(),
-        tokens: tokenTotals.get(),
-        statusLine: { enabled: statusLineReason === null, reason: statusLineReason },
-      })
+      const statusLine = { enabled: statusLineReason === null, reason: statusLineReason }
+      const providers = usageStore.stats()
+      // The top-level fields are Claude's, as before per-provider stats existed.
+      const claude = providers.claude ?? { limits: { fiveHour: null, sevenDay: null, sampledAt: null }, cost: null, tokens: null }
+      writeJson(res, 200, { ok: true, limits: claude.limits, cost: claude.cost, tokens: claude.tokens, statusLine, providers })
     },
   }), noop)
 
@@ -819,7 +793,7 @@ function apply(ctx) {
     if (session === undefined) return
     sessions.delete(id)
     tokens.delete(session.token)
-    usage.removeSession(id)
+    usageStore.removeSession(id)
     clearTimeout(session.subTimer)
     clearTimeout(session.editTimer)
     cancelAuthHold(session)
