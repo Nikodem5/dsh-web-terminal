@@ -24,6 +24,7 @@ import { createBlocks } from './blocks.ts'
 import { installBlockBar } from './block-bar.ts'
 import { handleBlockKey } from './block-actions.ts'
 import { watchBlockAlerts } from './block-notify.ts'
+import { feedPatternAlerts, resetPatternScan } from './pattern-alerts.ts'
 import { sshParams } from './ssh.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
 import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
@@ -360,6 +361,7 @@ export function ensureRuntime(win: WinState): Runtime {
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         applyEdits(rt, (frame as { edits?: unknown }).edits)
         discardOutput(rt)
+        resetPatternScan(rt)
         term.reset()
         rt.blocks?.reset()
         promptBase = rt.blocks?.promptsReady ?? 0
@@ -409,6 +411,7 @@ export function ensureRuntime(win: WinState): Runtime {
         // The host dropped output on a congested socket; its replay is the screen as it really is.
         if (typeof frame.replay !== 'string') return
         discardOutput(rt)
+        resetPatternScan(rt)
         term.reset()
         rt.blocks?.reset()
         if (frame.replay.length > 0) term.write(frame.replay, () => rebaseUnread(rt))
@@ -418,6 +421,7 @@ export function ensureRuntime(win: WinState): Runtime {
         lastOutputAt = Date.now()
         wakeStartup?.()
         rt.lastOutputAt = Date.now()
+        feedPatternAlerts(rt, frame.data) // before the backpressure drop below: a matching line counts even if it is not drawn
         if (!admitOutput(rt.pendingBytes, frame.data.length)) {
           rt.droppedOutput = true
           return

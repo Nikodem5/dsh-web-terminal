@@ -6,6 +6,7 @@ import type { SearchAddon } from '@xterm/addon-search'
 import type { SubagentInfo } from './subagents.ts'
 import type { BlockModel } from './blocks.ts'
 import type { EditInfo } from './edits-api.ts'
+import type { PatternAlert } from './pattern-alerts-core.ts'
 
 /** Rectangle in canvas fractions (0..1). */
 export interface Rect {
@@ -172,6 +173,7 @@ export interface Runtime {
   // ── end command blocks ──
 }
 
+
 /** Font preferences shared by every terminal. */
 export interface FontPrefs {
   family: string
@@ -258,6 +260,8 @@ export interface Prefs {
   sound: boolean
   /** Minutes without output or signals before a working agent is flagged as stuck; 0 turns it off. */
   hungMinutes: number
+  /** Output triggers that raise a terminal's attention badge (pattern-alerts-core.ts). */
+  patternAlerts: PatternAlert[]
   /** Editor for Ctrl+clicked file paths, and the command template when it is `custom`. */
   pathTarget: PathTarget
   pathTemplate: string

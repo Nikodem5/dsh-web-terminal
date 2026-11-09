@@ -8,6 +8,7 @@ import { requestCloseAll } from './actions.ts'
 import { SendSettings } from './send-menu.tsx'
 import { setPathTarget, setPathTemplate } from './path-links.ts'
 import { CommandAlertSettings, ShellIntegrationSettings } from './blocks-settings.tsx'
+import { PatternAlertSettings } from './pattern-alerts-settings.tsx'
 import type { PathTarget } from './types.ts'
 import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setHungMinutes, setNotify, setSound, setTermTheme } from './terminal-store.ts'
 
@@ -182,6 +183,7 @@ export function SettingsMenu(): ReactElement {
         <input className="wt-input" type="number" min={0} max={240} step={1} value={prefs.hungMinutes} onChange={(e) => setHungMinutes(Number(e.target.value))} />
       </label>
       <CommandAlertSettings />
+      <PatternAlertSettings />
     </Pop>
   )
 }
