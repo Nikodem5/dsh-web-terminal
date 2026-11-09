@@ -1001,12 +1001,11 @@ function apply(ctx) {
           live.exitCode = outcome?.exitCode ?? null
           if (live.subagents.endAll()) notifySubagents(live)
           // A congested socket missed output: repaint it from the replay now, so no later resync lands after the exit.
+          if (!live.congested) flushData(live) // may find the socket backed up and mark it congested
           if (live.congested) {
             stopDrainWatch(live)
             dropPending(live)
             send(live.ws, { type: 'resync', replay: replayOf(live) })
-          } else {
-            flushData(live)
           }
           send(live.ws, { type: 'exit', exitCode: live.exitCode })
         },

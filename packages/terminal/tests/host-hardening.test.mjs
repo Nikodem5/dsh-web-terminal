@@ -364,3 +364,27 @@ test('orphans: an exited detached session is reaped quickly, an exited attached 
   assert.equal((await host.info()).sessions.length, 1)
   stay.ws.close()
 })
+
+test('exit: output that finds the socket backed up at the exit is repainted before the exit frame, never after it', async () => {
+  const host = await startHost({ DSH_WT_HIGH_WATER: String(64 * 1024), DSH_WT_LOW_WATER: String(16 * 1024), DSH_WT_DRAIN_MS: '20', DSH_WT_BATCH_MS: '1' })
+  const { ws, frames } = await host.connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  const { handle } = host.spawned[0]
+  // The kernel swallows any burst over loopback, so a backed-up socket is faked: the host (same process, same ws class) reads this.
+  const real = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'bufferedAmount')
+  let backedUp = true
+  Object.defineProperty(WebSocket.prototype, 'bufferedAmount', { configurable: true, get() { return backedUp ? 1024 * 1024 : real.get.call(this) } })
+  try {
+    handle.emit('LAST')
+    handle.exit(0) // the pending 'LAST' meets a backed-up socket at the exit: it cannot be sent as data
+    assert.ok(await until(() => frames.some((f) => f.type === 'exit')), 'exit arrives')
+    backedUp = false // the drain watch may now fire
+    await sleep(150) // several drain intervals
+  } finally {
+    Object.defineProperty(WebSocket.prototype, 'bufferedAmount', real)
+  }
+  const exitAt = frames.findIndex((f) => f.type === 'exit')
+  assert.ok(!frames.slice(exitAt + 1).some((f) => f.type === 'resync'), 'no resync after the exit frame')
+  assert.ok(frames.slice(0, exitAt).findLast((f) => f.type === 'resync')?.replay.endsWith('LAST'), 'the screen is repainted with the final output before the exit')
+  ws.close()
+})
