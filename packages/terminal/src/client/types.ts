@@ -155,6 +155,8 @@ export interface Runtime {
   subagents: SubagentInfo[]
   /** Files this terminal's agent changed (the host's `edits` list). */
   edits: EditInfo[]
+  /** Git branch and dirty marker of the terminal's folder, as the host last reported; undefined when not a repository, over ssh, or unknown. */
+  git?: GitInfo
   /** The "may be stuck" alert already fired for the current working spell. */
   hungRaised: boolean
   /** Needs the user's eyes: an agent is blocked, failed or finished, or the shell exited, while unattended. */
@@ -173,6 +175,14 @@ export interface Runtime {
   // ── end command blocks ──
 }
 
+/** What the host reports about the git checkout a terminal sits in. */
+export interface GitInfo {
+  /** Branch name, or the short commit when HEAD is detached. */
+  branch: string
+  /** Uncommitted changes or untracked files. */
+  dirty: boolean
+  detached?: boolean
+}
 
 /** Font preferences shared by every terminal. */
 export interface FontPrefs {

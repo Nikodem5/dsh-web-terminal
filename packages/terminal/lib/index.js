@@ -31,6 +31,7 @@ import { parseExtraOrigins } from './shared/origin.js'
 import { checkAccess, exposeToken, refuse, refuseUpgrade, selectProtocol } from './shared/local-auth.js'
 import { createGitBashResolver } from './git-bash.js'
 import { createSshHosts } from './ssh-config.js'
+import { createGitHeader } from './git-header.js'
 import { POSIX_SHELLS, WINDOWS_SHELLS, defaultShellSpec, shellSpec } from './shells.js'
 import { createProcessTable } from './process-table.js'
 import { createWindowsPath } from './windows-path.js'
@@ -403,6 +404,9 @@ function apply(ctx) {
     if (ws !== null && ws !== undefined && ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame))
   }
 
+  // Branch and dirty marker of each local terminal's folder for the window header (async git, throttled; see git-header.js).
+  const gitHeader = optional('git header', () => createGitHeader({ which: resolveOnPath, send: (session, frame) => send(session.ws, frame), attached: (session) => session.ws !== null, minGapMs: envNumber('DSH_WT_GIT_GAP_MS', 2000), intervalMs: envNumber('DSH_WT_GIT_INTERVAL_MS', 30_000) }), null)
+
   // Backpressure. The provider's `handle.output` is a PassThrough fed by node-pty's onData with the
   // write() return value ignored, so pausing it only moves the buffering into that stream (unbounded)
   // and the PTY itself cannot be paused through the handle. So instead: while the browser socket is
@@ -485,6 +489,7 @@ function apply(ctx) {
   const applyObserved = (session, signal) => {
     session.agent = { provider: session.observerProvider, ...signal, at: Date.now() }
     send(session.ws, { type: 'agent', ...session.agent })
+    gitHeader?.signal(session, signal.state)
   }
   /** Feed one chunk to the session's observer; a failing observer is dropped, the terminal carries on. */
   const observeOutput = (session, text) => {
@@ -585,6 +590,7 @@ function apply(ctx) {
       if (signal !== undefined) {
         session.agent = { ...signal, at: Date.now() }
         send(session.ws, { type: 'agent', ...session.agent })
+        gitHeader?.signal(session, signal.state)
       }
       reply(204)
     })
@@ -800,6 +806,7 @@ function apply(ctx) {
     usage.removeSession(id)
     clearTimeout(session.subTimer)
     clearTimeout(session.editTimer)
+    gitHeader?.forget(session)
     cancelAuthHold(session)
     session.edits.clear()
     stopDrainWatch(session)
@@ -923,6 +930,7 @@ function apply(ctx) {
       dropPending(session)
       send(ws, { type: 'attached', created: false, replay: replayOf(session), exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list(), edits: session.edits.list() })
       session.lastBusy = undefined
+      gitHeader?.attach(session)
       if (cols > 0 && rows > 0 && !session.exited) resizeHandle(session.handle, cols, rows)
     } else {
       if (sessions.size + pending.size >= MAX_SESSIONS && !reapExited()) {
@@ -1016,6 +1024,7 @@ function apply(ctx) {
       if (ws.readyState !== ws.OPEN) return
       live.ws = ws
       send(ws, { type: 'attached', created: true, replay: replayOf(live), exited: live.exited, exitCode: live.exitCode, agent: null, subagents: [], edits: [] })
+      gitHeader?.attach(live)
     }
 
     const bound = session
@@ -1036,6 +1045,8 @@ function apply(ctx) {
         if (c > 0 && r > 0 && !bound.exited) resizeHandle(bound.handle, c, r)
       } else if (message.type === 'signal' && ALLOWED_SIGNALS.has(message.signal)) {
         safeCall(() => bound.handle.signalForeground(message.signal))
+      } else if (message.type === 'git-refresh') {
+        gitHeader?.request(bound, message.cwd)
       } else if (message.type === 'kill') {
         destroy(id)
       } else if (message.type === 'close') {
@@ -1074,6 +1085,7 @@ function apply(ctx) {
     safeCall(() => processes.stop())
     clearInterval(sweepTimer)
     clearInterval(subagentTimer)
+    gitHeader?.dispose()
     for (const beat of heartbeats) clearInterval(beat)
     heartbeats.clear()
     safeCall(disposeUpgrade)
