@@ -153,3 +153,20 @@ test('open terminals repaint when the app theme changes and colours follow the a
     v.setTermTheme('dark')
   }
 })
+
+// ── 6. the live folder ──
+
+test('the window header and the terminal list show the folder the shell is in now', async () => {
+  const id = v.openTerminal({ cwd: 'C:\work\start' })
+  render()
+  const rt = await until(() => v.getRuntime(id), 'the runtime')
+  const sock = await until(() => FakeWebSocket.last, 'the socket')
+  sock.push({ type: 'attached', created: false, replay: '', exited: false, exitCode: null, agent: null })
+  await until(() => q('.wt-win .wt-sub')?.textContent === 'C:\work\start', 'the starting folder')
+  assert.match(q('.wt-li-sub').textContent, /start/)
+  rt.term.write('\x1b]633;P;Cwd=C:\work\elsewhere\x07')
+  await until(() => q('.wt-win .wt-sub')?.textContent === 'C:\work\elsewhere', 'the header to follow the shell')
+  assert.equal(q('.wt-win .wt-sub').title, 'C:\work\elsewhere')
+  assert.match(q('.wt-li-sub').textContent, /elsewhere/, 'and the list too')
+  assert.equal(v.getWins()[0].cwd, 'C:\work\start', 'the saved start folder is untouched')
+})

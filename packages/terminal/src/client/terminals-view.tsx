@@ -362,7 +362,8 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
   }
 
   // An ssh window's folder lives on the other machine: the badge names the target instead.
-  const sub = rt.conn === 'live' ? (win.ssh !== undefined ? '' : win.cwd) : rt.detail.length > 0 ? `${rt.conn} · ${rt.detail}` : rt.conn
+  const liveCwd = rt.cwd || win.cwd // the folder the shell is in now (shell integration), else where it started
+  const sub = rt.conn === 'live' ? (win.ssh !== undefined ? '' : liveCwd) : rt.detail.length > 0 ? `${rt.conn} · ${rt.detail}` : rt.conn
   const remote = win.ssh !== undefined ? sshLabel(win.ssh) : undefined
 
   return (
@@ -408,7 +409,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
         )}
         {remote !== undefined ? <span className="wt-remote" title={`Connected over ssh to ${remote}`}>⇄ {remote}</span> : null}
         {rt.attention ? <span className="wt-badge" data-level={rt.attentionLevel ?? 'quiet'} title={rt.attentionReason}>{rt.attentionLabel || 'needs you'}</span> : null}
-        <span className="wt-sub" title={win.cwd}>{sub}</span>
+        <span className="wt-sub" title={liveCwd}>{sub}</span>
         {rt.conn === 'exited' || rt.conn === 'failed' ? (
           <button type="button" className="wt-hbtn" title={remote !== undefined ? 'Reconnect' : 'Restart shell'} onClick={() => restartWin(win.id)}>↻</button>
         ) : null}
@@ -430,7 +431,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
           ) : null}
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'idle' || rt.activity === 'finished' || rt.activity === 'exited' || rt.activity === 'disconnected' || window.confirm(remote !== undefined ? 'This ssh session is still connected. Reconnect (the current one is closed)?' : 'This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ {remote !== undefined ? 'Reconnect' : 'Restart shell'}</button>
           <div style={{ fontSize: 11, color: 'var(--wt-dim)', padding: '2px 8px' }}>
-            {remote !== undefined ? `⇄ ${remote}${win.ssh?.command !== undefined ? ` · runs “${win.ssh.command}”` : ''}` : `${baseName(win.cwd) || win.cwd}${win.startup !== undefined ? ` · runs “${win.startup}”` : ''}`}
+            {remote !== undefined ? `⇄ ${remote}${win.ssh?.command !== undefined ? ` · runs “${win.ssh.command}”` : ''}` : `${baseName(liveCwd) || liveCwd}${win.startup !== undefined ? ` · runs “${win.startup}”` : ''}`}
           </div>
         </Pop>
       ) : null}
