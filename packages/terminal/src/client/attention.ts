@@ -98,12 +98,15 @@ export function hostRestartAlert(agentState: AgentState | undefined): Alert {
   }
 }
 
+/** Badge text of the idle-too-long alert; tick() recognises its own flag by it when output resumes. */
+export const HUNG_LABEL = 'possibly hung'
+
 /** Alert for an agent that has been "working" with no output and no signal for too long, or undefined. */
 export function hungAlert(agent: AgentInfo | undefined, lastOutputAt: number, now: number, minutes: number): Alert | undefined {
   if (agent?.state !== 'working' || minutes <= 0) return undefined
   const quietMs = now - Math.max(agent.since, lastOutputAt)
   return quietMs >= minutes * 60_000
-    ? { level: 'urgent', label: 'stuck?', reason: `No output or activity for ${minutes} min — the agent may be stuck` }
+    ? { level: 'urgent', label: HUNG_LABEL, reason: `No output or activity for ${minutes} min while the agent is working — it is possibly hung` }
     : undefined
 }
 
@@ -306,16 +309,30 @@ export function noteHostRestart(rt: Runtime): void {
   emit()
 }
 
-/** Once a second: refresh dots after connection changes and look for hung agents. */
+/** When the idle alert fired for a terminal: output after this moment means the agent is alive again. */
+const hungAt = new WeakMap<Runtime, number>()
+
+/**
+ * Once a second: refresh dots after connection changes and look for hung agents.
+ * A hung flag fires once per silent spell and is taken back (and re-armed) when output resumes.
+ */
 export function tick(): void {
   const now = Date.now()
   let changed = false
   for (const rt of runtimes.values()) {
     if (refreshActivity(rt)) changed = true
-    if (!rt.hungRaised) {
+    if (rt.hungRaised) {
+      if (rt.lastOutputAt > (hungAt.get(rt) ?? 0)) {
+        rt.hungRaised = false
+        hungAt.delete(rt)
+        if (rt.attention && rt.attentionLabel === HUNG_LABEL) clearAttention(rt)
+        changed = true
+      }
+    } else {
       const alert = hungAlert(rt.agent, rt.lastOutputAt, now, prefs.hungMinutes)
       if (alert !== undefined) {
         rt.hungRaised = true
+        hungAt.set(rt, now)
         raiseAttention(rt, alert)
         changed = true
       }

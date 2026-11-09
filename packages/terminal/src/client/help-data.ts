@@ -75,7 +75,7 @@ export interface AttentionLegend {
 
 /** Badge texts come from attention.ts (alertFor, exitAlert, hostRestartAlert, hungAlert, the bell). */
 export const ATTENTION_LEGEND: readonly AttentionLegend[] = [
-  { level: 'urgent', badge: 'needs you', what: 'Urgent: blocked on a permission or question; also failed, stuck?, or exited / host restarted mid-task. Orange glow, a chime (if sound is on) and a notification, unless you are looking at it.' },
+  { level: 'urgent', badge: 'needs you', what: 'Urgent: blocked on a permission or question; also failed, possibly hung (no output for a while), or exited / host restarted mid-task. Orange glow, a chime (if sound is on) and a notification, unless you are looking at it.' },
   { level: 'quiet', badge: 'finished', what: 'Quiet: a turn ended, the bell rang, or a shell exited cleanly. Yellow badge; a notification only when the app is in the background.' },
 ]
 

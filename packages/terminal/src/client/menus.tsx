@@ -178,7 +178,7 @@ export function SettingsMenu(): ReactElement {
         <span className="wt-grow">Play a chime when an agent needs me</span>
       </label>
       <label className="wt-field">
-        Flag a working agent as stuck after (minutes, 0 = never)
+        Flag a working agent as possibly hung after no output for (minutes, 0 = never)
         <input className="wt-input" type="number" min={0} max={240} step={1} value={prefs.hungMinutes} onChange={(e) => setHungMinutes(Number(e.target.value))} />
       </label>
       <CommandAlertSettings />

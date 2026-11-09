@@ -53,7 +53,7 @@ export const prefs: Prefs = {
   agentsPanel: false,
   notify: true,
   sound: true,
-  hungMinutes: 10,
+  hungMinutes: 5,
   // New users open paths in the Code plugin; applyPrefs keeps whatever an existing user saved.
   pathTarget: 'code',
   pathTemplate: '',
