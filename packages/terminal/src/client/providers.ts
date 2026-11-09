@@ -52,10 +52,21 @@ export interface AgentProvider {
   repaintsInPlace?: true
 }
 
+/**
+ * A program as the first word of a command line: bare (`agy`), with a Windows extension (`agy.exe`), or as a
+ * path to it (`C:\bin\agy.exe`, `"C:\Program Files\x\agy.exe"`, `./agy`). Not `agy-tools` or a path to another
+ * program. Group 1 is the leading space, group 2 the program as typed (kept when a launch rewrites the line).
+ * `matchStartup` and `matchCommand` both use it, so a saved startup and a typed command agree.
+ */
+export function commandPattern(name: string): RegExp {
+  const ext = '(?:\\.(?:exe|cmd|ps1|bat))?'
+  return new RegExp(`^(\\s*)("[^"]*[\\\\/]${name}${ext}"|(?:[^\\s"]*[\\\\/])?${name}${ext})(?=\\s|$)`, 'i')
+}
+
 // ── Claude Code ──
 
-/** `claude` as the first word of a command (not `claude-code-router` or a path to another tool). */
-const CLAUDE_COMMAND = /^(\s*)claude(?=\s|$)/
+/** `claude` as the first word of a command, a path to it included (not `claude-code-router` or a path to another tool). */
+const CLAUDE_COMMAND = commandPattern('claude')
 
 /** `--resume` or `--continue` with no conversation named: the interactive picker, or "the latest one". */
 const BARE_RESUME = /(?<=\s)(?:--resume|-r|--continue|-c)(?=\s|$)(?!\s+[^\s-])/
@@ -90,7 +101,7 @@ function claudeLaunch(startup: string, launch: LaunchHint, session?: string | nu
   const settingsPath = launch?.settingsPath
   if (typeof settingsPath === 'string' && settingsPath.length > 0 && !/(^|\s)--settings(\s|=)/.test(command)) {
     const file = settingsPath.replace(/\\/g, '/')
-    command = command.replace(CLAUDE_COMMAND, (_all, lead: string) => `${lead}claude --settings "${file}"`)
+    command = command.replace(CLAUDE_COMMAND, (_all, lead: string, program: string) => `${lead}${program} --settings "${file}"`)
   }
   return command
 }
@@ -113,7 +124,7 @@ const claude: AgentProvider = {
   startup: 'claude',
   presets: ['claude', 'claude --resume', 'claude --continue'],
   matchStartup: CLAUDE_COMMAND,
-  matchCommand: /^\s*(?:\S*[\\/])?claude(?:\.(?:exe|cmd|ps1))?(?=\s|$)/i,
+  matchCommand: CLAUDE_COMMAND,
   title: /^Claude Code$/i,
   launch: claudeLaunch,
   ready: claudeReady,
@@ -122,8 +133,8 @@ const claude: AgentProvider = {
 
 // ── Antigravity CLI ──
 
-/** `agy` as the first word of a command. */
-const AGY_COMMAND = /^(\s*)agy(?=\s|$)/
+/** `agy` as the first word of a command, a path to it included. */
+const AGY_COMMAND = commandPattern('agy')
 /** A flag that already chooses a conversation. */
 const AGY_HAS_CONVERSATION = /(?:^|\s)(?:--conversation|--continue|-c)(?:\s|=|$)/
 
@@ -135,7 +146,7 @@ const AGY_HAS_CONVERSATION = /(?:^|\s)(?:--conversation|--continue|-c)(?:\s|=|$)
 function agyLaunch(startup: string, _launch: LaunchHint, session?: string | null, turned?: boolean): string {
   if (!AGY_COMMAND.test(startup) || AGY_HAS_CONVERSATION.test(startup)) return startup
   const flag = isSessionId(session) ? `--conversation ${session}` : turned === true ? '-c' : undefined
-  return flag === undefined ? startup : startup.replace(AGY_COMMAND, (_all, lead: string) => `${lead}agy ${flag}`)
+  return flag === undefined ? startup : startup.replace(AGY_COMMAND, (_all, lead: string, program: string) => `${lead}${program} ${flag}`)
 }
 
 /** Ready once agy has reported `idle` (its prompt is up) after the startup command was typed. */
@@ -152,7 +163,7 @@ const antigravity: AgentProvider = {
   startup: 'agy',
   presets: ['agy', 'agy -c'],
   matchStartup: AGY_COMMAND,
-  matchCommand: /^\s*(?:\S*[\\/])?agy(?:\.(?:exe|cmd|ps1))?(?=\s|$)/i,
+  matchCommand: AGY_COMMAND,
   // PowerShell and conhost title the window with the program's path.
   title: /^(?:.*[\\/])?agy(?:\.exe)?$/i,
   launch: agyLaunch,
