@@ -13,6 +13,7 @@ import { requestClose, requestCloseAll } from './actions.ts'
 import { Pop } from './popover.tsx'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { SendMenu } from './send-menu.tsx'
+import { Notices } from './notice-view.tsx'
 import { reviewFolder, showReview } from './code-editor.ts'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
@@ -680,6 +681,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
       </div>
       <SendMenu />
+      <Notices />
       {dialog !== null ? <NewTerminalDialog startup={dialog.startup} mode={dialog.mode} workspaces={workspaceChoices(workspaceItems)} onClose={() => setDialog(null)} /> : null}
     </div>
   )

@@ -19,6 +19,7 @@ import { applyEdits, notifyEdits } from './edits-api.ts'
 import { startupTiming, startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
+import { showNotice } from './notice.ts'
 import { registerPathLinks } from './path-links.ts'
 import { createBlocks } from './blocks.ts'
 import { installBlockBar } from './block-bar.ts'
@@ -218,9 +219,12 @@ export function ensureRuntime(win: WinState): Runtime {
   let keyData: string | undefined
   term.onData((data) => {
     rt.lastInputAt = Date.now()
-    if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'input', data }))
+    const sent = rt.socket !== null && rt.socket.readyState === WebSocket.OPEN
+    if (sent) rt.socket?.send(JSON.stringify({ type: 'input', data }))
     const fromKey = keyData === data
     keyData = undefined
+    // Typing into a terminal that is (re)connecting goes nowhere; say so (not queued: it could land in the wrong prompt later).
+    if (!sent && (rt.conn === 'connecting' || rt.conn === 'lost') && (fromKey || !isTerminalReport(data))) showNotice('Not connected: typed input is not sent while the terminal reconnects')
     // Live mirror: only what the user typed or pasted. onData also carries xterm's automatic answers to
     // program queries (cursor position, device attributes, focus and mouse reports), which belong to this
     // terminal's program alone and would be typed into the other shells.

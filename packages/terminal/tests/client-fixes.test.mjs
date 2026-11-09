@@ -12,6 +12,7 @@ before(async () => {
   s = await loadStore()
 })
 after(() => {
+  s.clearNotices()
   s.closeAll()
   window.close()
 })
@@ -19,7 +20,7 @@ afterEach(() => quiesceStores())
 beforeEach(() => {
   s.closeAll()
   s.runtimes.clear()
-  s.clearNotices?.()
+  s.clearNotices()
   window.localStorage.clear()
   FakeWebSocket.reset()
 })
@@ -70,4 +71,21 @@ test('Ctrl+Shift+C with no selection leaves the clipboard alone; with one it cop
   assert.equal(handler(ev({ key: 'C', ctrlKey: true, shiftKey: true })), false)
   assert.equal(written.length, 1)
   assert.ok(written[0].includes('some output'))
+})
+
+// ── 2. typing while reconnecting ──
+
+test('typing while the socket is down shows a notice instead of dropping keys silently', async () => {
+  const { rt, sock } = await open()
+  rt.term.input('a', true)
+  assert.deepEqual(s.getNotices(), [], 'a live terminal shows nothing')
+  assert.ok(sock.sent.some((f) => f.type === 'input' && f.data === 'a'))
+  sock.drop()
+  assert.equal(rt.conn, 'lost')
+  rt.term.input('b', true)
+  assert.equal(s.getNotices().length, 1)
+  assert.match(s.getNotices()[0].text, /not sent/)
+  rt.term.input('c', true)
+  assert.equal(s.getNotices().length, 1, 'the same notice is not stacked')
+  assert.ok(!sock.sent.some((f) => f.data === 'b' || f.data === 'c'), 'the keys are not queued')
 })
