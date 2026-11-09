@@ -82,12 +82,17 @@ export function createSelfUpdate({ pluginDir, node, spawnImpl = spawn, gitTimeou
 
   /** End a child and anything it started (cmd.exe and npm leave grandchildren behind). */
   const killTree = (proc) => {
-    try {
-      if (process.platform === 'win32' && Number.isInteger(proc.pid)) {
-        spawnImpl('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })?.on?.('error', () => {})
-      }
-    } catch {}
-    try { proc.kill() } catch {}
+    const single = () => { try { proc.kill() } catch {} }
+    if (process.platform === 'win32' && Number.isInteger(proc.pid)) {
+      try {
+        // Killing the shell first would orphan its children before taskkill can walk the tree: fall back only on failure.
+        const killer = spawnImpl('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+        killer.on('error', single)
+        killer.on('close', (code) => { if (code !== 0) single() })
+        return
+      } catch {}
+    }
+    single()
   }
 
   const append = (text) => {

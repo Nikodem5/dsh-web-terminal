@@ -48,20 +48,38 @@ export function userSubagentStatusLine(env = process.env) {
   return userCommand('subagentStatusLine', env)
 }
 
+/** End `child` and everything it started: `shell: true` puts cmd.exe / sh between us and the real command. */
+function killTree(child) {
+  const single = () => { try { child.kill() } catch {} }
+  try {
+    if (process.platform === 'win32' && Number.isInteger(child.pid)) {
+      // Killing cmd.exe first would orphan its children before taskkill can walk the tree: only fall back to it on failure.
+      const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+      killer.on('error', single)
+      killer.on('close', (code) => { if (code !== 0) single() })
+      return
+    }
+    if (Number.isInteger(child.pid)) process.kill(-child.pid, 'SIGKILL') // the child leads its own process group (see runUser)
+  } catch {}
+  single()
+}
+
 /** Run the user's command with `input` on stdin; resolves with its stdout ('' on any failure). */
-function runUser(command, input, guard) {
+export function runUser(command, input, guard, timeoutMs = USER_TIMEOUT_MS) {
   return new Promise((resolve) => {
     let child
     try {
-      child = spawn(command, { shell: true, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: { ...process.env, [guard]: '1' } })
+      child = spawn(command, { shell: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: { ...process.env, [guard]: '1' } })
     } catch {
       return resolve('')
     }
     const out = []
     const timer = setTimeout(() => {
-      try { child.kill() } catch {}
+      killTree(child)
+      // A grandchild that survives would hold the pipe open: stop listening to it.
+      child.stdout.destroy()
       resolve(Buffer.concat(out).toString('utf8'))
-    }, USER_TIMEOUT_MS)
+    }, timeoutMs)
     child.stdout.on('data', (chunk) => out.push(chunk))
     child.stdin.on('error', () => {})
     child.on('error', () => { clearTimeout(timer); resolve('') })
