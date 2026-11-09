@@ -508,6 +508,24 @@ function apply(ctx) {
       session.observer = null
     }
   }
+  /** The stream is over: apply what the observer still held back (`end()`, optional on an observer). */
+  const endObserved = (session) => {
+    if (session.observer === null || typeof session.observer.end !== 'function') return
+    try {
+      for (const signal of session.observer.end()) {
+        cancelAuthHold(session)
+        applyObserved(session, signal)
+      }
+    } catch {}
+    session.observer = null
+  }
+  /** The shell exited: an agent that reported in it is over too, whatever it said last (its conversation id is kept). */
+  const markAgentEnded = (session) => {
+    if (session.agent === undefined || session.agent.state === 'ended') return
+    const { kind: _kind, ...last } = session.agent
+    session.agent = { ...last, state: 'ended', detail: '', at: Date.now() }
+    send(session.ws, { type: 'agent', ...session.agent })
+  }
   /** Send the sub-agent list to the attached browser, at most once per throttle window. */
   const notifySubagents = (session) => {
     if (session.subTimer) return
@@ -945,6 +963,8 @@ function apply(ctx) {
       }
       const token = randomBytes(24).toString('hex')
       const spawning = (async () => {
+        // The providers' variables exist only once they have prepared (see signalReady).
+        await signalReady
         // Git Bash may live anywhere; fall back to the stock path so the spawn error stays meaningful.
         let file = shellId === 'gitbash' && process.platform === 'win32' ? ((await gitBash.resolve()) ?? shell.file) : shell.file
         if (shellId === 'ssh') file = (await findSsh()) ?? file
@@ -995,6 +1015,8 @@ function apply(ctx) {
       })
       handle.done.then(
         (outcome) => {
+          // Output the observer still holds (an exit hint with no newline after it), then the agent is over.
+          endObserved(live)
           live.exited = true
           cancelAuthHold(live)
           live.lastActive = Date.now()
@@ -1008,6 +1030,7 @@ function apply(ctx) {
           } else {
             flushData(live)
           }
+          markAgentEnded(live)
           send(live.ws, { type: 'exit', exitCode: live.exitCode })
         },
         () => {},

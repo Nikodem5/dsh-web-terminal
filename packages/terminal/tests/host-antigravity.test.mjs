@@ -109,15 +109,74 @@ test('the exit hint arrives as an ended signal carrying the conversation id', as
 })
 
 test('the shell gets AGY_CLI_OSC7501', async () => {
-  // The providers prepare once the signal server listens; terminals opened before that miss the variable.
-  let on = false
-  for (let i = 0; i < 400 && !on; i++) {
-    const t = await open()
-    on = t.spec.env.AGY_CLI_OSC7501 === 'on'
-    t.ws.close()
-    if (!on) await sleep(25)
+  const t = await open()
+  assert.equal(t.spec.env.AGY_CLI_OSC7501, 'on')
+  t.ws.close()
+})
+
+test('a terminal opened the moment the plugin starts still gets the provider variables', async () => {
+  // A second instance, opened before its signal server has even started listening: the spawn waits for the providers.
+  const own = { upgrade: [] }
+  const ownSpawned = []
+  let ownTeardown
+  apply(strictCtx({
+    webServer: { register: () => () => {}, registerUpgrade: (route) => { own.upgrade.push(route); return () => {} } },
+    subprocess: { spawnTerminal: async (spec) => { const handle = fakeHandle(); ownSpawned.push({ spec, handle }); return handle } },
+    on: () => () => {},
+    effect: (fn) => { ownTeardown = fn(); return () => {} },
+  }))
+  const http = createServer()
+  http.on('upgrade', (req, socket, head) => own.upgrade[0].handler(req, socket, head))
+  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?id=early1`, authed())
+    const attached = new Promise((resolve) => ws.on('message', (raw) => JSON.parse(String(raw)).type === 'attached' && resolve()))
+    await attached
+    assert.equal(ownSpawned.length, 1)
+    assert.equal(ownSpawned[0].spec.env.AGY_CLI_OSC7501, 'on')
+    ws.close()
+  } finally {
+    ownTeardown()
+    http.close()
   }
-  assert.ok(on)
+})
+
+test('when the shell exits, the agent it ran is marked ended and keeps its provider', async () => {
+  const t = await open('&provider=antigravity')
+  t.handle.output.emit('data', Buffer.from(working))
+  assert.ok(await until(() => agents(t.frames).length === 1))
+  t.handle.terminate()
+  assert.ok(await until(() => t.frames.some((f) => f.type === 'exit')))
+  const last = agents(t.frames).at(-1)
+  assert.equal(last.state, 'ended')
+  assert.equal(last.provider, 'antigravity')
+  // the ended frame comes before the exit frame
+  assert.ok(t.frames.indexOf(last) < t.frames.findIndex((f) => f.type === 'exit'))
+  t.ws.close()
+  const again = await open('&provider=antigravity', t.id)
+  assert.equal(again.frames.find((f) => f.type === 'attached').agent.state, 'ended')
+  again.ws.close()
+})
+
+test('an exit hint with no newline after it is read when the shell exits', async () => {
+  const t = await open('&provider=antigravity')
+  t.handle.output.emit('data', Buffer.from('Resume with -c (or command below):\r\nagy --conversation=d68c6b12-644d-4dea-93aa-b1ead1117390'))
+  await until(() => t.frames.some((f) => f.type === 'data'))
+  assert.equal(agents(t.frames).length, 0)
+  t.handle.terminate()
+  assert.ok(await until(() => t.frames.some((f) => f.type === 'exit')))
+  const ended = agents(t.frames)
+  assert.equal(ended.length, 1)
+  assert.equal(ended[0].session, 'd68c6b12-644d-4dea-93aa-b1ead1117390')
+  t.ws.close()
+})
+
+test('a shell that never had an agent sends no agent frame on exit', async () => {
+  const t = await open()
+  t.handle.terminate()
+  assert.ok(await until(() => t.frames.some((f) => f.type === 'exit')))
+  assert.equal(agents(t.frames).length, 0)
+  t.ws.close()
 })
 
 test('a terminal without a provider, with an unknown one, or without an observer gets no frames', async () => {
