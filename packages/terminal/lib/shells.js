@@ -75,7 +75,7 @@ export function shellSpec(id, { platform = process.platform, env = process.env, 
     return { file: sshFile, args: sshArgs(checked), integrated: false }
   }
   const table = platform === 'win32' ? WINDOWS_SHELLS : POSIX_SHELLS
-  const entry = typeof id === 'string' ? table[id] : undefined
+  const entry = typeof id === 'string' && Object.hasOwn(table, id) ? table[id] : undefined
   const spec = entry === undefined ? defaultShellSpec(platform, env) : { file: entry.file, args: entry.args }
   const kind = integration && integrationEnabled(env) ? integrationKind(spec.file) : undefined
   if (kind === undefined) return { file: spec.file, args: spec.args, integrated: false }
