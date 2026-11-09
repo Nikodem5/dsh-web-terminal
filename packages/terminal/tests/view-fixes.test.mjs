@@ -78,3 +78,50 @@ test('Ctrl+Alt+W / Ctrl+Alt+M do not act on the terminal behind the New terminal
   key({ key: 'm', ctrlKey: true, altKey: true })
   assert.equal(v.getWins().find((w) => w.id === id).maximized, true)
 })
+
+// ── 4. number inputs in the settings menu ──
+
+/** Type into a controlled input the way a keyboard does (an InputEvent with an inputType). */
+function type(input, text) {
+  const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  set.call(input, text)
+  v.flushSync(() => input.dispatchEvent(new window.InputEvent('input', { bubbles: true, inputType: 'insertText', data: text.slice(-1) })))
+}
+const blur = (el) => v.flushSync(() => { el.focus(); el.blur() })
+
+test('a number setting is applied when you finish typing, not on every keystroke', async () => {
+  render()
+  click(byText('.wt-bar button', 'Aa'))
+  const field = () => qa('.wt-pop input[type="number"]')[0]
+  assert.equal(field().value, '14')
+  v.setFont({ size: 14 })
+  field().focus()
+  type(field(), '1')
+  assert.equal(v.getPrefs().font.size, 14, 'a half-typed "1" is not clamped to 8')
+  assert.equal(field().value, '1', 'the field keeps what was typed')
+  type(field(), '18')
+  assert.equal(v.getPrefs().font.size, 14, 'still nothing applied')
+  blur(field())
+  assert.equal(v.getPrefs().font.size, 18)
+  assert.equal(field().value, '18')
+
+  // Out of range: the setter clamps on commit; an emptied field reverts.
+  field().focus()
+  type(field(), '99')
+  blur(field())
+  assert.equal(v.getPrefs().font.size, 32)
+  assert.equal(field().value, '32')
+  type(field(), '')
+  blur(field())
+  assert.equal(v.getPrefs().font.size, 32, 'an empty field changes nothing')
+  assert.equal(field().value, '32')
+
+  // Enter commits; the spinner (no typed character) applies at once.
+  type(field(), '20')
+  v.flushSync(() => field().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  assert.equal(v.getPrefs().font.size, 20)
+  const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  set.call(field(), '21')
+  v.flushSync(() => field().dispatchEvent(new window.Event('input', { bubbles: true })))
+  assert.equal(v.getPrefs().font.size, 21, 'a spinner step applies immediately')
+})
