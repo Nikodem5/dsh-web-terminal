@@ -30,7 +30,64 @@ export interface OpenOptions {
   minimized?: boolean
 }
 
-/** Open a new terminal window, cascaded from the existing ones unless a rect is given. */
+/** A new window's normal size, and the smallest it may shrink to when it fills a gap (canvas fractions; about the resize minimum on a typical canvas). */
+export const DEFAULT_SIZE = { w: 0.5, h: 0.55 }
+export const MIN_PLACED = { w: 0.2, h: 0.2 }
+const PLACE_PAD = 0.004
+
+/**
+ * The spot for a new window: the largest empty rectangle of the unit canvas not covered by `occupied`,
+ * sized `want` or, if the gap is smaller, shrunk to it. Returns undefined when no gap reaches `min`
+ * (the caller then cascades). A gap that fits `want` beats a larger one that only fits a shrunk window.
+ */
+export function findGap(occupied: Rect[], want: { w: number; h: number } = DEFAULT_SIZE, min: { w: number; h: number } = MIN_PLACED): Rect | undefined {
+  const eps = 1e-9
+  const xs = new Set<number>([0, 1])
+  const ys = new Set<number>([0, 1])
+  for (const r of occupied) {
+    for (const x of [r.x, r.x + r.w]) if (x > 0 && x < 1) xs.add(x)
+    for (const y of [r.y, r.y + r.h]) if (y > 0 && y < 1) ys.add(y)
+  }
+  const sx = [...xs].sort((a, b) => a - b)
+  const sy = [...ys].sort((a, b) => a - b)
+  const free = (x1: number, y1: number, x2: number, y2: number): boolean =>
+    occupied.every((r) => r.x + r.w <= x1 + eps || r.x >= x2 - eps || r.y + r.h <= y1 + eps || r.y >= y2 - eps)
+  let best: Rect | undefined
+  let bestScore = 0
+  let bestGap = 0
+  for (let i = 0; i < sx.length; i++) {
+    for (let j = i + 1; j < sx.length; j++) {
+      const gw = sx[j]! - sx[i]! - PLACE_PAD * 2
+      if (gw < min.w - eps) continue
+      for (let k = 0; k < sy.length; k++) {
+        for (let l = k + 1; l < sy.length; l++) {
+          const gh = sy[l]! - sy[k]! - PLACE_PAD * 2
+          if (gh < min.h - eps || !free(sx[i]!, sy[k]!, sx[j]!, sy[l]!)) continue
+          const w = Math.min(gw, want.w)
+          const h = Math.min(gh, want.h)
+          const score = w * h
+          const gap = gw * gh
+          const better = score > bestScore + eps || (Math.abs(score - bestScore) <= eps && gap > bestGap + eps)
+          if (best === undefined || better) {
+            best = { x: sx[i]! + PLACE_PAD, y: sy[k]! + PLACE_PAD, w, h }
+            bestScore = score
+            bestGap = gap
+          }
+        }
+      }
+    }
+  }
+  return best
+}
+
+/** What visible windows cover: minimized ones take no space; a maximized one counts as the rect it restores to. */
+export function occupiedRects(wins: WinState[]): Rect[] {
+  return wins
+    .filter((w) => !w.minimized)
+    .map((w) => (w.maximized && w.restore !== undefined ? w.restore : { x: w.x, y: w.y, w: w.w, h: w.h }))
+}
+
+/** Open a new terminal window: in the given rect, else in the largest free gap, else cascaded from the existing ones. */
 export function openTerminal(options: OpenOptions = {}): string {
   const visible = store.wins.filter((w) => !w.minimized).length
   const step = (visible % 8) * 0.035
@@ -47,7 +104,7 @@ export function openTerminal(options: OpenOptions = {}): string {
     // The agent the startup command starts, remembered so its resume and signals stay tied to it.
     provider: ssh !== undefined ? undefined : providerForCommand(options.startup)?.id,
     ssh,
-    ...(options.rect ?? { x: 0.04 + step, y: 0.04 + step, w: 0.5, h: 0.55 }),
+    ...(options.rect ?? findGap(occupiedRects(store.wins)) ?? { x: 0.04 + step, y: 0.04 + step, ...DEFAULT_SIZE }),
     z: nextZ(),
     pinned: options.pinned ?? false,
     maximized: false,

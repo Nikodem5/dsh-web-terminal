@@ -58,8 +58,22 @@ test('recursive mode: .git internals are ignored except index and HEAD, which pr
   git(root, 'add', 'marker.txt') // rewrites .git/index
   await waitFor(() => flat(socket.frames, 'git').length > 0, { label: 'git frame from .git/index' })
   assert.ok(changedPaths(socket.frames).every((p) => !p.startsWith('.git')))
+  // Node's recursive watch on Linux misses .git/index once git has replaced it. Linux does not use recursive mode in
+  // production; the fallback test below covers what it does use.
+  if (process.platform === 'linux') return
   const before = flat(socket.frames, 'git').length
   git(root, 'commit', '-q', '-m', 'm') // rewrites index and the branch ref
+  await waitFor(() => flat(socket.frames, 'git').length > before, { label: 'git frame after commit' })
+})
+
+test('fallback mode: the plain .git watch alone raises git frames for add and for commit', async () => {
+  const { root, socket } = await setup({ mode: 'fallback', pollMs: 0 }) // no poll: only the watch can raise the frame
+  write(root, { 'marker.txt': 'm' })
+  git(root, 'add', 'marker.txt')
+  await waitFor(() => flat(socket.frames, 'git').length > 0, { label: 'git frame after add' })
+  await new Promise((resolve) => setTimeout(resolve, 400)) // let the add's debounce window close
+  const before = flat(socket.frames, 'git').length
+  git(root, 'commit', '-q', '-m', 'm')
   await waitFor(() => flat(socket.frames, 'git').length > before, { label: 'git frame after commit' })
 })
 

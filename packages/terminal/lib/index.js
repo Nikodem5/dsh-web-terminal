@@ -32,6 +32,7 @@ import { createGitBashResolver } from './git-bash.js'
 import { createSshHosts } from './ssh-config.js'
 import { POSIX_SHELLS, WINDOWS_SHELLS, defaultShellSpec, shellSpec } from './shells.js'
 import { createProcessTable } from './process-table.js'
+import { createWindowsPath } from './windows-path.js'
 import { trimReplay } from './replay.js'
 import { createSubagents } from './subagents.js'
 import { createEdits } from './edits.js'
@@ -129,6 +130,8 @@ const DEFAULTS = {
   subagentSweepMs: 5000,
   /** At most one `edits` frame per terminal in this window. */
   editThrottleMs: 300,
+  /** A provider's `kind: 'auth'` signal waits this long for a later one before it is applied (agy shows it briefly at every start). */
+  authHoldMs: 3000,
 }
 
 /** Read one positive number from the environment, else the default. */
@@ -152,6 +155,7 @@ function readConfig() {
     subagentThrottleMs: envNumber('DSH_WT_SUBAGENT_THROTTLE_MS', DEFAULTS.subagentThrottleMs),
     subagentSweepMs: envNumber('DSH_WT_SUBAGENT_SWEEP_MS', DEFAULTS.subagentSweepMs),
     editThrottleMs: envNumber('DSH_WT_EDIT_THROTTLE_MS', DEFAULTS.editThrottleMs),
+    authHoldMs: envNumber('DSH_WT_AUTH_HOLD_MS', DEFAULTS.authHoldMs),
     allowedOrigins: parseExtraOrigins(process.env.DSH_WT_ALLOWED_ORIGINS),
   }
 }
@@ -171,6 +175,9 @@ function pidAlive(pid) {
   }
 }
 
+/** Registry PATH merge for new terminals and PATH lookups (Windows only; cached ~30 s). */
+const windowsPath = createWindowsPath()
+
 /**
  * Environment the shell starts from.
  *
@@ -186,12 +193,16 @@ function pidAlive(pid) {
  * environment, including whatever keys launched the harness. That is the
  * ordinary meaning of "open a terminal", and it is why this panel is
  * human-driven and is not exposed as a model-callable tool.
+ *
+ * On Windows PATH is the process PATH plus whatever the registry's Machine/User PATH adds, so a CLI
+ * installed after the app launched is found (one cached async read; falls back to the process PATH).
  * @param token - this terminal's agent-signal secret.
  * @returns the environment override for one terminal spawn.
  */
-function terminalEnv(token) {
-  const env = {}
+async function terminalEnv(token) {
+  let env = {}
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value
+  env = await windowsPath.childEnv(env)
   // The per-terminal secret an agent's hooks send back with each signal.
   env[TOKEN_ENV] = token
   return env
@@ -206,12 +217,14 @@ function terminalEnv(token) {
  * @param command - bare executable name to look for.
  * @returns the first resolved absolute path, or undefined.
  */
-function resolveOnPath(command) {
+async function resolveOnPath(command) {
+  // The lister searches its own PATH, so on Windows it gets the registry-merged one.
+  const env = process.platform === 'win32' ? await windowsPath.childEnv(process.env) : undefined
   return new Promise((resolve) => {
     let child
     try {
       const lister = process.platform === 'win32' ? 'where.exe' : 'which'
-      child = spawn(lister, [command], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+      child = spawn(lister, [command], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env })
     } catch {
       resolve(undefined)
       return
@@ -434,6 +447,51 @@ function apply(ctx) {
   // Agent signals arrive on a small loopback-only HTTP server of our own rather than on the
   // harness web server: hooks run outside the browser, so they carry no app auth cookie, and a
   // dedicated listener keeps the per-terminal secret as the only credential.
+  /**
+   * Start reading a terminal's output for agent signals, when the client says it was started as a provider that
+   * reports there (`Provider.observe`). Unknown ids, ssh windows and sessions already watched are ignored.
+   */
+  const watchOutput = (session, providerId) => {
+    if (session.observer !== null || session.shellId === 'ssh' || typeof providerId !== 'string') return
+    const observe = registry.get(providerId)?.observe
+    if (typeof observe !== 'function') return
+    try {
+      session.observer = observe()
+      session.observerProvider = providerId
+    } catch {}
+  }
+  /** Drop a pending auth hold. */
+  const cancelAuthHold = (session) => {
+    clearTimeout(session.authTimer)
+    session.authTimer = null
+  }
+  /** Make one observed signal the session's state and tell the attached browser. */
+  const applyObserved = (session, signal) => {
+    session.agent = { provider: session.observerProvider, ...signal, at: Date.now() }
+    send(session.ws, { type: 'agent', ...session.agent })
+  }
+  /** Feed one chunk to the session's observer; a failing observer is dropped, the terminal carries on. */
+  const observeOutput = (session, text) => {
+    try {
+      for (const signal of session.observer.feed(text)) {
+        if (signal.kind === 'auth') {
+          // Held back: a later signal supersedes it, else it applies when the hold ends. A repeat does not extend it.
+          if (session.authTimer === null) {
+            session.authTimer = setTimeout(() => {
+              session.authTimer = null
+              if (!session.exited) applyObserved(session, signal)
+            }, config.authHoldMs)
+            session.authTimer.unref?.()
+          }
+          continue
+        }
+        cancelAuthHold(session)
+        applyObserved(session, signal)
+      }
+    } catch {
+      session.observer = null
+    }
+  }
   /** Send the sub-agent list to the attached browser, at most once per throttle window. */
   const notifySubagents = (session) => {
     if (session.subTimer) return
@@ -728,6 +786,7 @@ function apply(ctx) {
     usage.removeSession(id)
     clearTimeout(session.subTimer)
     clearTimeout(session.editTimer)
+    cancelAuthHold(session)
     session.edits.clear()
     stopDrainWatch(session)
     dropPending(session)
@@ -845,6 +904,7 @@ function apply(ctx) {
       }
       session.ws = ws
       session.lastActive = Date.now()
+      watchOutput(session, url.searchParams.get('provider'))
       stopDrainWatch(session)
       dropPending(session)
       send(ws, { type: 'attached', created: false, replay: replayOf(session), exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list(), edits: session.edits.list() })
@@ -877,7 +937,7 @@ function apply(ctx) {
         const handle = await ctx.subprocess.spawnTerminal({
           argv: [file, ...shell.args],
           cwd,
-          env: { ...terminalEnv(token), ...providerEnv(), ...shell.env },
+          env: { ...(await terminalEnv(token)), ...providerEnv(), ...shell.env },
           rows: rows > 0 ? rows : DEFAULT_ROWS,
           cols: cols > 0 ? cols : DEFAULT_COLS,
           graceMs: GRACE_MS,
@@ -887,7 +947,8 @@ function apply(ctx) {
           safeCall(() => handle.terminate())
           throw new Error('plugin unloaded')
         }
-        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null, pendingText: '', flushTimer: null }
+        const created = { handle, ws: null, replay: '', exited: false, exitCode: null, shellId, cwd, lastBusy: undefined, token, agent: undefined, observer: null, observerProvider: null, subagents: createSubagents({ retainMs: config.subagentRetainMs }), subSentAt: 0, subTimer: null, edits: createEdits(), editSentAt: 0, editTimer: null, lastActive: Date.now(), congested: false, drainTimer: null, pendingText: '', flushTimer: null, authTimer: null }
+        watchOutput(created, url.searchParams.get('provider'))
         sessions.set(id, created)
         tokens.set(token, id)
         return created
@@ -915,11 +976,13 @@ function apply(ctx) {
         live.replay += text
         if (live.replay.length > REPLAY_LIMIT + REPLAY_SLACK) live.replay = trimReplay(live.replay, REPLAY_LIMIT)
         live.lastActive = Date.now()
+        if (live.observer !== null) observeOutput(live, text)
         forwardData(live, text)
       })
       handle.done.then(
         (outcome) => {
           live.exited = true
+          cancelAuthHold(live)
           live.lastActive = Date.now()
           live.exitCode = outcome?.exitCode ?? null
           if (live.subagents.endAll()) notifySubagents(live)

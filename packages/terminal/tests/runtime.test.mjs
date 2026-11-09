@@ -28,6 +28,7 @@ beforeEach(() => {
   FakeWebSocket.reset()
   // Shrunk bounds so the quiet-period tests stay fast; the real ones are unit-tested below.
   Object.assign(s.startupTiming, { minMs: 40, settleMs: 120, maxMs: 700 })
+  Object.assign(s.veilTiming, { timeoutMs: 5000, liftDelayMs: 30 })
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -730,10 +731,10 @@ test('newLinesSince / labels: counts from the blur-time cursor line, repaints ad
 })
 
 /** Two terminals, the page showing; `a` is looked at until `away()` focuses `b`. */
-async function twoTerminals() {
+async function twoTerminals(opts = { startup: undefined }) {
   window.document.hasFocus = () => true
   s.setViewMounted(true)
-  const a = await start({ startup: undefined })
+  const a = await start(opts)
   a.sock.push(attached())
   const idB = s.openTerminal({ cwd: 'C:\other' })
   const rtB = s.ensureRuntime(s.getWins().find((w) => w.id === idB))
@@ -837,6 +838,111 @@ test('unread: the pill shows when the divider is above the viewport and jumping 
   }
 })
 
+/** What the views would show for the terminal right now: every surface of the feature. */
+const unreadSurfaces = (t) => ({ count: s.unreadCount(t.id), pill: s.unreadPill(t.id), divider: s.dividerLine(t.id) })
+const NOTHING = { count: 0, pill: 0, divider: -1 }
+
+/** Away, 80 lines of output, back: the sequence that draws everything the feature has. */
+async function awayAndBack(t) {
+  await t.out('prompt> ')
+  t.away()
+  await t.out(t.lines(80))
+  const whileAway = unreadSurfaces(t)
+  t.back()
+  return { whileAway, afterBack: unreadSurfaces(t) }
+}
+
+for (const opts of [{ startup: 'agy' }, { startup: 'agy -c' }, { startup: undefined, provider: 'antigravity' }]) {
+  test('unread: a provider that repaints in place (Antigravity) gets no divider, count, pill or jump: ' + JSON.stringify(opts), async () => {
+    const t = await twoTerminals(opts)
+    try {
+      // openTerminal derives the provider from the startup command; a saved window can carry one with none.
+      if (opts.provider !== undefined) s.updateWin(t.id, { provider: opts.provider })
+      assert.equal(s.providerOfWin(s.getWins().find((w) => w.id === t.id))?.id, 'antigravity', JSON.stringify(opts))
+      const { whileAway, afterBack } = await awayAndBack(t)
+      assert.deepEqual(afterBack, NOTHING, 'no divider or pill after coming back: ' + JSON.stringify(opts))
+      assert.deepEqual(whileAway, NOTHING, 'no sidebar or Overview count while away: ' + JSON.stringify(opts))
+      const asked = []
+      t.rt.term.scrollToLine = (l) => asked.push(l)
+      assert.equal(s.jumpToUnread(t.id), false, 'the jump is a no-op')
+      assert.deepEqual(asked, [])
+    } finally {
+      t.done()
+    }
+  })
+}
+
+for (const opts of [{ startup: 'claude' }, { startup: 'npm run dev' }, { startup: undefined }]) {
+  test('unread: Claude, plain command and plain shell windows keep the divider, count and pill: ' + JSON.stringify(opts), async () => {
+    const t = await twoTerminals(opts)
+    try {
+      const { whileAway, afterBack } = await awayAndBack(t)
+      assert.equal(whileAway.count, 80, JSON.stringify(opts))
+      assert.ok(afterBack.divider > 0, 'divider drawn: ' + JSON.stringify(opts))
+      assert.equal(afterBack.pill, 80, 'pill shown: ' + JSON.stringify(opts))
+      assert.equal(s.jumpToUnread(t.id), true)
+    } finally {
+      t.done()
+    }
+  })
+}
+
+test('unread: no mark comes back through a buffer change or a rebase on a repainting provider', async () => {
+  const t = await twoTerminals({ startup: 'agy' })
+  try {
+    await t.out('$ \r\n\x1b[?1049h') // a full-screen screen first (agy's sign-in)
+    t.away()
+    await t.out('\x1b[?1049l' + t.lines(5)) // back to the normal buffer while away: the onBufferChange path
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+    t.sock.push({ type: 'attached', created: false, replay: t.lines(20, 'old'), exited: false, exitCode: null, agent: null }) // the rebaseUnread path
+    await flush(t.rt)
+    await t.out(t.lines(5))
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+    t.back()
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: the capability is read from the window as it is now, not as it was when the runtime was built', async () => {
+  const t = await twoTerminals({ startup: 'npm run dev' })
+  try {
+    await t.out('$ ')
+    t.away()
+    await t.out(t.lines(7))
+    assert.equal(s.unreadCount(t.id), 7, 'a plain command counts')
+    s.updateWin(t.id, { startup: 'agy', provider: 'antigravity' }) // reassigned: a restart with another command
+    assert.deepEqual(unreadSurfaces(t), NOTHING, 'the marks already made are gone')
+    await t.out(t.lines(3))
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+    t.back()
+    assert.deepEqual(unreadSurfaces(t), NOTHING)
+    // And back to a plain command: it counts again from the next time the user leaves.
+    s.updateWin(t.id, { startup: 'npm run dev', provider: undefined })
+    t.away()
+    await t.out(t.lines(4))
+    assert.equal(s.unreadCount(t.id), 4)
+  } finally {
+    t.done()
+  }
+})
+
+test('unread: a runtime whose window is gone from the store does not throw', async () => {
+  const t = await twoTerminals({ startup: 'agy' })
+  try {
+    await t.out('$ ')
+    t.away()
+    s.store.wins = s.store.wins.filter((w) => w.id !== t.id)
+    await t.out(t.lines(3))
+    assert.doesNotThrow(() => unreadSurfaces(t))
+    assert.doesNotThrow(() => s.jumpToUnread(t.id))
+    assert.doesNotThrow(() => s.rebaseUnread(t.rt))
+  } finally {
+    t.done()
+  }
+})
+
 test('unread: the overview is not looking; it keeps unread state and a pick shows the divider', async () => {
   const t = await twoTerminals()
   try {
@@ -862,4 +968,180 @@ test('unread: the overview is not looking; it keeps unread state and a pick show
     s.exitOverview()
     t.done()
   }
+})
+
+// ── the veil over a starting agent terminal ──
+
+const agy = { startup: 'agy' }
+/** start() waits for the newest socket: forget the earlier terminals' sockets first when a test opens several. */
+const startFresh = (opts) => { FakeWebSocket.reset(); return start(opts) }
+const veilEl = (rt) => rt.holder.querySelector('.wt-veil')
+const agySignal = (state) => ({ type: 'agent', provider: 'antigravity', state, detail: '' })
+
+test('shouldVeil: a new shell with a provider startup command, never a plain, ssh or reattached one', () => {
+  const claude = s.providerById('claude')
+  const antigravity = s.providerById('antigravity')
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: 'claude', provider: claude }), true)
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: 'agy', provider: antigravity }), true)
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: 'npm run dev', provider: undefined }), false, 'plain command')
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: '', provider: claude }), false, 'nothing is typed')
+  assert.equal(s.shouldVeil({ created: true, ssh: false, startup: undefined, provider: claude }), false)
+  assert.equal(s.shouldVeil({ created: true, ssh: true, startup: 'claude', provider: claude }), false, 'ssh')
+  assert.equal(s.shouldVeil({ created: false, ssh: false, startup: 'claude', provider: claude }), false, 'reattach')
+})
+
+test('veilText names the provider', () => {
+  assert.equal(s.veilText('Antigravity'), 'Starting Antigravity…')
+})
+
+test('veil: a new Antigravity shell is veiled from attach, with a placeholder, and the terminal stays sized', async () => {
+  const { rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  assert.equal(rt.veiled, true)
+  const el = veilEl(rt)
+  assert.ok(el, 'a placeholder in the holder')
+  assert.equal(el.textContent, 'Starting Antigravity…')
+  assert.ok(rt.holder.querySelector('.xterm'), 'xterm stays attached, not display:none')
+  rt.term.paste('x') // keystrokes still reach the terminal
+  assert.ok(typed(sock, 'x'))
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: a new Claude shell is veiled with its own label', async () => {
+  const { rt, sock } = await startFresh({ startup: 'claude' })
+  sock.push(attached({ created: true }))
+  assert.equal(rt.veiled, true)
+  assert.equal(veilEl(rt).textContent, 'Starting Claude…')
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: not for a plain shell, an ssh window or a reattach to a live session', async () => {
+  const plain = await startFresh()
+  plain.sock.push(attached({ created: true }))
+  assert.ok(!plain.rt.veiled)
+  assert.equal(veilEl(plain.rt), null)
+
+  const ssh = await startFresh({ startup: 'claude', ssh: { host: 'homepc' } })
+  ssh.sock.push(attached({ created: true }))
+  assert.ok(!ssh.rt.veiled)
+  assert.equal(veilEl(ssh.rt), null)
+
+  const live = await startFresh(agy)
+  live.sock.push(attached({ created: false, replay: 'agy screen\r\n' }))
+  assert.ok(!live.rt.veiled)
+  assert.equal(veilEl(live.rt), null)
+  await flush(live.rt)
+  assert.equal(live.rt.term.buffer.active.getLine(0).translateToString(true), 'agy screen')
+})
+
+test('veil: the first agent signal of any state lifts it, after the repaint that follows an idle', async () => {
+  for (const state of ['idle', 'needs-you', 'working', 'failed', 'ended']) {
+    const { rt, sock } = await startFresh(agy)
+    sock.push(attached({ created: true }))
+    assert.equal(rt.veiled, true)
+    sock.push(agySignal(state))
+    // Not at once: the repaint that comes right after the signal has to land first.
+    assert.equal(rt.veiled, true, `${state}: still up for the repaint`)
+    await until(() => !rt.veiled, `${state} lifts the veil`)
+    assert.equal(veilEl(rt), null)
+    s.disposeRuntime(rt.id, false)
+  }
+})
+
+test('veil: a repaint arriving after the signal is on screen before the veil lifts', async () => {
+  const { rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  sock.push(agySignal('idle'))
+  sock.push({ type: 'data', data: '\x1b[Hagy logo' })
+  await until(() => !rt.veiled, 'the veil to lift')
+  assert.equal(rt.term.buffer.active.getLine(0).translateToString(true), 'agy logo', 'painted before it lifted')
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: restoreAgent (an agent state carried by the attach) lifts it too', async () => {
+  const { rt } = await startFresh(agy)
+  s.startVeil(rt, 'Antigravity')
+  s.restoreAgent(rt, { provider: 'antigravity', state: 'idle', detail: '' })
+  await until(() => !rt.veiled, 'the veil to lift')
+  assert.equal(veilEl(rt), null)
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: lifts by itself after the timeout when no signal comes', async () => {
+  Object.assign(s.veilTiming, { timeoutMs: 150 })
+  const { rt, sock } = await startFresh({ startup: 'claude' })
+  sock.push(attached({ created: true }))
+  assert.equal(rt.veiled, true)
+  await sleep(60)
+  assert.equal(rt.veiled, true)
+  await until(() => !rt.veiled, 'the timeout to lift the veil')
+  assert.equal(veilEl(rt), null)
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: the shell exiting, a failed connection or a lost one lifts it at once', async () => {
+  const a = await startFresh(agy)
+  a.sock.push(attached({ created: true }))
+  a.sock.push({ type: 'exit', exitCode: 1 })
+  assert.equal(a.rt.veiled, false)
+  assert.equal(veilEl(a.rt), null)
+
+  const b = await startFresh(agy)
+  b.sock.push(attached({ created: true }))
+  b.sock.push({ type: 'error', message: 'cannot start' })
+  assert.equal(b.rt.veiled, false)
+
+  const c = await startFresh(agy)
+  c.sock.push(attached({ created: true }))
+  c.sock.drop()
+  assert.equal(c.rt.veiled, false)
+  s.closeAll()
+})
+
+test('veil: a reconnect that reattaches the same shell lifts it', async () => {
+  const { rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  assert.equal(rt.veiled, true)
+  const next = await reconnect(sock)
+  next.push(attached({ created: false, replay: 'agy screen\r\n' }))
+  assert.equal(rt.veiled, false)
+  assert.equal(veilEl(rt), null)
+  s.disposeRuntime(rt.id, false)
+})
+
+test('veil: the timers are cleared when the runtime is dropped', async () => {
+  Object.assign(s.veilTiming, { timeoutMs: 100 })
+  const { rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  sock.push(agySignal('idle')) // a lift is pending too
+  s.disposeRuntime(rt.id, false)
+  assert.equal(rt.veilTimeout, undefined)
+  assert.equal(rt.veilLift, undefined)
+  await sleep(250) // nothing fires on the disposed terminal
+  assert.ok(!rt.veiled)
+})
+
+test('veil: the holder carries it between windows and a restart veils the new shell again', async () => {
+  const { id, rt, sock } = await startFresh(agy)
+  sock.push(attached({ created: true }))
+  const a = window.document.createElement('div')
+  const b = window.document.createElement('div')
+  window.document.body.append(a, b)
+  a.appendChild(rt.holder)
+  b.appendChild(rt.holder) // moved to another window, or into the overview
+  assert.ok(b.querySelector('.wt-veil'))
+  assert.equal(rt.veiled, true)
+  sock.push(agySignal('idle'))
+  await until(() => !rt.veiled, 'the veil to lift')
+  assert.equal(b.querySelector('.wt-veil'), null)
+
+  s.restartWin(id)
+  const fresh = s.ensureRuntime(s.getWins().find((w) => w.id === id))
+  const next = await until(() => (FakeWebSocket.last !== sock ? FakeWebSocket.last : undefined), 'the new shell socket')
+  next.push(attached({ created: true }))
+  assert.equal(fresh.veiled, true, 'a restart is a new shell')
+  assert.ok(veilEl(fresh))
+  a.remove()
+  b.remove()
+  s.disposeRuntime(id, false)
 })

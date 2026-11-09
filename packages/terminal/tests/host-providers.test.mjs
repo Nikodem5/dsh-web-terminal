@@ -135,7 +135,7 @@ async function session() {
 
 test('/info lists every provider with its PATH state and launch hint', async () => {
   const { providers } = await info()
-  assert.deepEqual(Object.keys(providers), ['claude', 'fake-env', 'fake-zero', 'fake-broken'])
+  assert.deepEqual(Object.keys(providers), ['claude', 'antigravity', 'fake-env', 'fake-zero', 'fake-broken'])
   assert.equal(typeof providers.claude.available, 'boolean')
   assert.match(providers.claude.launch.settingsPath, /claude-settings-\d+\.json$/)
   assert.deepEqual(providers['fake-env'], { available: false, path: null, launch: { via: 'env' } })

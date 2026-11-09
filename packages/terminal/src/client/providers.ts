@@ -35,10 +35,21 @@ export interface AgentProvider {
    * @param startup - the command saved with the terminal.
    * @param launch - the host's launch hint for this provider.
    * @param session - the conversation id this terminal's agent last reported, if any.
+   * @param turned - the agent in this window has had at least one turn.
    */
-  launch(startup: string, launch: LaunchHint, session?: string | null): string
+  launch(startup: string, launch: LaunchHint, session?: string | null, turned?: boolean): string
+  /** An `ended` signal carrying a conversation id names one that exists (the agent reported it on the way out), so it is remembered. */
+  sessionOnEnd?: boolean
   /** Whether a terminal started with `startup` has its agent up and takes a paste (a send waits for it). */
   ready(rt: Runtime, now: number): boolean
+  /** This provider reports sub-agents: its terminals get the Agents button and panel. Absent means it never does. */
+  subagents?: true
+  /**
+   * This provider's terminal UI repaints in place on the normal buffer (cursor moves and line clears, no alternate
+   * screen), so its repaints register as new lines and a "new since you last looked" divider would land on top of
+   * its interface. Its terminals get no divider, unread count, pill or jump. Absent means the marks apply.
+   */
+  repaintsInPlace?: true
 }
 
 // ── Claude Code ──
@@ -106,12 +117,54 @@ const claude: AgentProvider = {
   title: /^Claude Code$/i,
   launch: claudeLaunch,
   ready: claudeReady,
+  subagents: true,
+}
+
+// ── Antigravity CLI ──
+
+/** `agy` as the first word of a command. */
+const AGY_COMMAND = /^(\s*)agy(?=\s|$)/
+/** A flag that already chooses a conversation. */
+const AGY_HAS_CONVERSATION = /(?:^|\s)(?:--conversation|--continue|-c)(?:\s|=|$)/
+
+/**
+ * Reopen where agy left off: a known conversation id becomes `--conversation <id>`; with none but a
+ * terminal that has had a turn (the app closed while agy ran, so no id was printed), `-c` continues the
+ * latest conversation in the folder; otherwise plain `agy`. A command that already chooses one is left alone.
+ */
+function agyLaunch(startup: string, _launch: LaunchHint, session?: string | null, turned?: boolean): string {
+  if (!AGY_COMMAND.test(startup) || AGY_HAS_CONVERSATION.test(startup)) return startup
+  const flag = isSessionId(session) ? `--conversation ${session}` : turned === true ? '-c' : undefined
+  return flag === undefined ? startup : startup.replace(AGY_COMMAND, (_all, lead: string) => `${lead}agy ${flag}`)
+}
+
+/** Ready once agy has reported `idle` (its prompt is up) after the startup command was typed. */
+function agyReady(rt: Runtime, _now: number): boolean {
+  return rt.startupSentAt !== undefined && rt.socket?.readyState === WebSocket.OPEN && rt.agent?.provider === 'antigravity' && rt.agent.state === 'idle'
+}
+
+const antigravity: AgentProvider = {
+  id: 'antigravity',
+  label: 'Antigravity',
+  glyph: '◈',
+  buttonClass: 'wt-btn-agy',
+  command: 'agy',
+  startup: 'agy',
+  presets: ['agy', 'agy -c'],
+  matchStartup: AGY_COMMAND,
+  matchCommand: /^\s*(?:\S*[\\/])?agy(?:\.(?:exe|cmd|ps1))?(?=\s|$)/i,
+  // PowerShell and conhost title the window with the program's path.
+  title: /^(?:.*[\\/])?agy(?:\.exe)?$/i,
+  launch: agyLaunch,
+  ready: agyReady,
+  sessionOnEnd: true,
+  repaintsInPlace: true,
 }
 
 // ── the registry ──
 
 /** Every provider the UI offers, in button order. */
-export const providers: readonly AgentProvider[] = [claude]
+export const providers: readonly AgentProvider[] = [claude, antigravity]
 
 /** The provider with this id, or undefined (an id from a newer or older version, or none). */
 export function providerById(id: string | undefined): AgentProvider | undefined {
@@ -126,6 +179,23 @@ export function providerForCommand(startup: string | undefined): AgentProvider |
 /** The provider a window runs: the one saved with it, else the one its startup command starts. */
 export function providerOfWin(win: Pick<WinState, 'provider' | 'startup'>): AgentProvider | undefined {
   return providerById(win.provider) ?? providerForCommand(win.startup)
+}
+
+/** Whether the window now runs a provider whose terminal repaints in place; a window not in the store is a plain terminal. */
+export function repaintsInPlace(win: Pick<WinState, 'provider' | 'startup'> | undefined): boolean {
+  return win !== undefined && providerOfWin(win)?.repaintsInPlace === true
+}
+
+/**
+ * Whether the Agents button and panel belong on the page. The panel lists every terminal's sub-agents, so
+ * they go only when all open terminals run a provider without the `subagents` capability: a plain shell or
+ * ssh window (no provider) keeps them, as does an empty page.
+ */
+export function showsSubagents(wins: readonly Pick<WinState, 'provider' | 'startup'>[]): boolean {
+  return wins.length === 0 || wins.some((win) => {
+    const provider = providerOfWin(win)
+    return provider === undefined || provider.subagents === true
+  })
 }
 
 /** The provider whose program set this terminal title, or undefined. */

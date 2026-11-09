@@ -1,7 +1,7 @@
 # DeepSeek Harness plugins
 
 Two plugins for the DeepSeek Harness (DSH) desktop app. **Web Terminal** adds a
-Terminals page for running several PTY terminals side by side, built for working with multiple Claude Code agents.
+Terminals page for running several PTY terminals side by side, built for working with multiple coding agents (Claude Code, Antigravity CLI).
 **Code Editor** adds a Code page with a Monaco editor and reviewer, git tools and markers for files an agent changed.
 Everything runs locally.
 
@@ -28,7 +28,7 @@ Everything runs locally.
   stats, the sub-agents panel and the "Idle" state of a fresh Claude terminal are unavailable (terminals and the other
   agent states still work). The installer needs Node as well
 - Git, for the editor's git features
-- Optional: Claude Code CLI, for the agent features
+- Optional: Claude Code CLI and/or Antigravity CLI (`agy`), for the agent features (Antigravity reports status only: no usage, sub-agents or changed-file markers)
 - Windows is the primary platform, Linux is supported, macOS is untested
 
 ## Install from a release
@@ -61,7 +61,7 @@ the profile tree do not get their browser half loaded.
 
 Each plugin has a host half (a Node module mounted in the DSH server: PTY sessions, file and git routes, WebSockets)
 and a client half (a bundle loaded into the app UI). Servers listen on loopback only and check the Origin of browsers.
-No data leaves your machine except what Claude Code itself sends.
+No data leaves your machine except what the agents you run in a terminal (Claude Code, Antigravity CLI) send themselves.
 
 ## Security notes
 

@@ -49,7 +49,15 @@ window.document.oninput = null
 window.URL.createObjectURL = () => 'blob:smoke'
 window.URL.revokeObjectURL = () => {}
 
-const domEntry = profileRequire.resolve('react-dom/client')
+// A fresh checkout or CI has no profile, so it falls back to the repo's development copy.
+const resolveDomEntry = () => {
+  try {
+    return profileRequire.resolve('react-dom/client')
+  } catch {
+    return createRequire(import.meta.url).resolve('react-dom/client')
+  }
+}
+const domEntry = resolveDomEntry()
 const domRequire = createRequire(pathToFileURL(domEntry).href)
 const React = domRequire('react')
 const ReactDOMClient = domRequire('react-dom/client')

@@ -10,7 +10,7 @@ const VIEW_CSS = `
 .wt-view { --wt-accent: #4d6bfe; --wt-work: #5b8cff; --wt-wait: #f0b429; --wt-idle: #22c55e; --wt-dead: #ef4444; --wt-urgent: #ff6b3d;
   --wt-line: #333844; --wt-surface: #1b1d23; --wt-deep: #14161b;
   --wt-text: #e8eaed; --wt-dim: #9aa0a6; --wt-hover: #ffffff14; --wt-field: #101216; color-scheme: dark;
-  --wt-ssh: #8fa3bf; --wt-claude: #d97757; --wt-claude-fg: #1f1410; --wt-agents: #b79cff; --wt-agents-solid: #7c5cf0; --wt-tool: #2dd4bf; --wt-tool-solid: #14b8a6; --wt-tool-fg: #06201d; --wt-warn: #f0b429; --wt-danger: #ff6b6b;
+  --wt-ssh: #8fa3bf; --wt-claude: #d97757; --wt-claude-fg: #1f1410; --wt-agy: #4f8cff; --wt-agy-fg: #08142b; --wt-agents: #b79cff; --wt-agents-solid: #7c5cf0; --wt-tool: #2dd4bf; --wt-tool-solid: #14b8a6; --wt-tool-fg: #06201d; --wt-warn: #f0b429; --wt-danger: #ff6b6b;
   position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; width: 100%; height: 100%; overflow: hidden; background: var(--wt-surface); color: var(--wt-text); font-family: var(--ds-font-family-sans, system-ui, sans-serif); }
 /* Text colours follow the MEASURED background (data-scheme is set from it), so a theme whose tokens disagree with color-scheme can never give white-on-white. */
 .wt-view[data-scheme="light"] { --wt-ssh: #4a5f7d; --wt-text: #1f2328; --wt-dim: #5b636c; --wt-hover: #2631480f; --wt-field: #ffffff; --wt-surface: #f6f7f9; --wt-deep: #ffffff; --wt-line: #d0d7de; --wt-agents: #5b32b8; --wt-agents-solid: #6d3fd1; --wt-tool: #0f766e; --wt-tool-solid: #0f766e; --wt-tool-fg: #fff; --wt-warn: #9a6700; --wt-danger: #cf222e; color-scheme: light; }
@@ -20,13 +20,14 @@ const VIEW_CSS = `
 .wt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
 /* The page is a main-panel entry: it fills the main area. On macOS the window chrome overlaps the top strip, and entry pages pad their top by the frame's clearance (Windows reserves its caption outside the page). */
-[data-platform="darwin"] .wt-page > .wt-bar:first-child { padding-top: var(--dsh-frame-top-clearance, 0px); height: calc(44px + var(--dsh-frame-top-clearance, 0px)); }
+[data-platform="darwin"] .wt-page > .wt-bar:first-child { padding-top: calc(6px + var(--dsh-frame-top-clearance, 0px)); min-height: calc(44px + var(--dsh-frame-top-clearance, 0px)); }
 
 /* toolbar */
-.wt-bar { flex: none; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; box-sizing: border-box; border-bottom: 0.5px solid var(--wt-line); position: relative; z-index: 30; background: var(--wt-surface); }
-/* Row 1: left and right never change width or wrap; only the middle (chips) flexes and clips. Row 2 (.wt-statsrow) holds the stats bar. */
-.wt-bar-left, .wt-bar-right { flex: none; display: flex; align-items: center; gap: 6px; }
-.wt-bar-mid { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 10px; }
+.wt-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; min-height: 44px; padding: 6px 12px; box-sizing: border-box; border-bottom: 0.5px solid var(--wt-line); position: relative; z-index: 30; background: var(--wt-surface); }
+/* Row 1: when the regions do not fit they wrap onto more rows, and a region wraps inside itself when narrower than its controls, so every control stays reachable. The right region stays at the right edge. The stats bar is in .wt-statsrow. */
+.wt-bar-left, .wt-bar-right { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.wt-bar-right { margin-left: auto; justify-content: flex-end; }
+.wt-bar-mid { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .wt-bar-mid > * { flex: none; }
 .wt-statsrow { flex: none; display: flex; align-items: center; height: 26px; padding: 0 12px; box-sizing: border-box; overflow: hidden; border-bottom: 0.5px solid var(--wt-line); background: color-mix(in srgb, var(--wt-text) 4%, var(--wt-surface)); container-type: inline-size; container-name: wtbar; }
 .wt-statsrow > .wt-stats { flex: 0 1 auto; min-width: 0; height: 100%; }
@@ -49,6 +50,8 @@ const VIEW_CSS = `
 .wt-view .wt-btn.wt-btn-preset:hover:not(:disabled) { background-color: color-mix(in srgb, var(--wt-text) 16%, transparent); }
 .wt-view .wt-btn.wt-btn-claude { background-color: var(--wt-claude); border-color: transparent; color: var(--wt-claude-fg); font-weight: 600; }
 .wt-view .wt-btn.wt-btn-claude:hover:not(:disabled) { background-color: var(--wt-claude); filter: brightness(1.08); }
+.wt-view .wt-btn.wt-btn-agy { background-color: var(--wt-agy); border-color: transparent; color: var(--wt-agy-fg); font-weight: 600; }
+.wt-view .wt-btn.wt-btn-agy:hover:not(:disabled) { background-color: var(--wt-agy); filter: brightness(1.08); }
 .wt-view .wt-btn.wt-btn-ssh { border-color: color-mix(in srgb, var(--wt-ssh) 55%, transparent); background-color: color-mix(in srgb, var(--wt-ssh) 12%, transparent); color: var(--wt-ssh); }
 .wt-view .wt-btn.wt-btn-ssh:hover:not(:disabled) { background-color: color-mix(in srgb, var(--wt-ssh) 24%, transparent); }
 .wt-view .wt-btn.wt-btn-tool { border-color: color-mix(in srgb, var(--wt-tool) 55%, transparent); background-color: color-mix(in srgb, var(--wt-tool) 11%, transparent); color: var(--wt-tool); }
@@ -153,6 +156,8 @@ const VIEW_CSS = `
 .wt-body { flex: 1; min-height: 0; padding: 8px; background: var(--wt-term-bg, var(--wt-deep)); }
 .wt-holder { width: 100%; height: 100%; }
 .wt-holder .xterm { height: 100%; }
+/* Covers a starting agent terminal (veil.ts); xterm stays laid out underneath so fit and resize keep working. */
+.wt-veil { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: var(--wt-term-bg, var(--wt-deep)); color: var(--wt-dim); font: 13px/1 var(--ds-font-family-sans, system-ui, sans-serif); letter-spacing: 0.02em; }
 .wt-holder .xterm-viewport { background-color: transparent !important; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--wt-dim) 45%, transparent) transparent; }
 .wt-holder .xterm-viewport::-webkit-scrollbar { width: 9px; }
 .wt-holder .xterm-viewport::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--wt-dim) 40%, transparent); border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }

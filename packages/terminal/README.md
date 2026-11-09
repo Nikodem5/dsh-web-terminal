@@ -3,7 +3,7 @@
 A **Terminals** page for DeepSeek Harness: a sidebar entry (right after *Plugins*) that opens a full page holding a
 free-form workspace of real PTY terminals — open as many as you like, drag and resize them like app
 windows, snap them to edges/halves/quarters, pin them in place, and watch what every agent is doing from a
-list on the right. Built for running several agents (e.g. Claude Code) side by side.
+list on the right. Built for running several agents (Claude Code and the Antigravity CLI) side by side.
 
 ## Install
 
@@ -30,6 +30,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 |---|---|
 | New terminal | **＋ New terminal** opens a dialog: **folder** (type, **Browse…** for the native chooser, favourites ★, recents, or one of the harness's **Workspaces** — shown as chips under the folder field, as listed in the left sidebar), **shell** (PowerShell / cmd / Git Bash / WSL), optional **name**, optional **startup command** typed once into the fresh shell, as soon as its prompt is up (it has printed and gone quiet for a moment; at most 5 s) |
 | Run Claude | **✦ Claude** is the same dialog preset to `claude` (chips for `claude --resume` / `--continue`) |
+| Run Antigravity | **◈ Antigravity** is the same dialog preset to `agy` (chips for `agy` / `agy -c`), see [Antigravity CLI](#antigravity-cli-agy) |
 | Connect over ssh | **⇄ SSH** (or the **⇄ SSH** tab of the dialog): a terminal on another machine, see [SSH terminals](#ssh-terminals) |
 | Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder and startup command |
 | Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins), then *Open* (replaces the open terminals) or *Add* |
@@ -56,7 +57,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 **Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Help panel
-The book button (or **F1**) opens a panel with eight sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
+The book button (or **F1**) opens a panel with nine sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, how the agent terminals are started and what each reports, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude`, `agy` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
 
 **Update from source** (last section) is for installs made with `npm run install:desktop` from a git clone: the installer records the clone and commit in `install-source.json` beside the installed package. **Pull, build and install** runs `git pull --ff-only`, `npm install`, `npm run build` and `node scripts/install.mjs <profile>` in that clone, with the output shown below the buttons; **Restart app** (after a confirm that counts busy terminals) hands off to a detached helper (`lib/relaunch.js`) that closes the app, forces it after 8 s, and starts it again. Release installs show why the update is unavailable; under `dsh web` restart it yourself. Routes: `GET`/`POST /api/dsh-web-terminal/update`, `POST /api/dsh-web-terminal/relaunch`, both refusing foreign Origins.
 
@@ -83,8 +84,40 @@ Status comes from the agent itself, not from guessing at output.
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
 
+- **A new agent terminal is covered while it starts.** A new shell started with a Claude or Antigravity command shows "Starting Claude…" (or "Starting Antigravity…") instead of the shell banner and the echoed command, until the agent reports its first state of any kind, or 5 s have passed, or the shell exits or the connection fails (so a failed start is visible). The terminal stays attached and sized underneath and keys still reach it. After the first signal the cover stays a moment (about 0.1 s) so Antigravity's repaint, which follows its first report, is on screen when it lifts. It never applies to plain shells, ssh windows, or a reattach to a live session or page reload. The shell banner stays above the agent's interface on the normal screen once the cover lifts.
+
+### Antigravity CLI (`agy`)
+A terminal started with **◈ Antigravity** (or any startup command beginning with `agy`) reports its state like a Claude
+terminal does: the same dots, the same two attention levels, notifications and chime. It gets there differently, because
+`agy` has no per-process settings to point at (the reasoning is in `docs/adr/0002-antigravity-signals-from-terminal-output.md`).
+
+- **How it is started.** The host adds `AGY_CLI_OSC7501=on` to the environment of every local terminal's shell. With it, `agy`
+  prints a status sequence (`ESC ] 7501 ; state=<state>... BEL`) whenever its state changes, and the host reads those from the
+  output of terminals the browser says were started as `agy` (never ssh windows). Nothing in `agy`'s own configuration is
+  edited. `agy` has to be on the host's PATH; the help panel's diagnostics show whether it was found. A CLI that is not found gets a toolbar note ("`agy` not found on PATH") and a red diagnostics row only while no agent CLI at all was found; with at least one found, the missing one is listed in the diagnostics without colour and its button stays as it is.
+- **What it reports.** `working`, `blocked` (shown as **Needs you**, with agy's own message as the badge tooltip and the
+  notification text), `done` (**Finished**), `failed` and `idle`. Nothing else: **no usage or limits, no changed-file marks,
+  no sub-agents.** The stats bar counts the terminal by status like any other, and the Agents button and panel are hidden when every open terminal is an Antigravity one.
+- **Only when started from here.** An `agy` you type by hand into a plain shell shows no state (the dot stays Running or
+  Idle), the same as a hand-typed `claude`; so does one run over ssh.
+- **Start-up sign-in blip.** `agy` briefly reports a sign-in prompt (`kind=auth`, a blocked state) at every start. The host
+  holds that one back for 3 s and drops it if another state follows, so it raises no alert; one that is still the latest
+  signal after the hold is applied. A repeat does not extend the hold. `DSH_WT_AUTH_HOLD_MS` (milliseconds, default `3000`)
+  changes it.
+- **Reopening.** The conversation id is printed only in the hint `agy` shows on a clean exit (`Resume with -c (or command
+  below)`, then `agy --conversation=<id>`); the host picks it out and the window remembers it. When the window gets a
+  fresh shell (Restart, or after the host restarted) the startup command becomes `agy --conversation <id>`. A terminal with **no** known id that had at least one turn (the app closed
+  while `agy` ran, so no hint was printed) reopens with `agy -c`, the latest conversation in that folder. **Caveat:** two
+  `agy` terminals in one folder with no known ids both reopen the latest conversation. A terminal that never had a turn starts
+  plain `agy`, and a command that already chooses a conversation (`-c`, `--continue`, `--conversation`) is left alone.
+- **Send to a new agent.** *New Antigravity terminal here* pastes the selection once `agy` has reported `idle` (its prompt is
+  up), and copies it to the clipboard instead if it has not got there within a minute.
+- **Fake status.** The sequences are plain terminal output with no per-terminal secret (Claude's hooks have one), so a
+  program that prints the same bytes inside an Antigravity terminal can fake a status dot or an alert. It can only mislead;
+  it cannot run anything. Terminals not started as `agy` are not read at all.
+
 ### New since you last looked
-A terminal counts as looked at while its window is focused, the Terminals page is showing and the app is in front. When you stop looking, the plugin remembers where the output ended. Output that adds at least one new line while you are away shows as a small count on the terminal's list row (separate from attention badges; in-place repaints such as a status line do not count). When you come back, a thin divider `── new since 14:32 ──` marks the first new line and stays until you look away again. If it is above the visible rows, a `↓ 42 new lines` pill at the window's bottom right (or **Ctrl+Shift+U**) jumps to it. Full-screen programs (vim, htop) are skipped, and a divider whose line has scrolled out of the scrollback is not shown. Attention and alerts are unchanged.
+A terminal counts as looked at while its window is focused, the Terminals page is showing and the app is in front. When you stop looking, the plugin remembers where the output ended. Output that adds at least one new line while you are away shows as a small count on the terminal's list row (separate from attention badges; in-place repaints such as a status line do not count). When you come back, a thin divider `── new since 14:32 ──` marks the first new line and stays until you look away again. If it is above the visible rows, a `↓ 42 new lines` pill at the window's bottom right (or **Ctrl+Shift+U**) jumps to it. Full-screen programs (vim, htop) are skipped, and a divider whose line has scrolled out of the scrollback is not shown. Antigravity (`agy`) terminals are skipped too: the CLI redraws its interface in place on the normal screen, so those repaints would look like new lines and the divider would land on top of it; they get no divider, count, pill or Ctrl+Shift+U jump. Attention and alerts are unchanged.
 
 ### Stats bar (chat header and Terminals page)
 A compact one-line bar in the chat header, and again in the Terminals page toolbar (next to *Close all*): terminal counts by status (working, needs you,
@@ -101,12 +134,12 @@ Every terminal with status, name, folder and a pin marker. Click to focus, **dou
 drag rows to reorder (that is also the Ctrl+Alt+←/→ order), ⧉ duplicate, ✕ close. `☰` in the toolbar hides it.
 
 **Names**: by default a terminal is named after the program's own title — for Claude Code that is the session
-title (`Fix login bug`; bare "Claude Code" becomes `Claude · <folder>`). Renaming pins your name; renaming to an
+title (`Fix login bug`; bare "Claude Code" becomes `Claude · <folder>`); a bare `agy` title becomes `Antigravity · <folder>`. Renaming pins your name; renaming to an
 empty string returns to the automatic name.
 
 ### Sub-agents panel (right)
 `Agents` in the toolbar (with a badge of running sub-agents) opens a panel beside the terminal list, remembered in the
-preferences. Sub-agents Claude spawned are grouped by terminal (click a group header to focus its window); each row shows
+preferences. The panel covers every terminal, so the button and panel are hidden only when all open terminals run a provider that reports no sub-agents (Claude reports them, Antigravity does not); a Claude, plain shell or ssh terminal beside them keeps both, whichever has focus. Sub-agents Claude spawned are grouped by terminal (click a group header to focus its window); each row shows
 status, label, type, short model name (`haiku-5-5`), elapsed time (ticking while running) and tokens. Running ones come
 first; completed ones are dimmed and drop off about five minutes after they end. The stats bar adds `N agents` while any
 run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;
@@ -116,7 +149,7 @@ an older host without them simply shows an empty panel.
 When a Claude session in one of your open terminals edits a file (Edit, Write, MultiEdit, NotebookEdit), the code editor
 plugin, if installed, marks that file with a small lightning badge in its explorer, tabs, quick open and CHANGES list;
 hovering shows the terminal, the time and the tool. The mark is temporary: it disappears when the terminal is closed (or its
-shell restarted). Only Claude started through this plugin reports edits (its hooks do the reporting); changes made by shell
+shell restarted). Only Claude started through this plugin reports edits (its hooks do the reporting; Antigravity terminals report none); changes made by shell
 commands or by you are not marked. See the wire contract below for the API the editor reads.
 
 ### Clickable file paths
@@ -218,8 +251,9 @@ header):
 ### Send a selection to another terminal
 Select text (an error in a build terminal, say), **right-click** it and pick where it goes, or press **Ctrl+Shift+S**
 (arrows + Enter, Esc cancels). The menu offers **Copy**, every other connected terminal (agents first, with their
-status dot) and **New Claude terminal here** (same folder and shell; the text is sent once `claude` is typed, its screen
-is quiet and it has switched paste mode on, and is copied to the clipboard instead if that takes over a minute).
+status dot) and **New Claude terminal here** / **New Antigravity terminal here** (same folder and shell; the text is sent once the
+agent is ready, and is copied to the clipboard instead if that takes over a minute). Claude is ready once `claude` is typed, its
+screen is quiet and it has switched paste mode on; Antigravity once it has reported `idle`.
 
 - The text is **pasted, never submitted**: you add context and press Enter. It goes in as a bracketed paste when the
   target enabled that mode (Claude Code does); otherwise it is typed with the last line left open, and a multi-line
@@ -231,7 +265,7 @@ is quiet and it has switched paste mode on, and is copied to the clipboard inste
   (xterm's usual "select instead" key) opens the menu there. Without a selection right-click is unchanged.
 
 ### SSH terminals
-For the laptop-to-home-PC case: **⇄ SSH** in the toolbar (next to **✦ Claude**) opens the new-terminal dialog on its SSH tab, and the
+For the laptop-to-home-PC case: **⇄ SSH** in the toolbar (next to the agent buttons) opens the new-terminal dialog on its SSH tab, and the
 window runs your system `ssh` client in the same PTY as any other terminal.
 
 - **Where targets come from.** The dialog lists the concrete `Host` aliases of `~/.ssh/config` (with `user@hostname:port` as the
@@ -251,8 +285,8 @@ window runs your system `ssh` client in the same PTY as any other terminal.
   a dead link in about 90 s). The window then shows **Disconnected** with a **Reconnect** button and raises an alert. There is deliberately
   no automatic retry: a password prompt would be spammed. Any other exit code means the remote session ended normally (**Exited**, ↻ to
   start again). Reconnect reuses the stored target and remote command; a restart or a reloaded saved layout connects afresh.
-- **Limits (phase 1).** No Claude status signals over ssh (the hook settings file is local) and no `--settings` is added, so the agent
-  dots and badges stay off; Ctrl+click on file paths is off (the paths are on the remote machine); command blocks and the real-folder
+- **Limits (phase 1).** No agent status signals over ssh (Claude's hook settings file is local and no `--settings` is added; Antigravity's
+  output is not read for ssh windows), so the agent dots and badges stay off; Ctrl+click on file paths is off (the paths are on the remote machine); command blocks and the real-folder
   tracking only appear if the remote shell itself emits the markers. Jump hosts work through `ProxyJump` in your ssh config.
 
 ### Safety
@@ -310,7 +344,7 @@ Restart the desktop app: plugins load at boot.
 | `src/client/paths.ts`, `path-links.ts` | Path detection (pure) and the xterm link provider |
 | `lib/process-table.js` | Process-table snapshots for the activity poll (PowerShell helper on Windows, `ps` elsewhere) |
 | `lib/agent-signals.js` | Provider-neutral agent signals: the states, the secret's names, normalising a signal body |
-| `lib/providers/index.js`, `lib/providers/claude.js`, `src/client/providers.ts` | Agent providers: the host registry (id, PATH commands, hook adapter, launch preparation, extra routes) with Claude Code as the first entry, and its client counterpart (command match, launch rewrite, button, window name, readiness) |
+| `lib/providers/index.js`, `lib/providers/claude.js`, `lib/providers/antigravity.js`, `src/client/providers.ts` | Agent providers: the host registry (id, PATH commands, hook adapter or terminal-output observer, launch preparation, extra routes) with Claude Code and the Antigravity CLI built in, and its client counterpart (command match, launch and resume rewrite, button, window name, readiness) |
 | `lib/hook-post.js` | Command-hook forwarder Claude runs for `SessionStart` (HTTP hooks are ignored there) |
 | `lib/statusline.js` | Status-line wrapper Claude runs: posts usage / sub-agent tasks to the host, relays the user's own line |
 | `lib/edits.js` | Pure per-terminal "files the agent changed" store (validates the PostToolUse edit payload, cap 500) |
@@ -334,7 +368,7 @@ Restart the desktop app: plugins load at boot.
 | `src/client/windows.ts` | Open, close, focus, maximize, layout presets |
 | `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
 | `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, stuck detection |
-| `src/client/launch.ts` | Adds `--settings` to a `claude` startup command |
+| `src/client/launch.ts` | What a conversation id may look like (the launch rewrite itself lives in each provider, `providers.ts`) |
 | `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet; or the shell integration's prompt-ready signal) |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
@@ -449,6 +483,10 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
   (mapped back to its install root), then common folders (`%LOCALAPPDATA%\Programs\Git`, `Program Files`,
   `Program Files (x86)`, Scoop). `System32\bash.exe` (the WSL launcher) is never used. If none exists the Git Bash
   entry is hidden; a missing install is re-checked every 30 s.
+- **Windows PATH**: a CLI installed after the app launched is found without a restart. New terminals and the PATH
+  lookups (`claude`, `agy`, `ssh`...) get the process PATH followed by the registry's Machine then User `Path` entries
+  it lacks (read with `reg.exe query`, reused for 30 s; any failure leaves the process PATH as is).
+  `DSH_WT_REGISTRY_PATH=0` turns it off.
 - **Resize** needs the 0.2.x subprocess provider (the desktop app's); older hosts skip it.
 - **Security**: the PTY runs as you, unsandboxed, with the harness's full environment (credentials included) —
   that is what a terminal is. It is human-driven only and not exposed to model tool calls. The route is

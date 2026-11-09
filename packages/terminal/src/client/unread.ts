@@ -3,13 +3,16 @@
 //
 // The marker is an xterm marker on the normal buffer, so it follows the line through scrolling and
 // vanishes when the line leaves the scrollback. Full-screen programs (alternate buffer) have no
-// such history, so they get no marker. The pure helpers are tested without a browser; the stateful
+// such history, so they get no marker, and neither does a terminal of a provider that repaints in
+// place on the normal buffer (`repaintsInPlace`, read from the window every time: its startup command
+// can change on restart). The pure helpers are tested without a browser; the stateful
 // half is driven by the store (focus, page and window changes) and by xterm's own write events.
 
 import type { IDecoration, IMarker } from '@xterm/xterm'
 import { emit, store, subscribe } from './state.ts'
 import { unattended } from './attention.ts'
 import { mission } from './mission.ts'
+import { repaintsInPlace } from './providers.ts'
 import { matchShortcut } from './shortcuts.ts'
 import type { Runtime } from './types.ts'
 
@@ -64,6 +67,9 @@ let wired = false
 const cursorLine = (rt: Runtime): number => rt.term.buffer.active.baseY + rt.term.buffer.active.cursorY
 const onNormal = (rt: Runtime): boolean => rt.term.buffer.active.type === 'normal'
 
+/** This terminal's window runs a provider that repaints in place: none of the feature applies. Read live, never cached. */
+const exempt = (id: string): boolean => repaintsInPlace(store.wins.find((w) => w.id === id))
+
 /** Watching the terminal: focused window, Terminals page showing, document visible, not minimized, not scanning the overview. */
 function isLooking(id: string): boolean {
   // Overview tiles are tiny and the user is scanning, not reading.
@@ -88,7 +94,7 @@ function dropMarks(st: UnreadState): void {
 function setMark(st: UnreadState): void {
   dropMarks(st)
   st.since = Date.now()
-  if (!onNormal(st.rt)) return
+  if (!onNormal(st.rt) || exempt(st.rt.id)) return
   // One line past the cursor: the first line anything new will land on.
   const marker = st.rt.term.registerMarker(1)
   st.marker = marker
@@ -104,6 +110,7 @@ function setMark(st: UnreadState): void {
 
 function showDivider(st: UnreadState): void {
   const { rt, marker } = st
+  if (exempt(rt.id)) return
   if (!rt.opened || marker === undefined || marker.isDisposed || st.deco !== undefined) return
   const deco = rt.term.registerDecoration({ marker, x: 0, width: rt.term.cols, height: 1, layer: 'top' })
   if (deco === undefined) return
@@ -135,6 +142,15 @@ function refresh(st: UnreadState): void {
 /** Re-decide whether the user is looking, and act on the change. */
 function evaluate(st: UnreadState): void {
   const looking = isLooking(st.rt.id)
+  // Reassigned to such a provider since the marks were made: take them back.
+  if (exempt(st.rt.id)) {
+    st.looking = looking
+    if (st.marker !== undefined || st.deco !== undefined || st.wantDivider || st.lines > 0) {
+      dropMarks(st)
+      emit()
+    }
+    return
+  }
   if (looking === st.looking) {
     if (looking && st.wantDivider) showDivider(st)
     return
@@ -212,19 +228,19 @@ export function untrackUnread(id: string): void {
 /** New lines in a terminal nobody is looking at (sidebar indicator); 0 otherwise. */
 export function unreadCount(id: string): number {
   const st = states.get(id)
-  return st !== undefined && !st.looking && st.marker !== undefined && !st.marker.isDisposed ? st.lines : 0
+  return st !== undefined && !exempt(id) && !st.looking && st.marker !== undefined && !st.marker.isDisposed ? st.lines : 0
 }
 
 /** Lines for the floating "jump" pill: shown while the divider is above the visible rows. */
 export function unreadPill(id: string): number {
   const st = states.get(id)
-  return st !== undefined && st.looking && st.above && st.marker !== undefined && !st.marker.isDisposed ? Math.max(1, st.lines) : 0
+  return st !== undefined && !exempt(id) && st.looking && st.above && st.marker !== undefined && !st.marker.isDisposed ? Math.max(1, st.lines) : 0
 }
 
 /** Scroll to the divider; false when there is none (or it already scrolled out of the scrollback). */
 export function jumpToUnread(id: string): boolean {
   const st = states.get(id)
-  if (st === undefined || st.marker === undefined || st.marker.isDisposed || !st.wantDivider) return false
+  if (st === undefined || exempt(id) || st.marker === undefined || st.marker.isDisposed || !st.wantDivider) return false
   st.rt.term.scrollToLine(st.marker.line)
   return true
 }

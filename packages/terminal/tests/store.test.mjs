@@ -97,13 +97,14 @@ test('openTerminal puts the newest window first, focused, and on top', () => {
   assert.ok(byId(b).z > byId(a).z)
 })
 
-test('openTerminal defaults: numbered title, auto-named, cascaded geometry', () => {
+test('openTerminal defaults: numbered title, auto-named, placed in free space', () => {
   const a = s.openTerminal({ cwd: 'C:\\a' })
   const b = s.openTerminal({ cwd: 'C:\\b' })
   assert.equal(byId(a).title, 'Terminal 1')
   assert.equal(byId(a).nameManual, false)
   assert.equal(byId(b).title, 'Terminal 2')
-  assert.ok(byId(b).x > byId(a).x && byId(b).y > byId(a).y)
+  const [ra, rb] = [byId(a), byId(b)]
+  assert.ok(rb.x >= ra.x + ra.w || ra.x >= rb.x + rb.w || rb.y >= ra.y + ra.h || ra.y >= rb.y + rb.h, 'the second window does not cover the first')
 })
 
 test('an explicit title makes the name manual; duplicate keeps shell, folder and startup', () => {
@@ -795,7 +796,7 @@ test('the registry finds a provider by id and by the command that starts it', ()
   assert.equal(claude.label, 'Claude')
   assert.equal(claude.glyph, '✦')
   for (const command of ['claude', 'claude --resume', '  claude --model sonnet']) assert.equal(s.providerForCommand(command), claude, command)
-  assert.deepEqual(s.providers.map((p) => p.id), ['claude'])
+  assert.deepEqual(s.providers.map((p) => p.id), ['claude', 'antigravity'])
 })
 
 test('a command that matches no provider is a plain shell command', () => {
@@ -848,6 +849,131 @@ test('duplicates and saved layouts start fresh conversations', () => {
   assert.equal(wins()[0].agentSession, undefined)
   s.saveLayout('conv')
   assert.ok(!JSON.stringify(s.getPrefs().layouts.find((l) => l.name === 'conv')).includes(SESSION))
+})
+
+// ── antigravity transitions, had-a-turn flag, conversation id on end ──
+
+const agy = (state, extra = {}) => ({ provider: 'antigravity', state, detail: '', ...extra })
+
+test('working then idle: the dot goes idle, nothing is raised, the state is kept', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, agy('working'))
+  assert.equal(rt.activity, 'working')
+  s.applyAgentSignal(rt, agy('idle'))
+  assert.equal(rt.agent.state, 'idle')
+  assert.equal(rt.agent.provider, 'antigravity')
+  assert.equal(rt.activity, 'idle')
+  assert.equal(rt.attention, false)
+  assert.equal(s.alertFor('working', agy('idle')), undefined)
+  assert.equal(s.deriveActivity({ conn: 'live', agent: rt.agent, hostBusy: true }), 'idle', 'idle is idle even with a program running')
+})
+
+test('blocked then idle: the prompt is gone, so the flag is cleared (agy skips working on a deny, Esc or sign-in)', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, agy('needs-you', { detail: 'Sign in required' }))
+  assert.equal(rt.attention, true)
+  s.applyAgentSignal(rt, agy('idle'))
+  assert.equal(rt.activity, 'idle')
+  assert.equal(rt.attention, false)
+})
+
+test('idle keeps a flag it did not answer: failed and finished stay until seen', () => {
+  for (const state of ['failed', 'finished']) {
+    const rt = terminalWithRuntime()
+    s.applyAgentSignal(rt, agy(state))
+    assert.equal(rt.attention, true, state)
+    s.applyAgentSignal(rt, agy('idle'))
+    assert.equal(rt.attention, true, state)
+  }
+})
+
+test('blocked then working: the flag is cleared and the dot goes back to working', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, agy('needs-you', { detail: 'Run command?' }))
+  assert.equal(rt.agent.state, 'needs-you')
+  assert.equal(rt.activity, 'needs-you')
+  assert.equal(rt.attention, true)
+  assert.equal(rt.attentionLevel, 'urgent')
+  s.applyAgentSignal(rt, agy('working'))
+  assert.equal(rt.agent.state, 'working')
+  assert.equal(rt.activity, 'working')
+  assert.equal(rt.attention, false)
+  assert.equal(rt.attentionLevel, null)
+  assert.equal(s.deriveActivity({ conn: 'live', agent: rt.agent, hostBusy: false }), 'working')
+})
+
+test('noteTurn: working, finished and failed mark the window as having had a turn; idle and needs-you do not', () => {
+  for (const state of ['working', 'finished', 'failed']) {
+    const rt = terminalWithRuntime()
+    s.applyAgentSignal(rt, agy(state))
+    assert.equal(byId(rt.id).hadTurn, true, state)
+  }
+  for (const state of ['idle', 'needs-you', 'ended']) {
+    const rt = terminalWithRuntime()
+    s.applyAgentSignal(rt, agy(state))
+    assert.equal(byId(rt.id).hadTurn, undefined, state)
+  }
+  // Restoring after a reload counts the same way.
+  const restored = terminalWithRuntime()
+  s.restoreAgent(restored, agy('finished'))
+  assert.equal(byId(restored.id).hadTurn, true)
+})
+
+test('hadTurn is saved with the window and survives hydrating it again', async () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, agy('working'))
+  const deadline = Date.now() + 10_000
+  const savedWin = () => JSON.parse(window.localStorage.getItem(LAYOUT_KEY) ?? '{"wins":[]}').wins.find((w) => w.id === rt.id)
+  while (savedWin()?.hadTurn !== true && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+  assert.equal(savedWin().hadTurn, true)
+  const f = await loadStore({ fresh: true })
+  window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({
+    wins: [goodWin('turned', { hadTurn: true }), goodWin('fresh'), goodWin('junk', { hadTurn: 'yes' }), goodWin('off', { hadTurn: false })],
+    zTop: 4,
+  }))
+  f.hydrate()
+  const had = (id) => f.getWins().find((w) => w.id === id).hadTurn
+  assert.equal(had('turned'), true)
+  assert.equal(had('fresh'), undefined)
+  assert.equal(had('junk'), undefined, 'only a real true is kept')
+  assert.equal(had('off'), undefined)
+  f.closeAll()
+  await settle()
+})
+
+test('sessionOnEnd: an ended signal stores its conversation for antigravity, not for claude', () => {
+  const agyWin = s.openTerminal({ cwd: 'C:\a', startup: 'agy' })
+  const agyRt = fakeRuntime(agyWin)
+  s.runtimes.set(agyWin, agyRt)
+  assert.equal(byId(agyWin).provider, 'antigravity')
+  s.applyAgentSignal(agyRt, agy('ended', { session: SESSION }))
+  assert.equal(byId(agyWin).agentSession, SESSION)
+
+  const claudeWin = s.openTerminal({ cwd: 'C:\a', startup: 'claude' })
+  const claudeRt = fakeRuntime(claudeWin)
+  s.runtimes.set(claudeWin, claudeRt)
+  s.applyAgentSignal(claudeRt, { ...signal('ended'), session: SESSION })
+  assert.equal(byId(claudeWin).agentSession, undefined)
+})
+
+test('an idle signal never stores its conversation, even for antigravity', () => {
+  const id = s.openTerminal({ cwd: 'C:\a', startup: 'agy' })
+  const rt = fakeRuntime(id)
+  s.runtimes.set(id, rt)
+  s.applyAgentSignal(rt, agy('idle', { session: SESSION }))
+  assert.equal(byId(id).agentSession, undefined)
+})
+
+test('an ended signal from another provider is not stored in an antigravity window', () => {
+  const id = s.openTerminal({ cwd: 'C:\a', startup: 'agy' })
+  const rt = fakeRuntime(id)
+  s.runtimes.set(id, rt)
+  s.applyAgentSignal(rt, { ...signal('working'), session: SESSION })
+  assert.equal(byId(id).agentSession, undefined)
+  s.applyAgentSignal(rt, agy('ended', { provider: 'gemini', session: SESSION }))
+  assert.equal(byId(id).agentSession, undefined)
+  s.applyAgentSignal(rt, agy('ended', { session: 'x; rm -rf ~' }))
+  assert.equal(byId(id).agentSession, undefined, 'an unsafe id is still refused')
 })
 
 // ── preferences added with attention ──
@@ -1155,4 +1281,50 @@ test('a provider that needs nothing launched ({}) counts as prepared; an unprepa
   } finally {
     globalThis.fetch = realFetch
   }
+})
+
+test('Antigravity: recognised by its command, path and exe title', () => {
+  const agy = s.providerById('antigravity')
+  assert.equal(agy.label, 'Antigravity')
+  assert.notEqual(agy.glyph, s.providerById('claude').glyph)
+  for (const c of ['agy', 'agy -c', '  agy --model x']) assert.equal(s.providerForCommand(c), agy, c)
+  for (const c of ['agyx', 'echo agy', 'C:\\bin\\agy.exe']) assert.equal(s.providerForCommand(c), undefined, c)
+  assert.equal(s.isAgentCommand('C:\\bin\\agy.exe --help'), true)
+  assert.equal(s.providerForTitle('C:\\Users\\me\\AppData\\Local\\agy\\agy.exe'), agy)
+  assert.deepEqual(agy.presets, ['agy', 'agy -c'])
+})
+
+test('showsSubagents: the Agents panel goes only when every open terminal is a provider without sub-agents', () => {
+  const agy = { provider: 'antigravity', startup: 'agy' }
+  const typedAgy = { provider: undefined, startup: 'agy -c' }
+  assert.equal(s.providerById('claude').subagents, true)
+  assert.equal(s.providerById('antigravity').subagents, undefined)
+  assert.equal(s.showsSubagents([agy]), false)
+  assert.equal(s.showsSubagents([agy, typedAgy]), false)
+  assert.equal(s.showsSubagents([agy, { provider: 'claude', startup: 'claude' }]), true, 'a Claude terminal beside it')
+  assert.equal(s.showsSubagents([{ provider: undefined, startup: 'claude --resume' }, agy]), true, 'order does not matter')
+  assert.equal(s.showsSubagents([agy, { provider: undefined, startup: 'npm test' }]), true, 'a plain shell command')
+  assert.equal(s.showsSubagents([agy, { provider: undefined, startup: undefined }]), true, 'a plain shell or ssh window')
+  assert.equal(s.showsSubagents([]), true, 'no terminals')
+})
+
+test('Antigravity launch: known id, else -c after a turn, else as typed; explicit flags stay', () => {
+  const agy = s.providerById('antigravity')
+  const id = 'd68c6b12-644d-4dea-93aa-b1ead1117390'
+  assert.equal(agy.launch('agy', {}, id, true), `agy --conversation ${id}`)
+  assert.equal(agy.launch('agy --model x', {}, id), `agy --conversation ${id} --model x`)
+  assert.equal(agy.launch('agy', {}, null, true), 'agy -c')
+  assert.equal(agy.launch('agy', {}, null, false), 'agy')
+  assert.equal(agy.launch('agy', {}, 'bad id; rm', false), 'agy')
+  for (const c of ['agy -c', 'agy --continue', 'agy --conversation abc', 'agy --conversation=abc']) assert.equal(agy.launch(c, {}, id, true), c, c)
+  assert.equal(agy.launch('npm test', {}, id, true), 'npm test')
+})
+
+test('Antigravity is ready once agy reported idle after the command was typed', () => {
+  const agy = s.providerById('antigravity')
+  const open = { readyState: WebSocket.OPEN }
+  assert.equal(agy.ready({ startupSentAt: undefined, socket: open, agent: { provider: 'antigravity', state: 'idle' } }, 0), false)
+  assert.equal(agy.ready({ startupSentAt: 1, socket: open, agent: undefined }, 0), false)
+  assert.equal(agy.ready({ startupSentAt: 1, socket: open, agent: { provider: 'antigravity', state: 'working' } }, 0), false)
+  assert.equal(agy.ready({ startupSentAt: 1, socket: open, agent: { provider: 'antigravity', state: 'idle' } }, 0), true)
 })

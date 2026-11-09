@@ -18,7 +18,8 @@ export async function cleanup() {
 }
 
 export function tempDir(prefix = 'dsh-ce-') {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
+  // .native expands 8.3 short names (RUNNER~1), matching the fs.promises.realpath the host code uses.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)))
   cleanups.push(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))
   return dir
 }

@@ -20,12 +20,21 @@ const documentStub = {
 }
 
 // React comes from the installed profile, exactly as the page's shared module
-// registry supplies it — the bundle must never carry its own copy.
+// registry supplies it — the bundle must never carry its own copy. A fresh checkout
+// or CI has no profile, so it falls back to the repo's development copy.
 const profileRequire = createRequire(
   pathToFileURL(join(process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh'), 'profiles', 'package.json')).href,
 )
-const React = await import(pathToFileURL(profileRequire.resolve('react')).href)
-const jsxRuntime = await import(pathToFileURL(profileRequire.resolve('react/jsx-runtime')).href)
+const repoRequire = createRequire(import.meta.url)
+const resolveDep = (id) => {
+  try {
+    return profileRequire.resolve(id)
+  } catch {
+    return repoRequire.resolve(id)
+  }
+}
+const React = await import(pathToFileURL(resolveDep('react')).href)
+const jsxRuntime = await import(pathToFileURL(resolveDep('react/jsx-runtime')).href)
 
 /** Registrations the bundle makes through the loader's module registry face. */
 const registrations = []

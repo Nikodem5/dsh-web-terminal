@@ -140,6 +140,7 @@ function cleanWin(raw: unknown, index: number): WinState | undefined {
     restore: isRect(raw.restore) ? { x: raw.restore.x, y: raw.restore.y, w: raw.restore.w, h: raw.restore.h } : undefined,
     gen: isNum(raw.gen) ? raw.gen : undefined,
     agentSession: typeof raw.agentSession === 'string' ? raw.agentSession : undefined,
+    hadTurn: raw.hadTurn === true ? true : undefined,
     cols: isGrid(raw.cols) ? raw.cols : undefined,
     rows: isGrid(raw.rows) ? raw.rows : undefined,
   }
