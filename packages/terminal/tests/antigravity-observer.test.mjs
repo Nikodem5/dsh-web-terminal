@@ -56,3 +56,25 @@ test('the exit hint is found across chunks and colour codes', () => {
 test('ordinary output yields nothing', () => {
   assert.deepEqual(run(['hello world\r\n', 'PS C:\\> ']), [])
 })
+
+test('an exit hint followed by an unterminated sequence in the same chunk is still found', () => {
+  const o = createAntigravityObserver()
+  const first = o.feed(`Resume with -c (or command below):\r\nagy --conversation=${ID}\r\n\x1b]7501;state=idle:app=antig`)
+  assert.deepEqual(first, [{ state: 'ended', detail: '', session: ID }])
+  // the open sequence is still completed by the next chunk
+  assert.deepEqual(o.feed('ravity\x07').map((s) => s.state), ['idle'])
+})
+
+test('an exit hint with no newline after it is found when the stream ends', () => {
+  const o = createAntigravityObserver()
+  assert.deepEqual(o.feed(`Resume with -c (or command below):\r\n\x1b[2magy --conversation=${ID}\x1b[0m`), [])
+  assert.deepEqual(o.end(), [{ state: 'ended', detail: '', session: ID }])
+  assert.deepEqual(o.end(), [], 'the tail is consumed once')
+})
+
+test('end() on ordinary or empty output yields nothing', () => {
+  const o = createAntigravityObserver()
+  assert.deepEqual(o.end(), [])
+  o.feed('Resume reading the --conversation= flag docs')
+  assert.deepEqual(o.end(), [])
+})

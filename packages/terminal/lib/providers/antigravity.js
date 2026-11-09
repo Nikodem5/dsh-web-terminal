@@ -14,6 +14,10 @@ const HINT_TAIL = 160
 const OSC_START = '\x1b]7501;'
 /** `agy --conversation=<id>` as printed after "Resume with -c (or command below):". */
 const HINT = /--conversation=([A-Za-z0-9][A-Za-z0-9-]{7,63})(?=[\r\n])/
+/** The same hint as the very last thing the stream printed (no newline after it). */
+const HINT_AT_END = /--conversation=([A-Za-z0-9][A-Za-z0-9-]{7,63})\s*$/
+/** SGR colour sequences, which agy puts around the hint. */
+const SGR = /\x1b\[[0-9;]*m/g
 /** How agy's states map to neutral ones; anything else is ignored. */
 const STATES = { working: 'working', blocked: 'needs-you', done: 'finished', failed: 'failed', idle: 'idle' }
 
@@ -43,10 +47,18 @@ function signalOf(body) {
   return signal
 }
 
+/** The exit hint in `text` as an `ended` signal, or undefined. `pattern` is HINT or HINT_AT_END. */
+function hintIn(text, pattern) {
+  const plain = text.includes('\x1b[') ? text.replace(SGR, '') : text
+  const hint = pattern.exec(plain)
+  return hint === null ? undefined : { state: 'ended', detail: '', session: hint[1] }
+}
+
 /**
  * A parser for one terminal's output. Stateful (a sequence or the hint may be split across chunks)
  * and never throws.
- * @returns `feed(text)`: the signals found in that chunk, in order (usually none).
+ * @returns `feed(text)`: the signals found in that chunk, in order (usually none); `end()`: the
+ *   signals still held in the retained tail once the stream is over (an exit hint with no newline after it).
  */
 export function createAntigravityObserver() {
   let tail = ''
@@ -57,6 +69,8 @@ export function createAntigravityObserver() {
         tail = ''
         const signals = []
         let rest = data
+        /** An unterminated sequence at the end of the chunk, kept for the next one. */
+        let open = ''
         let at = rest.indexOf(OSC_START)
         while (at !== -1) {
           const bodyAt = at + OSC_START.length
@@ -64,9 +78,11 @@ export function createAntigravityObserver() {
           const st = rest.indexOf('\x1b\\', bodyAt)
           const end = bel === -1 ? st : st === -1 ? bel : Math.min(bel, st)
           if (end === -1) {
-            // Unterminated: keep it for the next chunk unless it is too long to be real.
-            tail = rest.length - at > MAX_SEQUENCE ? '' : rest.slice(at)
-            return signals
+            // Unterminated: keep it for the next chunk unless it is too long to be real. The text in
+            // front of it is still read for the exit hint below.
+            open = rest.length - at > MAX_SEQUENCE ? '' : rest.slice(at)
+            rest = rest.slice(0, at)
+            break
           }
           const signal = signalOf(rest.slice(bodyAt, end))
           if (signal !== undefined) signals.push(signal)
@@ -74,13 +90,16 @@ export function createAntigravityObserver() {
           at = rest.indexOf(OSC_START)
         }
         if (rest.includes('onversation') || rest.includes('Resume')) {
-          const plain = rest.includes('\x1b[') ? rest.replace(/\x1b\[[0-9;]*m/g, '') : rest
-          const hint = HINT.exec(plain)
-          if (hint !== null) {
-            signals.push({ state: 'ended', detail: '', session: hint[1] })
+          const ended = hintIn(rest, HINT)
+          if (ended !== undefined) {
+            signals.push(ended)
+            tail = open
             return signals
           }
-          tail = rest.slice(-HINT_TAIL)
+          // An open sequence follows the text, so a hint in it can no longer be continued by later output.
+          tail = open !== '' ? open : rest.slice(-HINT_TAIL)
+        } else if (open !== '') {
+          tail = open
         } else if (/\x1b(?:\](?:7(?:5(?:0(?:1)?)?)?)?)?$/.test(rest)) {
           // The start of a sequence cut in the middle of its prefix.
           tail = rest.slice(-OSC_START.length)
@@ -88,6 +107,16 @@ export function createAntigravityObserver() {
           tail = rest.slice(-HINT_TAIL)
         }
         return signals
+      } catch {
+        tail = ''
+        return []
+      }
+    },
+    end() {
+      try {
+        const ended = tail === '' ? undefined : hintIn(tail, HINT_AT_END)
+        tail = ''
+        return ended === undefined ? [] : [ended]
       } catch {
         tail = ''
         return []
