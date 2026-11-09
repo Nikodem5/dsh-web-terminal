@@ -40,6 +40,7 @@ import { createEdits } from './edits.js'
 import { OpenError, createOpener } from './open.js'
 import { MAX_CANDIDATES, linuxCwd, resolveCandidates } from './paths.js'
 import { createTokenTotals } from './token-totals.js'
+import { createCommandCache } from './command-cache.js'
 import { createUsage } from './usage.js'
 import { createSelfUpdate } from './self-update.js'
 import { safeCall } from './shared/safe-call.js'
@@ -262,6 +263,9 @@ async function findSsh() {
   sshFound ??= await resolveOnPath('ssh')
   return sshFound
 }
+
+/** Agent CLI lookups for the info route: a found path is kept, a miss is retried after 30 s (each lookup spawns a lister). */
+const agentCommands = createCommandCache({ resolve: resolveOnPath })
 
 /** The ssh part of a terminal request: the query parameters, unchecked (shellSpec validates). */
 function sshRequest(params) {
@@ -666,7 +670,7 @@ function apply(ctx) {
         await Promise.all(
           registry.list().map(async (provider) => {
             let path
-            for (const command of provider.commands) if ((path = await resolveOnPath(command)) !== undefined) break
+            for (const command of provider.commands) if ((path = await agentCommands.find(command)) !== undefined) break
             // No prepare step: nothing to inject, so the client can launch it as typed ({} = ready, null = files could not be written).
             const launch = provider.prepare === undefined ? {} : (prepared.get(provider.id)?.launch ?? null)
             return [provider.id, { available: path !== undefined, path: path ?? null, launch }]
