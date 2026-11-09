@@ -14,6 +14,8 @@ import { Pop } from './popover.tsx'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { SendMenu } from './send-menu.tsx'
 import { Notices } from './notice-view.tsx'
+import { isModalOpen, setModalOpen } from './modal.ts'
+import { getSendRequest } from './send-to.ts'
 import { reviewFolder, showReview } from './code-editor.ts'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
@@ -521,7 +523,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
         return
       }
       const action = windowShortcut(e)
-      if (action === null) return
+      if (action === null || isModalOpen() || getSendRequest() !== null) return // a dialog / panel / menu owns the keys
       e.preventDefault()
       e.stopPropagation()
       const current = getFocusId()
@@ -552,6 +554,15 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  useLayoutEffect(() => {
+    setModalOpen('dialog', dialog !== null)
+    return () => setModalOpen('dialog', false)
+  }, [dialog !== null])
+  useLayoutEffect(() => {
+    setModalOpen('help', menu === 'help')
+    return () => setModalOpen('help', false)
+  }, [menu === 'help'])
 
   useEffect(() => {
     if (menu === null) return
