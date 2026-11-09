@@ -312,3 +312,10 @@ test('POST /open: spawns through the fake, returns errors as JSON', async () => 
   assert.equal((await call(url, 'POST', '[]')).status, 400)
   assert.equal(spawned.length, 1)
 })
+
+test('resolveCandidates: a stat that never answers (dead network share) does not hold the others back', async () => {
+  const statFn = (path) => (path.includes('dead') ? new Promise(() => {}) : Promise.resolve({ isDirectory: () => false }))
+  const r = await resolveCandidates(['/dead/share/a.ts', '/ok/b.ts'], { cwd: '/', home: '/home' }, statFn, 30)
+  assert.equal(r[0].path, null)
+  assert.match(r[1].path, /b.ts$/)
+})
