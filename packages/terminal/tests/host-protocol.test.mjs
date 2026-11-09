@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 
 // The plugin writes its Claude settings file under DSH_HOME; keep tests out of the real one.
 const testHome = join(dirname(fileURLToPath(import.meta.url)), '..', '.test-home')
@@ -65,6 +66,7 @@ before(async () => {
         return handle
       },
     },
+    on: () => () => {},
     effect: (fn) => { teardown = fn(); return () => {} },
   })
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
@@ -87,7 +89,7 @@ const freshId = () => `t${Date.now()}x${++seq}`
 /** Connect and collect frames; resolves after the socket opens. */
 function connect(query) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`)
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`, authed())
     const frames = []
     const closed = new Promise((res) => ws.on('close', (code) => res(code)))
     ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))
@@ -108,7 +110,7 @@ const until = async (predicate, ms = 20000) => {
 const infoOf = () =>
   new Promise((resolve) => {
     const info = routes.http.find((r) => r.path === '/api/dsh-web-terminal/info')
-    info.handler({ method: 'GET' }, { writeHead() {}, end: (payload) => resolve(JSON.parse(payload)) })
+    info.handler(localReq(), { writeHead() {}, end: (payload) => resolve(JSON.parse(payload)) })
   })
 
 test('connecting without an id is refused', async () => {

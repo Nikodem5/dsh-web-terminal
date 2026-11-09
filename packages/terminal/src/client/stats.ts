@@ -4,6 +4,7 @@
 // Polling runs only while at least one bar is mounted and the page is visible.
 
 import { parseStats } from './stats-format.ts'
+import { withAuth } from '../../../shared/client/local-auth.ts'
 import type { HostStats } from './stats-format.ts'
 
 const ENDPOINT = '/api/dsh-web-terminal/stats'
@@ -44,7 +45,7 @@ async function poll(): Promise<void> {
   if (inflight) return
   inflight = true
   try {
-    const res = await fetch(ENDPOINT, { headers: { accept: 'application/json' } })
+    const res = await fetch(ENDPOINT, { headers: withAuth({ accept: 'application/json' }) })
     if (!res.ok) return fail()
     const stats = parseStats(await res.json())
     if (stats === undefined) return fail()

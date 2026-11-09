@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 
 const home = mkdtempSync(join(tmpdir(), 'dsh-wt-races-'))
 process.env.DSH_HOME = home
@@ -54,6 +55,7 @@ async function startHost({ spawn, handleOverrides } = {}) {
         return handle
       },
     },
+    on: () => () => {},
     effect: (fn) => { teardown = fn(); return () => {} },
   })
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
@@ -66,12 +68,12 @@ async function startHost({ spawn, handleOverrides } = {}) {
     stop() { teardown(); http.close() },
     info: () =>
       new Promise((resolve) => {
-        routes.http.find((r) => r.path === '/api/dsh-web-terminal/info').handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) })
+        routes.http.find((r) => r.path === '/api/dsh-web-terminal/info').handler(localReq(), { writeHead() {}, end: (p) => resolve(JSON.parse(p)) })
       }),
     /** Open a socket; resolves on open with the frames collected so far and later. */
     connect(query) {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`)
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`, authed())
         const frames = []
         const closed = new Promise((res) => ws.on('close', (code) => res(code)))
         ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))

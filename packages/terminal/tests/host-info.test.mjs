@@ -7,6 +7,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 
 const home = mkdtempSync(join(tmpdir(), 'dsh-wt-info-'))
 process.env.DSH_HOME = home
@@ -32,10 +33,11 @@ function info() {
   apply(strictCtx({
     webServer: { register: (r) => { routes.push(r); return () => {} }, registerUpgrade: () => () => {} },
     subprocess: { spawnTerminal: async () => { throw new Error('unused') } },
+    on: () => () => {},
     effect: (fn) => { stops.push(fn()); return () => {} },
   }))
   const route = routes.find((r) => r.path === '/api/dsh-web-terminal/info')
-  return new Promise((resolve) => route.handler({ method: 'GET' }, { writeHead() {}, end: (payload) => resolve(JSON.parse(payload)) }))
+  return new Promise((resolve) => route.handler(localReq(), { writeHead() {}, end: (payload) => resolve(JSON.parse(payload)) }))
 }
 
 test('/info reports the plugin version from package.json', async () => {

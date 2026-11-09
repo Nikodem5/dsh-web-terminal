@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 
 const home = mkdtempSync(join(tmpdir(), 'dsh-wt-resilience-'))
 process.env.DSH_HOME = home
@@ -46,6 +47,7 @@ async function attach(ctxParts) {
     apply(strictCtx({
       webServer: { registerUpgrade: (r) => { upgrades.push(r); return () => {} }, ...ctxParts.webServer },
       subprocess: { spawnTerminal: async () => fakeHandle() },
+      on: () => () => {},
       effect: (fn) => { teardowns.push(fn()); return () => {} },
     }))
   } finally {
@@ -55,7 +57,7 @@ async function attach(ctxParts) {
   http.on('upgrade', (req, socket, head) => upgrades[0].handler(req, socket, head))
   await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
   stops.push(() => { for (const t of teardowns) t(); http.close() })
-  const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?id=r${Date.now()}&shell=cmd&cols=80&rows=24`)
+  const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?id=r${Date.now()}&shell=cmd&cols=80&rows=24`, authed())
   const frame = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('no frame: terminal stuck on connecting')), 30_000)
     ws.on('message', (raw) => { clearTimeout(timer); resolve(JSON.parse(String(raw))) })

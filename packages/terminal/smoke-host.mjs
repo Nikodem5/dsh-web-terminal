@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply, name, inject } from './lib/index.js'
+import { bootToken } from './lib/shared/local-auth.js'
 
 /** The real local subprocess provider, loaded from the installed profile. */
 const home = process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh')
@@ -33,6 +34,7 @@ const provider = new LocalSubprocessRuntime({
   // surface its constructor touches.
   reflect: { provide() {}, get: () => undefined },
   get: () => undefined,
+  on: () => () => {},
   effect: (fn) => fn(),
   logger: console,
   on: () => () => {},
@@ -75,7 +77,7 @@ if (info === undefined || upgrade === undefined) {
 /** Call the /info handler with a minimal response stub. */
 function getInfo() {
   return new Promise((resolve) => {
-    info.handler({ method: 'GET' }, { writeHead() {}, end(payload) { resolve(JSON.parse(payload)) } })
+    info.handler({ method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers: { host: '127.0.0.1', authorization: `Bearer ${bootToken()}` } }, { writeHead() {}, end(payload) { resolve(JSON.parse(payload)) } })
   })
 }
 
@@ -95,7 +97,7 @@ const base = `ws://127.0.0.1:${port}/terminal/ws?id=${sessionId}&cols=100&rows=3
 /** Open one socket; resolve once `until(out)` holds or 30s pass. */
 function session(url, onOpen, until) {
   return new Promise((resolve) => {
-    const ws = new WebSocket(url)
+    const ws = new WebSocket(url, { headers: { authorization: `Bearer ${bootToken()}` } })
     const out = { text: '', frames: [] }
     const finish = () => {
       clearTimeout(timer)

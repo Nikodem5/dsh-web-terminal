@@ -6,6 +6,7 @@
 
 import type { IBuffer, IBufferRange, ILink, ILinkDecorations } from '@xterm/xterm'
 import { emit, persistSoon, prefs, store } from './state.ts'
+import { withAuth } from '../../../shared/client/local-auth.ts'
 import { findPaths } from './paths.ts'
 import { openInEditor } from './code-editor.ts'
 import type { PathMatch } from './paths.ts'
@@ -105,7 +106,7 @@ export function createChecker(getContext: () => { terminalId: string; cwd: strin
     try {
       const res = await fetch(PATHS_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        headers: withAuth({ 'content-type': 'application/json', accept: 'application/json' }),
         body: JSON.stringify({ terminalId, cwd, candidates }),
       })
       const body = res.ok ? await res.json() : undefined
@@ -182,7 +183,7 @@ export async function openPath(rt: Runtime, path: string, line?: number, col?: n
   try {
     const res = await fetch(OPEN_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      headers: withAuth({ 'content-type': 'application/json', accept: 'application/json' }),
       body: JSON.stringify({ path, line, col, target, template: prefs.pathTemplate }),
     })
     const body = await res.json().catch(() => undefined)

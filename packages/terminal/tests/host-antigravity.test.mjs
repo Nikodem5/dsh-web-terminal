@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 import { registry } from '../lib/providers/index.js'
 
 const testHome = join(dirname(fileURLToPath(import.meta.url)), '..', '.test-home-antigravity')
@@ -45,6 +46,7 @@ before(async () => {
   apply(strictCtx({
     webServer: { register: () => () => {}, registerUpgrade: (route) => { routes.upgrade.push(route); return () => {} } },
     subprocess: { spawnTerminal: async (spec) => { const handle = fakeHandle(); spawned.push({ spec, handle }); return handle } },
+    on: () => () => {},
     effect: (fn) => { teardown = fn(); return () => {} },
   }))
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
@@ -73,7 +75,7 @@ const until = async (predicate, ms = 20000) => {
 }
 
 async function open(query = '', id = `ag${Date.now()}x${++seq}`) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?id=${id}${query}`)
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?id=${id}${query}`, authed())
   const frames = []
   ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))
   await new Promise((resolve, reject) => { ws.on('open', resolve); ws.on('error', reject) })

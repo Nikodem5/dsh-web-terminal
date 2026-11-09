@@ -10,6 +10,7 @@
 
 import { cleanSsh, cleanSshList } from './ssh.ts'
 import { providerById, providerForCommand } from './providers.ts'
+import { withAuth } from '../../../shared/client/local-auth.ts'
 import type { FontPrefs, HostInfo, LayoutWin, Prefs, Rect, Runtime, SavedLayout, Store, WinState } from './types.ts'
 
 // ── persistence ────────────────────────────────────────────────────────────
@@ -255,7 +256,7 @@ export function loadHostInfo(): void {
   infoRequested = true
   const seq = ++infoSeq
   infoPending = true
-  infoDone = fetch('/api/dsh-web-terminal/info', { headers: { accept: 'application/json' } })
+  infoDone = fetch('/api/dsh-web-terminal/info', { headers: withAuth({ accept: 'application/json' }) })
     .then((response) => (response.ok ? response.json() : undefined))
     .then((info: HostInfo | undefined) => {
       if (seq !== infoSeq) return // superseded by a refresh

@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 
 const testHome = join(dirname(fileURLToPath(import.meta.url)), '..', '.test-home-subagents')
 process.env.DSH_HOME = testHome
@@ -50,6 +51,7 @@ before(async () => {
         return handle
       },
     },
+    on: () => () => {},
     effect: (fn) => { teardown = fn(); return () => {} },
   })
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
@@ -71,7 +73,7 @@ const freshId = () => `s${Date.now()}x${++seq}`
 
 function connect(query) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`)
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`, authed())
     const frames = []
     ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))
     ws.on('open', () => resolve({ ws, frames }))
@@ -91,7 +93,7 @@ const until = async (predicate, ms = 20000) => {
 const infoOf = () =>
   new Promise((resolve) => {
     const info = routes.http.find((r) => r.path === '/api/dsh-web-terminal/info')
-    info.handler({ method: 'GET' }, { writeHead() {}, end: (payload) => resolve(JSON.parse(payload)) })
+    info.handler(localReq(), { writeHead() {}, end: (payload) => resolve(JSON.parse(payload)) })
   })
 
 let cachedSettings

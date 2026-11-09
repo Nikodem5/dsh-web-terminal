@@ -15,7 +15,8 @@ import { gitToolRoutes } from './git-tools.js' // git tools block: commit, branc
 import { findRepos } from './repos.js'
 import { createWatchers } from './watcher.js'
 import { RAW, searchRoutes } from './search-routes.js'
-import { originAllowed, parseExtraOrigins } from './shared/origin.js'
+import { parseExtraOrigins } from './shared/origin.js'
+import { checkAccess, exposeToken, refuseUpgrade, selectProtocol } from './shared/local-auth.js'
 import { safeCall } from './shared/safe-call.js'
 
 /** Stable cordis plugin name. */
@@ -124,7 +125,8 @@ function apply(ctx, options) {
         path: `${API}${path}`,
         handler: async (req, res) => {
           try {
-            if (!originAllowed(req.headers.origin, req.headers.host, extraOrigins)) throw new EditorError(403, 'origin', 'Origin not allowed')
+            const access = checkAccess(req, extraOrigins)
+            if (!access.ok) throw new EditorError(access.status, access.code, access.error)
             const handler = handlers[req.method ?? '']
             if (handler === undefined) {
               res.setHeader?.('allow', Object.keys(handlers).join(', '))
@@ -311,7 +313,9 @@ function apply(ctx, options) {
 
   // WebSocket: connection listener first, upgrade route registered last (an upgrade must never reach a server
   // nobody listens on).
-  const server = new WebSocketServer({ noServer: true, maxPayload: 4096 })
+  const server = new WebSocketServer({ noServer: true, maxPayload: 4096, handleProtocols: selectProtocol })
+  // The token reaches the page through the harness's index-inject table (shared with the terminal plugin).
+  const disposeToken = optional('access token', () => exposeToken(ctx))
   const beat = setInterval(() => {
     for (const client of server.clients) {
       if (client.isAlive === false) {
@@ -351,7 +355,8 @@ function apply(ctx, options) {
     path: WS_PATH,
     handler: (req, socket, head) => {
       socket.on('error', () => {})
-      if (!originAllowed(req.headers.origin, req.headers.host, extraOrigins)) return reject(socket, 403, 'Forbidden')
+      const access = checkAccess(req, extraOrigins)
+      if (!access.ok) return refuseUpgrade(socket, access)
       if (disposed || server.clients.size >= MAX_SOCKETS) return reject(socket, 503, 'Service Unavailable')
       const url = new URL(req.url ?? '/', 'http://localhost')
       rootOf(url.searchParams.get('root') ?? '')
@@ -372,6 +377,7 @@ function apply(ctx, options) {
     clearInterval(beat)
     for (const dispose of disposers) safeCall(dispose)
     safeCall(disposeUpgrade)
+    safeCall(disposeToken)
     safeCall(() => watchers.dispose())
     for (const client of server.clients) safeCall(() => client.terminate())
     safeCall(() => server.close())

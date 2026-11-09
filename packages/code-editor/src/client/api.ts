@@ -2,6 +2,7 @@
 
 import { gitToolsApi, type GitToolsApi } from './git-api.ts'
 import type { FileData, GitDiff, GitStatus, RepoList, RootInfo, SearchQuery, SearchResponse, TreeEntry } from './types.ts'
+import { withAuth } from '../../../shared/client/local-auth.ts'
 
 export const API_BASE = '/api/dsh-code-editor'
 
@@ -63,7 +64,7 @@ export function createApi(fetchImpl?: FetchLike): Api {
     try {
       res = await doFetch(`${API_BASE}${path}`, {
         method: init?.method ?? 'GET',
-        headers: init?.body !== undefined ? { 'content-type': 'application/json', accept: 'application/json' } : { accept: 'application/json' },
+        headers: withAuth(init?.body !== undefined ? { 'content-type': 'application/json', accept: 'application/json' } : { accept: 'application/json' }),
         body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
         signal: init?.signal,
       })
@@ -112,7 +113,7 @@ export function createApi(fetchImpl?: FetchLike): Api {
     },
     raw: async (root, path) => {
       let res
-      try { res = await doFetch(`${API_BASE}/raw?${q({ root, path })}`, { method: 'GET', headers: {} }) } catch (e) { throw new ApiError(e instanceof Error ? e.message : String(e), 0, 'network') }
+      try { res = await doFetch(`${API_BASE}/raw?${q({ root, path })}`, { method: 'GET', headers: withAuth() }) } catch (e) { throw new ApiError(e instanceof Error ? e.message : String(e), 0, 'network') }
       if (!res.ok || typeof res.blob !== 'function') throw new ApiError(`HTTP ${res.status}`, res.status)
       return res.blob()
     },

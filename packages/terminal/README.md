@@ -457,6 +457,10 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
 
 ## Notes and limits
 
+- **Access control**: every route (`info`, `stats`, `paths`, `open`, `update`, `relaunch`) and the terminal socket accept only a loopback peer
+  with a loopback `Host` and the per-boot token the host puts into the page (`Authorization: Bearer`, or the `dsh-wt.<token>` WebSocket
+  subprotocol). A tunnel, reverse proxy or `--host 0.0.0.0` therefore does not expose a shell. The token changes on every start, so reload
+  the page after the harness restarts. Details in `SECURITY.md`.
 - **Desktop WebSocket address**: the page is served from `dsh-app://app`, so the client connects to
   `__DSH_TRANSPORT__.streamBaseUrl` (the loopback host origin); the app adds the auth cookie.
 - **Agent state** is reported, not inferred (see *Agent signals*). The only inferred fact is "does the shell have a

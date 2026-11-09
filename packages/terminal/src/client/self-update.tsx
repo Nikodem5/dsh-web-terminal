@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import { runtimes } from './terminal-store.ts'
+import { withAuth } from '../../../shared/client/local-auth.ts'
 
 const UPDATE = '/api/dsh-web-terminal/update'
 const RELAUNCH = '/api/dsh-web-terminal/relaunch'
@@ -29,7 +30,7 @@ interface UpdateStatus {
 
 async function request(url: string, method: 'GET' | 'POST'): Promise<Record<string, unknown> | null> {
   try {
-    const res = await fetch(url, { method, headers: { accept: 'application/json' } })
+    const res = await fetch(url, { method, headers: withAuth({ accept: 'application/json' }) })
     return (await res.json()) as Record<string, unknown>
   } catch {
     return null

@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 import { registry } from '../lib/providers/index.js'
 
 const testHome = join(dirname(fileURLToPath(import.meta.url)), '..', '.test-home-providers')
@@ -70,6 +71,7 @@ before(async () => {
       registerUpgrade: (route) => { routes.upgrade.push(route); return () => {} },
     },
     subprocess: { spawnTerminal: async (spec) => { const handle = fakeHandle(); spawned.push({ spec, handle }); return handle } },
+    on: () => () => {},
     effect: (fn) => { teardown = fn(); return () => {} },
   }))
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
@@ -100,7 +102,7 @@ const until = async (predicate, ms = 20000) => {
 
 function connect(query) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`)
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`, authed())
     const frames = []
     ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))
     ws.on('open', () => resolve({ ws, frames }))
@@ -110,7 +112,7 @@ function connect(query) {
 
 const info = () => {
   const route = routes.http.find((r) => r.path === '/api/dsh-web-terminal/info')
-  return new Promise((resolve) => route.handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
+  return new Promise((resolve) => route.handler(localReq(), { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
 }
 
 async function post(path, token, body) {

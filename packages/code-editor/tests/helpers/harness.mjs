@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { WebSocket } from 'ws'
 import { apply } from '../../lib/index.js'
+import { authed, authHeaders } from './local-auth.mjs'
 
 export const cleanups = []
 export async function cleanup() {
@@ -52,6 +53,7 @@ export async function startHost(options = {}) {
   const teardowns = []
   const order = []
   const ctx = strictCtx({
+    on: () => () => {},
     webServer: {
       register: (route) => {
         routes.set(route.path, route)
@@ -107,7 +109,7 @@ export async function startHost(options = {}) {
       for (const [k, v] of Object.entries(query ?? {})) url.searchParams.set(k, v)
       const response = await fetch(url, {
         method,
-        headers: { ...(body !== undefined || rawBody !== undefined ? { 'content-type': contentType } : {}), ...headers },
+        headers: authHeaders({ ...(body !== undefined || rawBody !== undefined ? { 'content-type': contentType } : {}), ...headers }),
         body: rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),
       })
       return { status: response.status, json: await response.json(), headers: response.headers }
@@ -122,7 +124,7 @@ export async function startHost(options = {}) {
     /** Open a socket and collect frames. */
     async socket(root, { origin, path = '/code-editor/ws' } = {}) {
       const url = `ws://127.0.0.1:${port}${path}?root=${encodeURIComponent(root)}`
-      const ws = new WebSocket(url, origin === undefined ? undefined : { origin })
+      const ws = new WebSocket(url, authed(origin === undefined ? {} : { origin }))
       const frames = []
       ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))
       const opened = new Promise((resolve, reject) => {

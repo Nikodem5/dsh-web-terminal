@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { WebSocket } from 'ws'
 import { createServer } from 'node:http'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 
 const root = mkdtempSync(join(tmpdir(), 'dsh-wt-stats-'))
 after(() => {
@@ -64,9 +65,10 @@ async function startHost({ env = {}, home = mkdtempSync(join(root, 'home')) } = 
       registerUpgrade: (route) => { routes.upgrade.push(route); return () => {} },
     },
     subprocess: { spawnTerminal: async (spec) => { const handle = fakeHandle(); spawned.push({ spec, handle }); return handle } },
+    on: () => () => {},
     effect: (fn) => { teardown = fn(); return () => {} },
   })
-  const call = (path) => new Promise((resolve) => routes.http.find((r) => r.path === path).handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
+  const call = (path) => new Promise((resolve) => routes.http.find((r) => r.path === path).handler(localReq(), { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
   const stats = () => call('/api/dsh-web-terminal/stats')
   await stats() // waits for the signal server and settings file
   for (const [key, value] of Object.entries(saved)) {
@@ -87,7 +89,7 @@ async function startHost({ env = {}, home = mkdtempSync(join(root, 'home')) } = 
     stop() { if (stopped) return; stopped = true; teardown(); http.close() },
     /** Open a terminal; resolves with its secret once the host has created it. */
     async terminal() {
-      const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?id=t${++n}`)
+      const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?id=t${++n}`, authed())
       const attached = new Promise((resolve) => ws.on('message', (raw) => JSON.parse(String(raw)).type === 'attached' && resolve()))
       await attached
       return { ws, token: spawned.at(-1).spec.env.DSH_WT_TOKEN }

@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 import { EDIT_MATCHER, MAX_EDITS, createEdits, parseEdit } from '../lib/edits.js'
 import { buildClaudeSettings } from '../lib/providers/claude.js'
 
@@ -45,6 +46,7 @@ before(async () => {
       registerUpgrade: (route) => { routes.upgrade.push(route); return () => {} },
     },
     subprocess: { spawnTerminal: async (spec) => { const handle = fakeHandle(); spawned.push({ spec, handle }); return handle } },
+    on: () => () => {},
     effect: (fn) => { teardown = fn(); return () => {} },
   }))
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
@@ -74,7 +76,7 @@ const until = async (predicate, ms = 20000) => {
 
 function connect(query) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`)
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`, authed())
     const frames = []
     ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))
     ws.on('open', () => resolve({ ws, frames }))
@@ -86,7 +88,7 @@ let cachedSettings
 async function settings() {
   if (cachedSettings) return cachedSettings
   const route = routes.http.find((r) => r.path === '/api/dsh-web-terminal/info')
-  const { providers } = await new Promise((resolve) => route.handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
+  const { providers } = await new Promise((resolve) => route.handler(localReq(), { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
   cachedSettings = JSON.parse(readFileSync(providers.claude.launch.settingsPath, 'utf8'))
   return cachedSettings
 }

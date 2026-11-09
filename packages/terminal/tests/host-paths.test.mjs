@@ -3,6 +3,7 @@
 //
 //   npm test   (or: node --test tests/host-paths.test.mjs)
 
+import { localReq } from './helpers/local-auth.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -236,6 +237,7 @@ function startRoutes() {
   apply({
     webServer: { register: (r) => { routes.push(r); return () => {} }, registerUpgrade: () => () => {} },
     subprocess: { spawnTerminal: async () => { throw new Error('unused') } },
+    on: () => () => {},
     effect: (fn) => { teardown = fn() },
   })
   teardowns.push(teardown, () => setSpawnForTests(undefined))
@@ -243,6 +245,8 @@ function startRoutes() {
     new Promise((resolve) => {
       const req = new EventEmitter()
       req.method = method
+      req.socket = localReq().socket
+      req.headers = localReq().headers
       const res = {
         writeHead(status) { this.status = status },
         end(payload) { resolve({ status: this.status, body: JSON.parse(payload) }) },

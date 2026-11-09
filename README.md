@@ -60,7 +60,7 @@ the profile tree do not get their browser half loaded.
 ## How it works
 
 Each plugin has a host half (a Node module mounted in the DSH server: PTY sessions, file and git routes, WebSockets)
-and a client half (a bundle loaded into the app UI). Servers listen on loopback only and check the Origin of browsers.
+and a client half (a bundle loaded into the app UI). Every route and socket accepts only loopback peers and Hosts and requires a per-boot token (see SECURITY.md).
 No data leaves your machine except what the agents you run in a terminal (Claude Code, Antigravity CLI) send themselves.
 
 ## Security notes

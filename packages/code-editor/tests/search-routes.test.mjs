@@ -1,3 +1,4 @@
+import { authHeaders } from './helpers/local-auth.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -196,7 +197,7 @@ test('raw: images only, size cap, confinement, safe headers', async () => {
   const get = (query) => {
     const url = new URL(`http://127.0.0.1:${host.port}/api/dsh-code-editor/raw`)
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v)
-    return fetch(url)
+    return fetch(url, { headers: authHeaders() })
   }
   const status = async (query) => {
     const res = await get(query)

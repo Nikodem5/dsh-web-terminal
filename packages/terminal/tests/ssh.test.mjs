@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 import { parseQuickConnect, sshArgs, validateSsh, MAX_COMMAND } from '../lib/ssh-target.js'
 import { createSshHosts, parseSshConfig } from '../lib/ssh-config.js'
 import { shellSpec } from '../lib/shells.js'
@@ -221,6 +222,7 @@ async function host() {
   apply(strictCtx({
     webServer: { register: (r) => { routes.push(r); return () => {} }, registerUpgrade: (r) => { upgrades.push(r); return () => {} } },
     subprocess: { spawnTerminal: async (spec) => { spawned.push(spec); return fakeHandle() } },
+    on: () => () => {},
     effect: (fn) => { teardowns.push(fn()); return () => {} },
   }))
   const http = createServer()
@@ -229,13 +231,13 @@ async function host() {
   stops.push(() => { for (const t of teardowns) t(); http.close() })
   const connect = (query) =>
     new Promise((resolve, reject) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?${query}`)
+      const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?${query}`, authed())
       const frames = []
       const timer = setTimeout(() => reject(new Error('no frame')), 30_000)
       ws.on('message', (raw) => { clearTimeout(timer); frames.push(JSON.parse(String(raw))); resolve({ ws, frames }) })
       ws.on('error', (e) => { clearTimeout(timer); reject(e) })
     })
-  const info = () => new Promise((resolve) => routes.find((r) => r.path === '/api/dsh-web-terminal/info').handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
+  const info = () => new Promise((resolve) => routes.find((r) => r.path === '/api/dsh-web-terminal/info').handler(localReq(), { writeHead() {}, end: (p) => resolve(JSON.parse(p)) }))
   return { spawned, connect, info }
 }
 

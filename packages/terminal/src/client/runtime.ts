@@ -3,6 +3,7 @@
 
 import { isMissionShortcut, isOverview } from './mission.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
+import { socketProtocols } from '../../../shared/client/local-auth.ts'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -308,7 +309,7 @@ export function ensureRuntime(win: WinState): Runtime {
     const fitted = rt.opened && dims !== undefined && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)
     params.set('cols', String(fitted ? dims.cols : term.cols))
     params.set('rows', String(fitted ? dims.rows : term.rows))
-    const socket = new WebSocket(`${socketBase()}/terminal/ws?${params.toString()}`)
+    const socket = new WebSocket(`${socketBase()}/terminal/ws?${params.toString()}`, socketProtocols())
     rt.socket = socket
     setConn(rt, 'connecting')
     // Startup typing waits for the shell's first output and then a quiet spell (see startupWait).

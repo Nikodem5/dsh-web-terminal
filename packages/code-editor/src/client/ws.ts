@@ -1,6 +1,7 @@
 // dsh-code-editor - the live-update socket with reconnect backoff.
 
 import type { WsFrame } from './types.ts'
+import { socketProtocols } from '../../../shared/client/local-auth.ts'
 
 export type LiveState = 'connecting' | 'live' | 'down'
 
@@ -11,7 +12,7 @@ export interface SocketLike {
   onerror: ((ev?: unknown) => void) | null
   close(): void
 }
-export type SocketCtor = new (url: string) => SocketLike
+export type SocketCtor = new (url: string, protocols?: string[]) => SocketLike
 
 export interface LiveOptions {
   url: string
@@ -59,7 +60,7 @@ export function openLive(o: LiveOptions): { close(): void } {
     if (closed) return
     o.onState('connecting', everLive)
     let s: SocketLike
-    try { s = new Sock(o.url) } catch { schedule(); return }
+    try { s = new Sock(o.url, socketProtocols()) } catch { schedule(); return }
     sock = s
     s.onopen = () => {
       if (closed || sock !== s) return

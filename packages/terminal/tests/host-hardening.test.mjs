@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocket } from 'ws'
 import { apply } from '../lib/index.js'
+import { authed, localReq } from './helpers/local-auth.mjs'
 import { originAllowed, parseExtraOrigins } from '../lib/shared/origin.js'
 
 // Own home: node --test runs files in parallel processes and host-protocol removes its own.
@@ -60,6 +61,7 @@ async function startHost(env = {}) {
         return handle
       },
     },
+    on: () => () => {},
     effect: (fn) => { teardown = fn(); return () => {} },
   })
   for (const [key, value] of Object.entries(saved)) {
@@ -77,12 +79,12 @@ async function startHost(env = {}) {
     stop() { teardown(); http.close() },
     info: () =>
       new Promise((resolve) => {
-        routes.http.find((r) => r.path === '/api/dsh-web-terminal/info').handler({ method: 'GET' }, { writeHead() {}, end: (p) => resolve(JSON.parse(p)) })
+        routes.http.find((r) => r.path === '/api/dsh-web-terminal/info').handler(localReq(), { writeHead() {}, end: (p) => resolve(JSON.parse(p)) })
       }),
     /** Open a socket; resolves on open with collected frames. `options` go to the ws client. */
     connect(query, options) {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`, options)
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal/ws?${query}`, authed(options))
         const frames = []
         const closed = new Promise((res) => ws.on('close', (code) => res(code)))
         ws.on('message', (raw) => frames.push(JSON.parse(String(raw))))
@@ -168,7 +170,7 @@ test('originAllowed: DNS rebinding (Origin equals Host, but not loopback) is ref
 
 test('upgrade: a foreign Origin gets 403 and no shell is spawned', async () => {
   const host = await startHost()
-  const ws = new WebSocket(`ws://127.0.0.1:${host.port}/terminal/ws?id=${freshId()}`, { origin: 'https://evil.example' })
+  const ws = new WebSocket(`ws://127.0.0.1:${host.port}/terminal/ws?id=${freshId()}`, authed({ origin: 'https://evil.example' }))
   const status = await new Promise((resolve) => {
     ws.on('unexpected-response', (_req, res) => { res.resume(); resolve(res.statusCode) })
     ws.on('error', () => {})
@@ -181,7 +183,7 @@ test('upgrade: a foreign Origin gets 403 and no shell is spawned', async () => {
 test('upgrade: malformed Origin values are refused', async () => {
   const host = await startHost()
   for (const origin of ['null', 'not a url']) {
-    const ws = new WebSocket(`ws://127.0.0.1:${host.port}/terminal/ws?id=${freshId()}`, { origin })
+    const ws = new WebSocket(`ws://127.0.0.1:${host.port}/terminal/ws?id=${freshId()}`, authed({ origin }))
     const status = await new Promise((resolve) => {
       ws.on('unexpected-response', (_req, res) => { res.resume(); resolve(res.statusCode) })
       ws.on('error', () => {})

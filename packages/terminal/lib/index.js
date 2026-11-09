@@ -27,7 +27,8 @@ import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import { TOKEN_ENV, TOKEN_HEADER } from './agent-signals.js'
 import { registry } from './providers/index.js'
-import { originAllowed, parseExtraOrigins } from './shared/origin.js'
+import { parseExtraOrigins } from './shared/origin.js'
+import { checkAccess, exposeToken, refuse, refuseUpgrade, selectProtocol } from './shared/local-auth.js'
 import { createGitBashResolver } from './git-bash.js'
 import { createSshHosts } from './ssh-config.js'
 import { POSIX_SHELLS, WINDOWS_SHELLS, defaultShellSpec, shellSpec } from './shells.js'
@@ -367,7 +368,20 @@ function apply(ctx) {
   let statusLineReason = 'starting'
 
   const config = readConfig()
-  const server = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD })
+  const server = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, handleProtocols: selectProtocol })
+  /**
+   * Register a route that only a local, token-bearing request may reach (see shared/local-auth.js).
+   * Every route here runs commands, reads files or reveals the machine, so none is left open.
+   */
+  const registerSecured = (route) =>
+    ctx.webServer.register({
+      ...route,
+      handler: (req, res) => {
+        const access = checkAccess(req, config.allowedOrigins)
+        if (!access.ok) return refuse(res, access)
+        return route.handler(req, res)
+      },
+    })
   /**
    * Run one optional feature's setup: if it throws (a host without some service, a duplicate route...)
    * log it and carry on, so the terminals themselves never depend on an extra.
@@ -382,6 +396,8 @@ function apply(ctx) {
     }
   }
   const noop = () => {}
+  // The token reaches the page through the harness's index-inject table; without it no route accepts the client.
+  const disposeToken = optional('access token', () => exposeToken(ctx), noop)
 
   const send = (ws, frame) => {
     if (ws !== null && ws !== undefined && ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame))
@@ -610,7 +626,7 @@ function apply(ctx) {
   /** ~/.ssh/config aliases for the SSH picker; re-read only when the file changes. */
   const sshHosts = createSshHosts()
 
-  const disposeInfo = optional('info route', () => ctx.webServer.register({
+  const disposeInfo = optional('info route', () => registerSecured({
     kind: 'exact',
     path: INFO_PATH,
     handler: async (_req, res) => {
@@ -656,7 +672,7 @@ function apply(ctx) {
     },
   }), noop)
 
-  const disposeStats = optional('stats route', () => ctx.webServer.register({
+  const disposeStats = optional('stats route', () => registerSecured({
     kind: 'exact',
     path: STATS_PATH,
     handler: async (_req, res) => {
@@ -715,7 +731,7 @@ function apply(ctx) {
     if (typeof fallback === 'string' && fallback.length > 0) return fallback
     return session?.cwd
   }
-  const disposePaths = optional('paths route', () => ctx.webServer.register({
+  const disposePaths = optional('paths route', () => registerSecured({
     kind: 'exact',
     path: PATHS_PATH,
     handler: async (req, res) => {
@@ -730,7 +746,7 @@ function apply(ctx) {
       writeJson(res, 200, { ok: true, results })
     },
   }), noop)
-  const disposeOpen = optional('open route', () => ctx.webServer.register({
+  const disposeOpen = optional('open route', () => registerSecured({
     kind: 'exact',
     path: OPEN_PATH,
     handler: async (req, res) => {
@@ -746,13 +762,12 @@ function apply(ctx) {
     },
   }), noop)
 
-  // Update from source. These routes run commands, so a foreign page is refused like on the socket.
+  // Update from source. These routes run commands.
   const selfUpdate = createSelfUpdate({ pluginDir: PLUGIN_DIR, node: () => nodeBin })
-  const disposeUpdate = optional('update route', () => ctx.webServer.register({
+  const disposeUpdate = optional('update route', () => registerSecured({
     kind: 'exact',
     path: UPDATE_PATH,
     handler: async (req, res) => {
-      if (!originAllowed(req.headers?.origin, req.headers?.host, config.allowedOrigins)) return writeJson(res, 403, { ok: false, error: 'Origin not allowed' })
       if (req.method === 'POST') {
         await signalReady
         const started = selfUpdate.start()
@@ -761,11 +776,10 @@ function apply(ctx) {
       writeJson(res, 200, { ok: true, ...(await selfUpdate.status()) })
     },
   }), noop)
-  const disposeRelaunch = optional('relaunch route', () => ctx.webServer.register({
+  const disposeRelaunch = optional('relaunch route', () => registerSecured({
     kind: 'exact',
     path: RELAUNCH_PATH,
     handler: async (req, res) => {
-      if (!originAllowed(req.headers?.origin, req.headers?.host, config.allowedOrigins)) return writeJson(res, 403, { ok: false, error: 'Origin not allowed' })
       if (req.method !== 'POST') return writeJson(res, 405, { ok: false, error: 'POST only' })
       await signalReady
       try {
@@ -1044,13 +1058,10 @@ function apply(ctx) {
   const disposeUpgrade = ctx.webServer.registerUpgrade({
     path: WS_PATH,
     handler: (req, socket, head) => {
-      // A shell is RCE and any web page can open a socket to loopback: refuse foreign Origins
+      // A shell is RCE: refuse non-local peers, foreign Hosts and Origins, and a missing token
       // before the handshake so no session is ever created for them.
-      if (!originAllowed(req.headers.origin, req.headers.host, config.allowedOrigins)) {
-        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n', () => socket.destroy())
-        socket.on('error', () => {})
-        return
-      }
+      const access = checkAccess(req, config.allowedOrigins)
+      if (!access.ok) return refuseUpgrade(socket, access)
       server.handleUpgrade(req, socket, head, (ws) => {
         server.emit('connection', ws, req)
       })
@@ -1066,6 +1077,7 @@ function apply(ctx) {
     for (const beat of heartbeats) clearInterval(beat)
     heartbeats.clear()
     safeCall(disposeUpgrade)
+    safeCall(disposeToken)
     safeCall(disposeInfo)
     safeCall(disposeStats)
     safeCall(disposePaths)

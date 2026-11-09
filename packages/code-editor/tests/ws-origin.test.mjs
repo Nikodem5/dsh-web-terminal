@@ -1,6 +1,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { cleanup, startHost, tempDir, waitFor } from './helpers/harness.mjs'
+import { authHeaders } from './helpers/local-auth.mjs'
 
 after(cleanup)
 
@@ -52,4 +53,39 @@ test('a socket for an unregistered, relative or missing root is refused before t
   assert.equal((await outcome(host, 'relative/path')).status, 403)
   assert.equal((await outcome(host, '')).status, 400)
   assert.equal((await outcome(host, `${root}/..`)).status, 403)
+})
+
+test('access: a request without the token is refused on routes and socket, a remote Host too', async () => {
+  const host = await startHost()
+  const root = tempDir()
+  await host.register(root)
+  const bare = await fetch(`http://127.0.0.1:${host.port}/api/dsh-code-editor/tree?root=${encodeURIComponent(root)}&dir=`)
+  assert.equal(bare.status, 401)
+  assert.equal((await bare.json()).code, 'auth')
+  const wrong = await fetch(`http://127.0.0.1:${host.port}/api/dsh-code-editor/tree?root=${encodeURIComponent(root)}&dir=`, { headers: { authorization: 'Bearer wrong' } })
+  assert.equal(wrong.status, 401)
+  // fetch() will not let a caller set Host, so speak plain HTTP for the proxied case.
+  const { request } = await import('node:http')
+  const proxied = await new Promise((resolve, reject) => {
+    const r = request({ host: '127.0.0.1', port: host.port, path: `/api/dsh-code-editor/tree?root=${encodeURIComponent(root)}&dir=`, headers: { ...authHeaders(), host: 'files.example' } }, (res) => {
+      let data = ''
+      res.on('data', (c) => { data += c })
+      res.on('end', () => resolve({ status: res.statusCode, json: JSON.parse(data) }))
+    })
+    r.on('error', reject)
+    r.end()
+  })
+  assert.equal(proxied.status, 403)
+  assert.equal(proxied.json.code, 'host')
+  // Same machine, token present: fine.
+  assert.equal((await host.get('/tree', { root, dir: '' })).status, 200)
+  // The socket: no token -> 401 before the handshake.
+  const { WebSocket } = await import('ws')
+  const status = await new Promise((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${host.port}/code-editor/ws?root=${encodeURIComponent(root)}`)
+    ws.on('unexpected-response', (_req, res) => { res.resume(); resolve(res.statusCode) })
+    ws.on('open', () => { ws.terminate(); resolve(101) })
+    ws.on('error', () => {})
+  })
+  assert.equal(status, 401)
 })
