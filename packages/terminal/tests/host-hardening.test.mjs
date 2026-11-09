@@ -371,20 +371,53 @@ test('exit: output that finds the socket backed up at the exit is repainted befo
   await until(() => frames.length > 0)
   const { handle } = host.spawned[0]
   // The kernel swallows any burst over loopback, so a backed-up socket is faked: the host (same process, same ws class) reads this.
-  const real = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'bufferedAmount')
-  let backedUp = true
-  Object.defineProperty(WebSocket.prototype, 'bufferedAmount', { configurable: true, get() { return backedUp ? 1024 * 1024 : real.get.call(this) } })
+  const backedUp = fakeBackedUp()
+  backedUp.on = true
   try {
     handle.emit('LAST')
     handle.exit(0) // the pending 'LAST' meets a backed-up socket at the exit: it cannot be sent as data
     assert.ok(await until(() => frames.some((f) => f.type === 'exit')), 'exit arrives')
-    backedUp = false // the drain watch may now fire
+    backedUp.on = false // the drain watch may now fire
     await sleep(150) // several drain intervals
   } finally {
-    Object.defineProperty(WebSocket.prototype, 'bufferedAmount', real)
+    backedUp.restore()
   }
   const exitAt = frames.findIndex((f) => f.type === 'exit')
   assert.ok(!frames.slice(exitAt + 1).some((f) => f.type === 'resync'), 'no resync after the exit frame')
-  assert.ok(frames.slice(0, exitAt).findLast((f) => f.type === 'resync')?.replay.endsWith('LAST'), 'the screen is repainted with the final output before the exit')
+  const caughtUp = frames.slice(0, exitAt).some((f) => (f.type === 'data' && f.data === 'LAST') || (f.type === 'resync' && f.replay.endsWith('LAST')))
+  assert.ok(caughtUp, 'the missed output reaches the client before the exit')
+  ws.close()
+})
+
+/** Make every socket report a backed-up send buffer while `state.on` (the kernel swallows any loopback burst, so it is faked). */
+function fakeBackedUp() {
+  const real = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'bufferedAmount')
+  const state = { on: false }
+  Object.defineProperty(WebSocket.prototype, 'bufferedAmount', { configurable: true, get() { return state.on ? 1024 * 1024 : real.get.call(this) } })
+  state.restore = () => Object.defineProperty(WebSocket.prototype, 'bufferedAmount', real)
+  return state
+}
+
+test('backpressure: a short stall is caught up with just the missed output, not the whole replay', async () => {
+  const host = await startHost({ DSH_WT_HIGH_WATER: String(64 * 1024), DSH_WT_LOW_WATER: String(16 * 1024), DSH_WT_DRAIN_MS: '20', DSH_WT_BATCH_MS: '1' })
+  const { ws, frames } = await host.connect(`id=${freshId()}`)
+  await until(() => frames.length > 0)
+  const { handle } = host.spawned[0]
+  handle.emit('x'.repeat(50_000)) // history the client already has
+  await until(() => frames.some((f) => f.type === 'data'))
+  const backedUp = fakeBackedUp()
+  try {
+    backedUp.on = true
+    handle.emit('two ')
+    await sleep(20)
+    handle.emit('three')
+    await sleep(20)
+    backedUp.on = false
+    assert.ok(await until(() => frames.filter((f) => f.type === 'data').length >= 2), 'the catch-up arrives')
+  } finally {
+    backedUp.restore()
+  }
+  assert.ok(!frames.some((f) => f.type === 'resync'), 'no full repaint')
+  assert.equal(frames.filter((f) => f.type === 'data').slice(1).map((f) => f.data).join(''), 'two three')
   ws.close()
 })

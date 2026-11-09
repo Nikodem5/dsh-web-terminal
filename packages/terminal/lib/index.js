@@ -420,9 +420,18 @@ function apply(ctx) {
       if (ws === null || ws.readyState !== ws.OPEN) return stopDrainWatch(session)
       if (ws.bufferedAmount > config.lowWater) return
       stopDrainWatch(session)
-      send(ws, { type: 'resync', replay: replayOf(session) })
+      send(ws, catchUpFrame(session))
     }, config.drainMs)
     session.drainTimer.unref?.()
+  }
+  /**
+   * What a socket that fell behind missed. The frames it did get form an unbroken prefix of the stream, so the dropped
+   * tail alone continues it; only when that tail outgrew the replay limit is the whole replay repainted.
+   */
+  const catchUpFrame = (session) => {
+    const missed = session.missed
+    session.missed = undefined
+    return typeof missed === 'string' && missed !== '' ? { type: 'data', data: missed } : { type: 'resync', replay: replayOf(session) }
   }
   /** The scrollback to repaint from, trimmed to the limit (it may sit slightly over between trims). */
   const replayOf = (session) => {
@@ -445,6 +454,7 @@ function apply(ctx) {
     if (text === '' || ws === null || ws.readyState !== ws.OPEN || session.congested) return
     if (ws.bufferedAmount > config.highWater) {
       session.congested = true
+      session.missed = text
       watchDrain(session)
       return
     }
@@ -453,7 +463,12 @@ function apply(ctx) {
   /** Queue one chunk of live output for the attached browser; it goes out within `batchMs`. */
   const forwardData = (session, text) => {
     const ws = session.ws
-    if (ws === null || ws.readyState !== ws.OPEN || session.congested) return
+    if (ws === null || ws.readyState !== ws.OPEN) return
+    if (session.congested) {
+      // null: too much was missed to resend, the whole replay is repainted instead.
+      if (typeof session.missed === 'string') session.missed = session.missed.length + text.length > REPLAY_LIMIT ? null : session.missed + text
+      return
+    }
     session.pendingText += text
     if (session.flushTimer !== null) return
     session.flushTimer = setTimeout(() => flushData(session), config.batchMs)
@@ -1005,7 +1020,7 @@ function apply(ctx) {
           if (live.congested) {
             stopDrainWatch(live)
             dropPending(live)
-            send(live.ws, { type: 'resync', replay: replayOf(live) })
+            send(live.ws, catchUpFrame(live))
           }
           send(live.ws, { type: 'exit', exitCode: live.exitCode })
         },
