@@ -68,6 +68,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'paste', group: 'Copy & paste', desc: 'Paste from the clipboard', chord: { key: ['v'], mod: 'mod', shift: true, alt: 'any' } },
   { id: 'help', group: 'Help', desc: 'Show / hide this help (F1 is not sent to the program)', chord: { key: ['F1'] } },
   { id: 'help-close', group: 'Help', desc: 'Close the help panel', keys: 'Esc' },
+  { id: 'overseer', group: 'Others', desc: 'Show / hide the Overseer panel (ask a model what the terminals are doing; read-only)', chord: { key: ['o'], mod: 'mod', shift: true } },
+  { id: 'overseer-ask', group: 'Others', desc: 'Ask the question / new line (Overseer input)', keys: 'Enter · Shift+Enter' },
   { id: 'menu-close', group: 'Others', desc: 'Close an open menu (Layouts, Aa, send menu)', keys: 'Esc' },
   { id: 'rename-commit', group: 'Others', desc: 'Save / cancel a rename (window title or terminal list)', keys: 'Enter · Esc' },
   { id: 'dialog', group: 'Others', desc: 'Open the terminal / cancel (New terminal dialog)', keys: 'Enter · Esc' },

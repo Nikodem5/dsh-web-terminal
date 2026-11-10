@@ -16,6 +16,7 @@ import { SendMenu } from './send-menu.tsx'
 import { reviewFolder, showReview } from './code-editor.ts'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
+import { OverseerPanel, OverseerToggle, useOverseer, useOverseerShortcut } from './overseer-panel.tsx'
 import { HelpIcon, HelpPanel } from './help-panel.tsx'
 import { ACTIVITY_TITLE } from './help-data.ts'
 import { MissionOverlay, missionPlan, useMissionControl } from './mission-view.tsx'
@@ -491,6 +492,8 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   const [scheme, setScheme] = useState<'dark' | 'light'>('dark')
   const plan = missionPlan(wins, stage)
   useMissionControl(wins, focusId, plan)
+  const overseerOpen = useOverseer().open
+  useOverseerShortcut()
 
   // Pick text colours from the MEASURED background so inputs and labels always contrast.
   useLayoutEffect(() => {
@@ -639,6 +642,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
               Agents{runningAgents > 0 ? <span className="wt-btn-count">{runningAgents}</span> : null}
             </button>
           ) : null}
+          <OverseerToggle />
           <button type="button" className="wt-btn wt-btn-icon" data-on={prefs.sidebar} title={prefs.sidebar ? 'Hide the terminal list' : 'Show the terminal list'} onClick={() => setSidebar(!prefs.sidebar)}>☰</button>
         </div>
       </div>
@@ -677,6 +681,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
         </div>
       </div>
       {prefs.agentsPanel && agentsShown ? <AgentsPanel wins={wins} /> : null}
+      {overseerOpen ? <OverseerPanel wins={wins} /> : null}
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
       </div>
       <SendMenu />
