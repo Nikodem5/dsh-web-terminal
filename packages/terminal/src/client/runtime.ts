@@ -523,7 +523,7 @@ export function announceVisibility(rt: Runtime): void {
   if (rt.socket === null || rt.socket.readyState !== WebSocket.OPEN) return
   rt.socket.send(JSON.stringify({ type: 'visibility', visible: document.visibilityState !== 'hidden' }))
 }
-if (typeof document !== 'undefined') {
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('visibilitychange', () => { for (const rt of runtimes.values()) announceVisibility(rt) })
 }
 
