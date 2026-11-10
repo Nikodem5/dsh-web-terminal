@@ -45,6 +45,7 @@ import {
   getSearchId,
   getVersion,
   getWins,
+  gitLabel,
   hostInfo,
   hydrate,
   isDarkSurface,
@@ -360,6 +361,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
   // An ssh window's folder lives on the other machine: the badge names the target instead.
   const sub = rt.conn === 'live' ? (win.ssh !== undefined ? '' : win.cwd) : rt.detail.length > 0 ? `${rt.conn} · ${rt.detail}` : rt.conn
   const remote = win.ssh !== undefined ? sshLabel(win.ssh) : undefined
+  const git = win.ssh === undefined ? gitLabel(rt.git) : undefined
 
   return (
     <div
@@ -403,6 +405,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
           </span>
         )}
         {remote !== undefined ? <span className="wt-remote" title={`Connected over ssh to ${remote}`}>⇄ {remote}</span> : null}
+        {git !== undefined ? <span className="wt-git" data-dirty={rt.git?.dirty === true} title={git.title}>{git.text}</span> : null}
         {rt.attention ? <span className="wt-badge" data-level={rt.attentionLevel ?? 'quiet'} title={rt.attentionReason}>{rt.attentionLabel || 'needs you'}</span> : null}
         <span className="wt-sub" title={win.cwd}>{sub}</span>
         {rt.conn === 'exited' || rt.conn === 'failed' ? (
