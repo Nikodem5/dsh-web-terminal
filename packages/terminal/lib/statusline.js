@@ -13,10 +13,10 @@
 
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { postJson, readStdin } from './post.js'
+import { claudeDir } from './token-totals.js'
 
 const USER_TIMEOUT_MS = 5000
 /** Set on the user's command so a status line that (indirectly) runs this wrapper again cannot loop. */
@@ -29,8 +29,7 @@ const SUBAGENT_GUARD_ENV = 'DSH_WT_SUBAGENTLINE'
  */
 function userCommand(key, env) {
   try {
-    const dir = env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
-    const line = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))?.[key]
+    const line = JSON.parse(readFileSync(join(claudeDir(env), 'settings.json'), 'utf8'))?.[key]
     if (line?.type !== 'command' || typeof line.command !== 'string' || line.command.trim() === '') return undefined
     return { command: line.command, refreshInterval: typeof line.refreshInterval === 'number' ? line.refreshInterval : undefined }
   } catch {

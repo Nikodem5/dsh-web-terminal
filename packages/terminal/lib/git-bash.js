@@ -117,10 +117,6 @@ function createGitBashResolver(deps) {
         .finally(() => { inflight = undefined })
       return inflight
     },
-    reset() {
-      cached = undefined
-      missAt = -Infinity
-    },
   }
 }
 
