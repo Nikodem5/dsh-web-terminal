@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { EDIT_MATCHER } from '../edits.js'
 import { TOKEN_ENV, TOKEN_HEADER, clean } from '../agent-signals.js'
 import { userStatusLine } from '../statusline.js'
+import { noteTranscript } from '../overseer/index.js'
 
 /** Absolute path of the status-line wrapper Claude runs. */
 const STATUSLINE_SCRIPT = fileURLToPath(new URL('../statusline.js', import.meta.url))
@@ -167,6 +168,8 @@ function prepare({ dir, pid, base, nodePath, pidAlive }) {
  * @returns true when the event was a sub-agent one (no agent state to derive).
  */
 function trackSubagents({ session, body }, host) {
+  // Where this terminal's own (authenticated) Claude session keeps its transcript, for the Overseer.
+  noteTranscript(session, body)
   switch (body?.hook_event_name) {
     case 'SubagentStart':
       if (session.subagents.start(body)) host.notifySubagents(session)
