@@ -75,8 +75,17 @@ export interface AttentionLegend {
 
 /** Badge texts come from attention.ts (alertFor, exitAlert, hostRestartAlert, hungAlert, the bell). */
 export const ATTENTION_LEGEND: readonly AttentionLegend[] = [
-  { level: 'urgent', badge: 'needs you', what: 'Urgent: blocked on a permission or question; also failed, stuck?, or exited / host restarted mid-task. Orange glow, a chime (if sound is on) and a notification, unless you are looking at it.' },
+  { level: 'urgent', badge: 'needs you', what: 'Urgent: blocked on a permission or question; also failed, possibly hung (no output for a while), or exited / host restarted mid-task. Orange glow, a chime (if sound is on) and a notification, unless you are looking at it.' },
   { level: 'quiet', badge: 'finished', what: 'Quiet: a turn ended, the bell rang, or a shell exited cleanly. Yellow badge; a notification only when the app is in the background.' },
+]
+
+/** The awareness features: output patterns, the idle alert and the git chip. Each line is checked against pattern-alerts-core.ts, attention.ts and git-header.ts. */
+export const AWARENESS_HELP: readonly MouseAction[] = [
+  { how: 'Aa → Pattern alerts', what: 'Flag a terminal when a finished line of its output matches text or a regular expression (case optional). The badge names the pattern and its tooltip shows the line. Each pattern applies to all terminals or one, can be switched off, and has a cooldown (default 30 s) before it flags the same terminal again' },
+  { how: 'Pattern alerts: examples', what: '"Asks to proceed" (Do you want to proceed?) and "Test failure" ship switched off; tick one to use it' },
+  { how: 'Pattern alerts: limits', what: 'Output is checked even when the window is minimized. Escape codes are removed first and only the first 2000 characters of a line count. A pattern is at most 200 characters, up to 20 patterns; an invalid expression, one that matches an empty line or one with a repeated group inside a repeat is refused when you save it. Lines already on screen when you reload are not checked' },
+  { how: 'possibly hung', what: 'A terminal whose agent reports Working but has printed nothing for 5 minutes (Aa → Alerts, 0 = never) gets this urgent badge, once. It goes away as soon as output resumes' },
+  { how: '⎇ branch in the title bar', what: "The git branch of the terminal's folder (the shell's current one with shell integration), with ● when there are uncommitted or untracked files. Long names are cut; hover for the full one. Refreshed after a command, when an agent finishes and every 30 s; nothing for folders outside a repository, when git is missing, and for ssh windows" },
 ]
 
 /** The hover header of a command (block-bar.ts); the order is the order of its buttons. */

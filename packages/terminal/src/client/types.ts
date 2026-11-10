@@ -6,6 +6,7 @@ import type { SearchAddon } from '@xterm/addon-search'
 import type { SubagentInfo } from './subagents.ts'
 import type { BlockModel } from './blocks.ts'
 import type { EditInfo } from './edits-api.ts'
+import type { PatternAlert } from './pattern-alerts-core.ts'
 
 /** Rectangle in canvas fractions (0..1). */
 export interface Rect {
@@ -154,6 +155,8 @@ export interface Runtime {
   subagents: SubagentInfo[]
   /** Files this terminal's agent changed (the host's `edits` list). */
   edits: EditInfo[]
+  /** Git branch and dirty marker of the terminal's folder, as the host last reported; undefined when not a repository, over ssh, or unknown. */
+  git?: GitInfo
   /** The "may be stuck" alert already fired for the current working spell. */
   hungRaised: boolean
   /** Needs the user's eyes: an agent is blocked, failed or finished, or the shell exited, while unattended. */
@@ -170,6 +173,15 @@ export interface Runtime {
   /** Hover header and sticky bar (block-bar.ts); exists once the terminal is opened. */
   blockBar?: { refresh(): void; dispose(): void }
   // ── end command blocks ──
+}
+
+/** What the host reports about the git checkout a terminal sits in. */
+export interface GitInfo {
+  /** Branch name, or the short commit when HEAD is detached. */
+  branch: string
+  /** Uncommitted changes or untracked files. */
+  dirty: boolean
+  detached?: boolean
 }
 
 /** Font preferences shared by every terminal. */
@@ -258,6 +270,8 @@ export interface Prefs {
   sound: boolean
   /** Minutes without output or signals before a working agent is flagged as stuck; 0 turns it off. */
   hungMinutes: number
+  /** Output triggers that raise a terminal's attention badge (pattern-alerts-core.ts). */
+  patternAlerts: PatternAlert[]
   /** Editor for Ctrl+clicked file paths, and the command template when it is `custom`. */
   pathTarget: PathTarget
   pathTemplate: string

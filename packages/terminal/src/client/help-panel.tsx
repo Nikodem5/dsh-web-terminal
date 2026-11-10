@@ -14,6 +14,7 @@ import {
   AGENT_MARK_HELP,
   ATTENTION_LEGEND,
   BLOCK_ACTIONS,
+  AWARENESS_HELP,
   COMMAND_ALERT_LEGEND,
   GUTTER_LEGEND,
   MOUSE_ACTIONS,
@@ -196,6 +197,13 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
             <div key={a.badge} className="wt-help-row wt-help-icon">
               <span className="wt-badge" data-level="quiet">{a.badge}</span>
               <span>{a.what}</span>
+            </div>
+          ))}
+          <div className="wt-pop-title">Pattern alerts, hung agents and git</div>
+          {AWARENESS_HELP.map((m) => (
+            <div key={m.how} className="wt-help-row">
+              <span className="wt-help-how">{m.how}</span>
+              <span>{m.what}</span>
             </div>
           ))}
           <div className="wt-pop-title">Command bar (left edge of the output)</div>

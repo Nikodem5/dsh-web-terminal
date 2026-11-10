@@ -145,6 +145,8 @@ const VIEW_CSS = `
 .wt-host .wt-grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes wt-pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wt-work) 60%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
 .wt-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; cursor: text; }
+.wt-git { flex: none; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; border: 0.5px solid var(--wt-line); color: var(--wt-dim); }
+.wt-git[data-dirty="true"] { color: var(--wt-warn); border-color: color-mix(in srgb, var(--wt-warn) 55%, transparent); }
 .wt-sub { flex: 1; min-width: 0; font-size: 11px; color: var(--wt-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wt-badge[data-level="urgent"] { background: var(--wt-urgent); color: #fff; }
 .wt-badge { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: var(--wt-wait); color: #1b1d23; white-space: nowrap; }
