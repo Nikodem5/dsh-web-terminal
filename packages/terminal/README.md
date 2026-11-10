@@ -59,12 +59,52 @@ Status comes from the agent itself, not from guessing at output.
   **Idle**, **Exited**, **Offline**. A plain shell shows only facts (running or not), never a guess.
 - **Two levels of attention**, raised only while you are looking elsewhere (another window, tab or terminal):
   - *Needs you* (permission, question, failure, the agent died mid-task, the shell exited mid-task or with an error,
-    or a working agent that has been silent for 10 minutes): red-orange border, `needs you` badge, desktop
+    or a working agent that has printed nothing for 5 minutes: `possibly hung`): red-orange border, `needs you` badge, desktop
     notification and a chime.
   - *Finished* (a turn ended) and the terminal bell: amber border and badge; a desktop notification only when the
     whole app is in the background.
   - Answering clears it: typing into the terminal, the agent's next turn, or focusing the terminal.
-- **Aa** → Notifications: desktop notifications, the chime, and the "stuck after N minutes" threshold (0 = never).
+- **Aa** → Notifications: desktop notifications, the chime, and the "possibly hung after N minutes" threshold (default 5, 0 = never).
+- **Possibly hung.** A terminal whose agent reports *working* but has produced no output for N minutes gets an urgent
+  `possibly hung` badge, once per silent spell. The moment output resumes the badge is taken back and the check re-arms; a new
+  agent signal re-arms it too. It runs once a second in the page for every terminal, minimized or not.
+
+### Pattern alerts
+**Aa → Pattern alerts** lists output triggers. A pattern is plain text or a regular expression (JavaScript syntax), with a
+*Match case* option, a name for the badge, a scope (all terminals, or one), an urgent / quiet level and a cooldown in seconds
+(default 30) before it may flag the same terminal again. When a finished line of a terminal's output matches, the terminal gets the
+usual attention badge (the same one agents use, so the border, the notification and the chime follow the level) named after the
+pattern, with the matching line in its tooltip. Nothing is raised for a terminal you are looking at.
+
+- Lines are checked after escape codes (colours, cursor moves, titles) are removed; `\n`, `\r\n` and a bare `\r` end a line, and a
+  line split across output chunks is put back together. Only the first 2000 characters of a line count, and an unfinished line is
+  kept up to 8 KB, so an endless line costs nothing.
+- It works on the live output the page receives, so a minimized window, or the Chat page being open, makes no difference. What was
+  on screen when the page reloaded (the replay) is history and is not checked. Output the page itself skips drawing under heavy load
+  is still checked.
+- Refused when you save: empty text, text over 200 characters, an invalid regular expression, one that matches an empty line, and one
+  with a repeated group inside a repeat (like `(a+)+`, the usual way to build a regex that freezes the page). At most 20 patterns. Saved
+  patterns are checked again when the page loads.
+- Two examples ship **switched off**: *Asks to proceed* (`Do you want to proceed?`, urgent) and *Test failure* (a regular expression for
+  `FAIL`, `3 tests failed`, `not ok 4`; quiet). Patterns are kept in this browser's preferences, like the other Aa settings.
+- Matching is in the browser, so a pattern cannot flag a terminal while no page is open; the host keeps the terminal running either way.
+
+### Git status in the title bar
+Each local terminal shows `⎇ branch` in its title bar, with `●` when the working tree has uncommitted or untracked files. Hover
+for the full branch name (long ones are cut), or "Detached HEAD at <commit>". The host works it out with `git status --porcelain=v2 --branch`
+in the terminal's folder (the shell's current folder when shell integration reports it, otherwise the folder it started in), so
+nothing is guessed in the browser.
+
+- **When**: when the page attaches, after a command ends and a new prompt appears (only when a command ran or the folder changed),
+  when the terminal's agent reports it finished / went idle / failed / ended, and on a slow 30 s interval for terminals a page is
+  attached to. Lookups for one terminal are at least 2 s apart (a burst becomes one run plus one trailing run), at most 3 git
+  processes run at once across all terminals, each has an 8 s timeout, and a terminal that is closed stops being looked at.
+  `DSH_WT_GIT_GAP_MS` and `DSH_WT_GIT_INTERVAL_MS` change the 2 s and 30 s (the tests use them).
+- **Never blocks**: git runs as an async child process, outside the output path; `--no-optional-locks` keeps it from taking the
+  index lock and `core.fsmonitor=false` from running a repository's fsmonitor hook. Output past 1 MB is treated as dirty.
+- **Nothing shown** for a folder that is not a repository, when `git` is not on the host's PATH (looked for again after a minute), when
+  a lookup fails or times out, and for ssh windows (their folder is on another machine; the host does not look and the page ignores the frame).
+- Untracked files count as dirty. A very large untracked tree can make the lookup slow; it then times out and the chip hides.
 - **Broadcast**: **⇉ Broadcast** adds checkboxes to the list. Type a command in the bar and Enter sends it to
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
@@ -324,6 +364,8 @@ Restart the desktop app: plugins load at boot.
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
+| `lib/git-header.js`, `src/client/git-header.ts` | Git branch / dirty marker per terminal: the host scheduler (async git, throttle, concurrency cap, cache) and the client request / chip |
+| `src/client/pattern-alerts-core.ts`, `pattern-alerts.ts`, `pattern-alerts-settings.tsx` | Output pattern alerts: validation and line matching (pure), the runtime hook and list editing, the Aa block |
 | `lib/ssh-target.js`, `lib/ssh-config.js`, `src/client/ssh.ts` | SSH: target validation and argv (pure, shared with the browser bundle), the `~/.ssh/config` host list, client labels and socket parameters |
 | `lib/paths.js`, `lib/open.js` | Clickable paths: existence check with cwd rules; opening in an editor from an argv (no shell) |
 | `src/client/paths.ts`, `path-links.ts` | Path detection (pure) and the xterm link provider |
@@ -352,7 +394,7 @@ Restart the desktop app: plugins load at boot.
 | `src/client/state.ts`, `types.ts` | Window store, preferences, live runtime map, persistence; shared types |
 | `src/client/windows.ts` | Open, close, focus, maximize, layout presets |
 | `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
-| `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, stuck detection |
+| `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, hung-agent detection |
 | `src/client/launch.ts` | What a conversation id may look like (the launch rewrite itself lives in each provider, `providers.ts`) |
 | `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet; or the shell integration's prompt-ready signal) |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
@@ -370,13 +412,14 @@ For an ssh window the query is `shell=ssh&sshHost=<alias>` or `sshTarget=<[user@
 an invalid request is answered with an `error` frame and no process is started.
 
 Browser → host: `{"type":"input","data"}`, `{"type":"resize","cols","rows"}`, `{"type":"signal","signal"}`,
-`{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only).
+`{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only), `{"type":"git-refresh","cwd"}` (look at the terminal's git state now; `cwd` is the shell's current folder when known, ignored unless absolute).
 
 Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent","subagents","edits"}` (always first; `created` is true only
 for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`;
 `subagents` is the current `SubagentInfo[]`, `[]` when none; `edits` is the changed-file list below, `[]` when none),
 `{"type":"edits","files":[{path,at,tool}]}` (the terminal's whole changed-file list, at most about three times a second),
 `{"type":"subagents","tasks":SubagentInfo[]}` (the terminal's whole sub-agent list, sent when it changes, at most about twice a second),
+`{"type":"git","git":{"branch","dirty","detached"?}|null}` (the terminal's git state when it changes; `null` = not a repository; never sent for ssh windows),
 `{"type":"data","data"}`, `{"type":"activity","busy"}` (a program runs under the shell),
 `{"type":"agent","provider","state","detail","at"}` (an agent signal; `state` is one of `idle`, `working`,
 `needs-you`, `finished`, `failed`, `ended`), `{"type":"subagents","tasks"}` (full sub-agent list; `attached` also carries `subagents`), `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
@@ -489,10 +532,7 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
 Ordered roughly by how much they help when running several agents. Recommended first picks are marked ★.
 
 ### Agent awareness
-- ★ **Pattern alerts** — notify when a terminal prints something you choose (`error`, `Do you want to proceed?` for an agent waiting on a permission prompt, a test-failure line).
-- **Idle-too-long alert** — flag a "working" terminal that has produced no output for N minutes (hung agent).
 - **Resume a Claude session** — a picker in the New terminal dialog listing recent Claude sessions for the folder, opening one with `claude --resume <id>`.
-- **Git status in the header** — branch name and dirty marker per terminal.
 - **Worktree launcher** — one click to create a git worktree and open an agent terminal in it, so parallel agents don't clash.
 
 ### Speed and navigation
