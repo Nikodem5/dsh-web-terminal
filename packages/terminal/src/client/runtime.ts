@@ -372,6 +372,7 @@ export function ensureRuntime(win: WinState): Runtime {
           setConn(rt, 'live')
           rt.lastCols = 0
           sizeToHost(rt)
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') announceVisibility(rt)
           // An ssh window has no startup typing: its remote command went to ssh as an argument.
           const startup = rt.ssh ? undefined : store.wins.find((w) => w.id === rt.id)?.startup
           if (frame.created === true && startup !== undefined && startup.trim().length > 0) {
@@ -515,6 +516,15 @@ export function sizeToHost(rt: Runtime): void {
   if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) {
     rt.socket.send(JSON.stringify({ type: 'resize', cols, rows }))
   }
+}
+
+/** Tell the host whether the page is in view: it checks a hidden window's activity less often (the alerts still arrive). */
+export function announceVisibility(rt: Runtime): void {
+  if (rt.socket === null || rt.socket.readyState !== WebSocket.OPEN) return
+  rt.socket.send(JSON.stringify({ type: 'visibility', visible: document.visibilityState !== 'hidden' }))
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => { for (const rt of runtimes.values()) announceVisibility(rt) })
 }
 
 /** Smallest size auto-fit shrinks to: shrinking further would trade legibility for columns. */

@@ -32,7 +32,7 @@ import { checkAccess, exposeToken, refuse, refuseUpgrade, selectProtocol } from 
 import { createGitBashResolver } from './git-bash.js'
 import { createSshHosts } from './ssh-config.js'
 import { POSIX_SHELLS, WINDOWS_SHELLS, defaultShellSpec, shellSpec } from './shells.js'
-import { createProcessTable } from './process-table.js'
+import { activityDue, createProcessTable } from './process-table.js'
 import { createWindowsPath, listerCwd } from './windows-path.js'
 import { trimReplay } from './replay.js'
 import { createSubagents } from './subagents.js'
@@ -841,9 +841,12 @@ function apply(ctx) {
   // On Windows that walk goes through one long-lived PowerShell helper, stopped when idle and on dispose.
   const processes = optional('process table', () => createProcessTable(), { snapshot: async () => undefined, stop() {} })
   let polling = false
+  let activityTick = 0
   const activityTimer = setInterval(async () => {
     if (polling) return
-    const watched = [...sessions.values()].filter((s) => !s.exited && s.ws !== null && typeof s.handle.pid === 'number')
+    // A window in a hidden page is looked at on every few ticks only (its "agent stopped" alert still comes, later).
+    activityTick++
+    const watched = [...sessions.values()].filter((s) => !s.exited && s.ws !== null && typeof s.handle.pid === 'number' && activityDue(s.hidden === true, activityTick))
     if (watched.length === 0) return
     polling = true
     try {
@@ -938,6 +941,7 @@ function apply(ctx) {
       dropPending(session)
       send(ws, { type: 'attached', created: false, replay: replayOf(session), exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list(), edits: session.edits.list() })
       session.lastBusy = undefined
+      session.hidden = false // the client says so again when its page is hidden
       if (cols > 0 && rows > 0 && !session.exited) resizeHandle(session.handle, cols, rows)
     } else {
       if (sessions.size + pending.size >= MAX_SESSIONS && !reapExited()) {
@@ -1048,6 +1052,8 @@ function apply(ctx) {
         const c = clampDim(message.cols, 0, 2, 500)
         const r = clampDim(message.rows, 0, 1, 200)
         if (c > 0 && r > 0 && !bound.exited) resizeHandle(bound.handle, c, r)
+      } else if (message.type === 'visibility') {
+        bound.hidden = message.visible === false
       } else if (message.type === 'signal' && ALLOWED_SIGNALS.has(message.signal)) {
         safeCall(() => bound.handle.signalForeground(message.signal))
       } else if (message.type === 'kill') {
