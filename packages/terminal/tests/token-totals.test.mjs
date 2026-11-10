@@ -144,3 +144,35 @@ test('restore shows a saved total until the first scan', () => {
   totals.restore(saved)
   assert.deepEqual(totals.serialize(), saved)
 })
+
+test('a folder is listed again only when its own mtime moves, but appended bytes are always seen', async () => {
+  const dir = fixture()
+  const proj = join(dir, 'projects', 'p1')
+  const old = new Date(2021, 5, 1)
+  const f = join(proj, 's.jsonl')
+  writeFileSync(f, entry('m1', [1, 1, 1, 1]))
+  for (const d of [proj, join(proj, 'subagents'), join(dir, 'projects')]) utimesSync(d, old, old)
+  const totals = createTokenTotals({ dir, now: Date.now })
+  await totals.scan()
+  const first = totals.get().total
+  // Appending to a known file does not touch its folder: still counted.
+  appendFileSync(f, entry('m2', [2, 2, 2, 2]))
+  utimesSync(proj, old, old)
+  await totals.scan()
+  assert.equal(totals.get().total, first + 8)
+  // A new file whose folder mtime is put back is not noticed (the listing is reused)...
+  writeFileSync(join(proj, 'late.jsonl'), entry('m3', [3, 3, 3, 3]))
+  utimesSync(proj, old, old)
+  await totals.scan()
+  assert.equal(totals.get().total, first + 8, 'unchanged folder: listing reused')
+  // ...and is picked up as soon as the folder's mtime moves.
+  utimesSync(proj, new Date(2021, 5, 2), new Date(2021, 5, 2))
+  await totals.scan()
+  assert.equal(totals.get().total, first + 8 + 12)
+  // A new sub-folder of a changed folder is walked too.
+  mkdirSync(join(proj, 'extra'))
+  writeFileSync(join(proj, 'extra', 'x.jsonl'), entry('m4', [1, 0, 0, 0]))
+  utimesSync(proj, new Date(2021, 5, 3), new Date(2021, 5, 3))
+  await totals.scan()
+  assert.equal(totals.get().total, first + 8 + 12 + 1)
+})
