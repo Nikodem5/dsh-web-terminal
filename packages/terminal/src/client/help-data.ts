@@ -67,6 +67,15 @@ export const AGENT_HELP: readonly MouseAction[] = [
   { how: 'Started by hand', what: 'An agent you type into a plain shell, or run over ssh, reports nothing: the dot shows only Running or Idle (over ssh, Connected)' },
 ]
 
+/** The Overseer panel (README: Overseer). Each line is checked against overseer-panel.tsx / overseer-state.ts and lib/overseer/. */
+export const OVERSEER_HELP: readonly MouseAction[] = [
+  { how: 'Overseer button, or Ctrl+Shift+O', what: 'Ask a model what the terminals are doing ("what is T3 doing?", "which terminals are waiting for me?"). It uses the app\'s default model and only reads: it never types into, starts or stops a terminal' },
+  { how: 'What is sent', what: 'Each question sends the terminal list (names, folders, agent state, sub-agents, changed files), the recent screen text of every visible terminal and, for Claude, a condensed conversation (prompts, replies, one line per tool call; no tool output) to the model provider configured in the app' },
+  { how: 'Privacy', what: 'A note asks once before the first question. Obvious secrets (API keys, tokens, KEY=value lines, private keys, Authorization headers) are replaced before sending, but not everything can be caught: ◉ / ⊘ next to a terminal hides it from the Overseer entirely, and the host enforces that for every question' },
+  { how: 'Picker: All / T1, T2…', what: 'Picked terminals (and terminals the question names) are read in depth; the others get a short summary. Each question has a size limit, and the answer says when content was left out' },
+  { how: 'Click T3 in an answer', what: 'Focus that terminal. Stop ends an answer early, Clear forgets the conversation; follow-up questions read the terminals afresh' },
+]
+
 export interface AttentionLegend {
   level: 'urgent' | 'quiet'
   badge: string
