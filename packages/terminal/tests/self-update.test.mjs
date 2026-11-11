@@ -137,3 +137,56 @@ test('relaunch is refused outside the desktop app', () => {
   assert.throws(() => update.relaunch(), /desktop app/)
   assert.equal(calls.length, 0)
 })
+
+/** A spawn whose children never exit by themselves: `hang(call)` picks which ones. */
+function hangingSpawn(hang) {
+  const calls = []
+  const spawnImpl = (file, args, options) => {
+    const call = { file, args, options, killed: false }
+    calls.push(call)
+    const child = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.kill = () => { call.killed = true }
+    if (!hang(call)) setImmediate(() => child.emit('close', 0))
+    return child
+  }
+  return { calls, spawnImpl }
+}
+
+test('a hung step is killed on timeout and the run ends with an error instead of staying running', async () => {
+  const { calls, spawnImpl } = hangingSpawn((call) => call.args.includes('pull'))
+  const update = createSelfUpdate({ pluginDir: layout('hung-step').pluginDir, node: () => 'node', spawnImpl, stepTimeoutMs: 30 })
+  assert.equal(update.start(), true)
+  await until(async () => (await update.status()).ok !== null)
+  const status = await update.status()
+  assert.equal(status.ok, false)
+  assert.equal(status.running, false)
+  assert.match(status.error, /git pull timed out/)
+  assert.ok(calls.find((c) => c.args.includes('pull')).killed)
+  assert.equal(update.start(), true, 'a new run is accepted afterwards')
+})
+
+test('a hung git query is abandoned and answers null; no git call may prompt', async () => {
+  const { calls, spawnImpl } = hangingSpawn(() => true)
+  const update = createSelfUpdate({ pluginDir: layout('hung-git').pluginDir, node: () => 'node', spawnImpl, gitTimeoutMs: 30 })
+  const status = await update.status()
+  assert.equal(status.head, null)
+  assert.equal(status.branch, null)
+  assert.ok(calls.length > 0 && calls.every((c) => c.killed))
+  assert.ok(calls.every((c) => c.options.env.GIT_TERMINAL_PROMPT === '0'))
+})
+
+test('status answers about HEAD are reused for a few seconds, and starting a run forgets them', async () => {
+  const { calls, spawnImpl } = fakeSpawn()
+  const update = createSelfUpdate({ pluginDir: layout('cache').pluginDir, node: () => 'node', spawnImpl, statusTtlMs: 60_000 })
+  const headQueries = () => calls.filter((c) => c.args.join(' ').endsWith('rev-parse HEAD')).length
+  await update.status()
+  assert.equal(headQueries(), 1)
+  await update.status()
+  assert.equal(headQueries(), 1, 'second poll hits the cache')
+  update.start()
+  await update.status()
+  assert.equal(headQueries(), 2, 'a run changes the checkout: ask git again')
+  await until(async () => (await update.status()).ok !== null)
+})
