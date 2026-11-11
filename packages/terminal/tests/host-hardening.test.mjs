@@ -215,22 +215,24 @@ test('upgrade: every allowed Origin form is accepted', async () => {
 // ── heartbeat ──
 
 test('heartbeat: a socket that stops answering pings is terminated, the shell survives', async () => {
-  const host = await startHost({ DSH_WT_HEARTBEAT_MS: '40' })
-  // A spawn waits until the providers have prepared; let that happen first, or the 40 ms heartbeat drops the
-  // mute socket before its terminal exists (with nothing to observe).
-  const warm = await host.connect(`id=${freshId()}`)
-  assert.ok(await until(() => warm.frames.length > 0))
-  warm.ws.close()
+  // Server and client share this event loop (see the next test): an interval a stall can outlast makes the
+  // server judge a live socket dead. Nothing here depends on the mute socket getting a frame before the
+  // heartbeat drops it (a spawn can take longer than an interval under load), so every wait is a real
+  // condition: the close, the spawn, the reattach.
+  const host = await startHost({ DSH_WT_HEARTBEAT_MS: '300' })
   const id = freshId()
   const mute = await host.connect(`id=${id}`, { autoPong: false })
-  assert.ok(await until(() => mute.frames.length > 0))
-  const code = await Promise.race([mute.closed, sleep(5000).then(() => 'timeout')])
+  const code = await Promise.race([mute.closed, sleep(10_000).then(() => 'timeout')])
   assert.equal(code, 1006)
-  assert.equal(host.spawned[1].handle.terminated, false)
-  // The session is detached and can be reattached.
+  // The spawn goes on without the socket.
+  assert.ok(await until(() => host.spawned.length === 1), 'the terminal was started')
+  assert.equal(host.spawned[0].handle.terminated, false)
+  // The session is detached and can be reattached (this waits for a spawn still in flight).
   const again = await host.connect(`id=${id}`)
-  assert.ok(await until(() => again.frames.length > 0))
+  assert.ok(await until(() => again.frames.length > 0), 'reattached')
   assert.equal(again.frames[0].created, false)
+  assert.equal(host.spawned.length, 1, 'no second shell')
+  assert.equal(host.spawned[0].handle.terminated, false)
   again.ws.close()
 })
 
