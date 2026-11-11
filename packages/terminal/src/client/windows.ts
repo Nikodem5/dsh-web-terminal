@@ -8,6 +8,7 @@ import { noteFolder, noteSsh } from './preferences.ts'
 import { disposeRuntime } from './runtime.ts'
 import { sshTitle } from './ssh.ts'
 import { occupiedRects, placeNew, reachableRect } from './placement.ts'
+import { cleanTag } from './tag-palette.ts'
 import type { Rect, SshTarget, WinState } from './types.ts'
 
 // ── window operations ──────────────────────────────────────────────────────
@@ -29,6 +30,8 @@ export interface OpenOptions {
   rect?: Rect
   pinned?: boolean
   minimized?: boolean
+  /** Colour tag id (tag-palette.ts). */
+  color?: string
 }
 
 /** Open a new terminal window: in the given rect, else in the largest free gap, else cascaded from the existing ones. */
@@ -47,6 +50,7 @@ export function openTerminal(options: OpenOptions = {}): string {
     provider: ssh !== undefined ? undefined : providerForCommand(options.startup)?.id,
     ssh,
     ...(options.rect !== undefined ? reachableRect(options.rect) : placeNew(occupiedRects(store.wins))),
+    color: cleanTag(options.color),
     z: nextZ(),
     pinned: options.pinned ?? false,
     maximized: false,
@@ -66,7 +70,7 @@ export function openTerminal(options: OpenOptions = {}): string {
 export function duplicateWin(id: string): void {
   const win = store.wins.find((w) => w.id === id)
   if (win === undefined) return
-  openTerminal({ shell: win.shell, cwd: win.cwd, startup: win.startup, ssh: win.ssh, title: `${displayName(win)} copy`, nameManual: true })
+  openTerminal({ shell: win.shell, cwd: win.cwd, startup: win.startup, ssh: win.ssh, title: `${displayName(win)} copy`, nameManual: true, color: win.color })
 }
 
 /** Rename; an empty name hands control back to the program-derived name. */

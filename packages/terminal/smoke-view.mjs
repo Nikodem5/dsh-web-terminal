@@ -354,6 +354,31 @@ check(focusedBefore !== focusedAfter, `Ctrl+Alt+Right moves focus (${focusedBefo
   await sleep(20)
 }
 
+// colour tag: picked in the window menu, shown on the title bar, the list row and the overview tile
+{
+  click(q('.wt-win .wt-hbtn[title="More"]'))
+  await sleep(30)
+  check(qa('.wt-pop .wt-swatch').length === 9, 'the window menu offers "no colour" and eight swatches')
+  click(q('.wt-pop .wt-swatch[aria-label="Red"]'))
+  await sleep(40)
+  check(q('.wt-win .wt-head')?.getAttribute('data-tag') === 'red' && q('.wt-win .wt-head').style.getPropertyValue('--wt-tag') === '#ef4444', 'the title bar carries the tag')
+  check(qa('.wt-li[data-tag="red"]').length === 1, 'the list row carries the tag')
+  click(byText('.wt-bar button', 'Overview'))
+  await sleep(60)
+  check(qa('.wt-tile-head[data-tag="red"]').length === 1, 'the overview tile carries the tag')
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await sleep(60)
+  if (q('.wt-pop .wt-swatch') === null) {
+    click(q('.wt-win .wt-hbtn[title="More"]'))
+    await sleep(30)
+  }
+  click(q('.wt-pop .wt-swatch[aria-label="No colour"]'))
+  await sleep(40)
+  check(q('.wt-win .wt-head')?.getAttribute('data-tag') === null && qa('.wt-li[data-tag]').length === 0, 'No colour removes the tag again')
+  window.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+  await sleep(20)
+}
+
 // text colours follow the app's published theme
 {
   const view = q('.wt-view')

@@ -44,6 +44,7 @@ export const MOUSE_ACTIONS: readonly MouseAction[] = [
   { how: 'Shift+drag in the terminal', what: 'Select text inside programs that use the mouse (Windows / Linux)' },
   { how: 'Ctrl+wheel over a terminal', what: 'Zoom the font of that terminal one pixel per notch (8-32 px); it is saved with the terminal and the PTY is resized once you stop. Ctrl+0 returns to the Aa size (with shrink-to-fit)' },
   { how: 'Select text (with Aa: Copy on select)', what: 'Off by default. When on, the selection is copied the moment you finish selecting and a short "Copied" note shows in the terminal; "Copy blocked" appears when the clipboard is not allowed' },
+  { how: '⋯ menu: Colour tag', what: 'Pick one of eight colours (or none): a strip on the window title bar, the terminal list row and the overview tile. Saved with the window and in saved layouts' },
   { how: 'Click "↓ N new lines"', what: 'Jump to where you left off' },
   { how: 'Click a terminal in the list', what: 'Focus it; drag to reorder, double-click the name to rename, hover for duplicate / close' },
   { how: 'Click a minimized chip', what: 'Restore that window (chips are in the toolbar)' },

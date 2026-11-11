@@ -74,7 +74,7 @@ export function LayoutsMenu(): ReactElement {
         <button type="button" className="wt-btn" disabled={!savable || name.trim().length === 0} onClick={save}>Save</button>
       </div>
       <div style={{ fontSize: 11, color: 'var(--wt-dim)' }}>
-        Saves each window's name, folder, shell, startup command, position and pin. The same name overwrites.
+        Saves each window's name, folder, shell, startup command, position, pin and colour. The same name overwrites.
       </div>
     </Pop>
   )

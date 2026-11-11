@@ -64,6 +64,8 @@ export interface WinState extends Rect {
   rows?: number
   /** Font zoom: whole pixels added to the global font size (Ctrl+wheel); unset = the global size with shrink-to-fit. */
   zoom?: number
+  /** Colour tag: an id from tag-palette.ts. */
+  color?: string
 }
 
 /** Connection phase of one terminal runtime. */
@@ -189,7 +191,7 @@ export interface FontPrefs {
 }
 
 /** One window inside a saved layout. */
-export type LayoutWin = Pick<WinState, 'title' | 'nameManual' | 'shell' | 'cwd' | 'startup' | 'ssh' | 'x' | 'y' | 'w' | 'h' | 'pinned' | 'minimized'>
+export type LayoutWin = Pick<WinState, 'title' | 'nameManual' | 'shell' | 'cwd' | 'startup' | 'ssh' | 'x' | 'y' | 'w' | 'h' | 'pinned' | 'minimized' | 'color'>
 
 export interface SavedLayout {
   name: string

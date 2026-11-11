@@ -10,6 +10,7 @@
 
 import { cleanSsh, cleanSshList } from './ssh.ts'
 import { DEFAULT_TERM, cleanTermPrefs, cleanZoom } from './term-prefs.ts'
+import { cleanTag } from './tag-palette.ts'
 import { providerById, providerForCommand } from './providers.ts'
 import { withAuth } from '../../../shared/client/local-auth.ts'
 import type { FontPrefs, HostInfo, LayoutWin, Prefs, Rect, Runtime, SavedLayout, Store, WinState } from './types.ts'
@@ -147,6 +148,7 @@ function cleanWin(raw: unknown, index: number): WinState | undefined {
     cols: isGrid(raw.cols) ? raw.cols : undefined,
     rows: isGrid(raw.rows) ? raw.rows : undefined,
     zoom: cleanZoom(raw.zoom),
+    color: cleanTag(raw.color),
   }
 }
 
@@ -169,6 +171,7 @@ function cleanLayout(raw: unknown): SavedLayout | undefined {
       h: w.h,
       pinned: w.pinned === true,
       minimized: w.minimized === true,
+      color: cleanTag(w.color),
     })
   }
   return { name: raw.name, savedAt: isNum(raw.savedAt) ? raw.savedAt : 0, wins }
