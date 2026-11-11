@@ -248,6 +248,9 @@ const VIEW_CSS = `
 .wt-stats-group { display: inline-flex; align-items: center; gap: 10px; }
 .wt-stats-group[data-stale="true"] { opacity: 0.55; }
 .wt-stats-item { display: inline-flex; align-items: center; gap: 5px; }
+/* which provider a group of numbers belongs to, once more than one is shown */
+.wt-stats-mark { opacity: 0.8; margin-right: 4px; }
+.wt-stats-mark + .wt-stats-item { margin-left: 0; }
 .wt-stats .wt-dot { width: 7px; height: 7px; display: inline-block; }
 /* In the page toolbar the bar sits on the plugin's measured surface, not the harness tokens. */
 .wt-view .wt-stats { color: color-mix(in srgb, var(--wt-text) 75%, transparent); }
