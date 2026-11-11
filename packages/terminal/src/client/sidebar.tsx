@@ -5,6 +5,7 @@
 import { useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { requestClose } from './actions.ts'
+import { pressable } from './pressable.ts'
 import {
   baseName,
   displayName,
@@ -103,6 +104,10 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
                 focusWin(win.id)
                 getRuntime(win.id)?.term.focus()
               }}
+              {...pressable(() => {
+                focusWin(win.id)
+                getRuntime(win.id)?.term.focus()
+              })}
               title={rt !== undefined && rt.attentionReason.length > 0 ? rt.attentionReason : win.ssh !== undefined ? `ssh ${sshLabel(win.ssh)}` : rt?.cwd || win.cwd}
             >
               {broadcast.on ? (

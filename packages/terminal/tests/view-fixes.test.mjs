@@ -203,3 +203,40 @@ test('the maximize button is disabled, with a tooltip, on a pinned window', asyn
   v.flushSync(() => v.updateWin(id, { pinned: false }))
   assert.equal(button().disabled, false)
 })
+
+// ── 16. keyboard access ──
+
+const press = (el, k) => v.flushSync(() => el.dispatchEvent(new window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
+
+test('terminal list rows are focusable and Enter / Space focus the terminal', async () => {
+  const a = v.openTerminal({ cwd: 'C:\a' })
+  const b = v.openTerminal({ cwd: 'C:\b' })
+  render()
+  await until(() => qa('.wt-li').length === 2, 'both rows')
+  const rows = qa('.wt-li').reverse() // newest first: rows[0] is terminal a
+  assert.equal(rows[0].tabIndex, 0)
+  assert.equal(rows[0].getAttribute('role'), 'button')
+  v.focusWin(b)
+  press(rows[0], 'Enter')
+  assert.equal(v.getFocusId(), a, 'Enter activates the row')
+  v.focusWin(b)
+  press(rows[0], ' ')
+  assert.equal(v.getFocusId(), a, 'Space too')
+  // A key pressed on a control inside the row is that control's own.
+  v.focusWin(b)
+  press(rows[0].querySelector('button'), 'Enter')
+  assert.equal(v.getFocusId(), b)
+})
+
+test('folder chips in the New terminal dialog take the keyboard', async () => {
+  v.getPrefs().recents.splice(0, 99, 'C:/recent/one')
+  render()
+  click(byText('.wt-bar button', 'New terminal'))
+  const chip = q('.wt-dialog .wt-folder')
+  assert.ok(chip, 'a recent folder is listed')
+  assert.equal(chip.tabIndex, 0)
+  press(chip, 'Enter')
+  assert.equal(q('.wt-dialog input').value, 'C:/recent/one')
+  assert.ok(q('.wt-dialog'), 'Enter on the chip does not open the terminal')
+  assert.equal(v.getWins().length, 0)
+})

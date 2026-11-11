@@ -15,6 +15,7 @@ import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { SendMenu } from './send-menu.tsx'
 import { Notices } from './notice-view.tsx'
 import { isModalOpen, setModalOpen } from './modal.ts'
+import { pressable } from './pressable.ts'
 import { getSendRequest } from './send-to.ts'
 import { reviewFolder, showReview } from './code-editor.ts'
 import { NewTerminalDialog } from './new-dialog.tsx'
@@ -407,7 +408,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
             }}
           />
         ) : (
-          <span className="wt-name" title="Click to rename (empty = automatic name). Double-click the title bar to maximize." onClick={() => setRenaming(true)}>
+          <span className="wt-name" title="Click to rename (empty = automatic name). Double-click the title bar to maximize." {...pressable(() => setRenaming(true))} onClick={() => setRenaming(true)}>
             {name}
           </span>
         )}
