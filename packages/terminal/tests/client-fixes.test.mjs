@@ -128,3 +128,22 @@ test('reconnectWin takes a terminal back after another tab had it', async () => 
   s.reconnectWin(id)
   assert.equal(FakeWebSocket.instances.length, count + 1, 'only a lost terminal reconnects')
 })
+
+// ── 14. the Rows preset and the minimum window height ──
+
+test('Rows wraps into columns instead of making windows shorter than the minimum', () => {
+  const ids = Array.from({ length: 7 }, () => s.openTerminal({ cwd: 'C:\work' }))
+  s.arrange('rows') // height unknown: one column, as before
+  assert.equal(new Set(s.getWins().map((w) => w.x)).size, 1)
+  s.arrange('rows', 400) // room for 3 rows of 130px
+  const wins = s.getWins()
+  for (const w of wins) assert.ok(w.h * 400 >= s.MIN_ROW_PX, `window ${w.id} is ${w.h * 400}px tall`)
+  assert.equal(new Set(wins.map((w) => w.x)).size, 3, 'seven windows wrap into three columns')
+  for (let i = 0; i < wins.length; i++) for (let j = i + 1; j < wins.length; j++) {
+    const a = wins[i], b = wins[j]
+    assert.ok(a.x + a.w <= b.x + 1e-9 || b.x + b.w <= a.x + 1e-9 || a.y + a.h <= b.y + 1e-9 || b.y + b.h <= a.y + 1e-9, 'no overlap')
+  }
+  s.arrange('rows', 1000)
+  assert.equal(new Set(s.getWins().map((w) => w.x)).size, 1, 'tall canvas: one column')
+  assert.equal(ids.length, 7)
+})

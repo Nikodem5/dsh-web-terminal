@@ -625,7 +625,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           <span className="wt-sep" />
           <div className="wt-seg">
             {PRESETS.map((p) => (
-              <button key={p.id} type="button" className="wt-btn wt-btn-preset" title={p.title} disabled={visibleCount === 0} onClick={() => arrange(p.id)}>{p.label}</button>
+              <button key={p.id} type="button" className="wt-btn wt-btn-preset" title={p.title} disabled={visibleCount === 0} onClick={() => arrange(p.id, stage.h)}>{p.label}</button>
             ))}
           </div>
           <span className="wt-sep" />
