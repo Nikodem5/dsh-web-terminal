@@ -6,6 +6,7 @@ import type { SearchAddon } from '@xterm/addon-search'
 import type { SubagentInfo } from './subagents.ts'
 import type { BlockModel } from './blocks.ts'
 import type { EditInfo } from './edits-api.ts'
+import type { TermPrefs } from './term-prefs.ts'
 
 /** Rectangle in canvas fractions (0..1). */
 export interface Rect {
@@ -267,6 +268,8 @@ export interface Prefs {
   sendCodeBlock: boolean
   /** A command that ran at least this many seconds raises a done / failed flag when the terminal is unattended; 0 = never. */
   commandNotifySec: number
+  /** Scrollback, cursor and copy-on-select (term-prefs.ts). */
+  term: TermPrefs
 }
 
 /** Everything the view reads; mutated in place, `version` bumps on change. */

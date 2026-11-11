@@ -8,6 +8,7 @@ import { requestCloseAll } from './actions.ts'
 import { SendSettings } from './send-menu.tsx'
 import { setPathTarget, setPathTemplate } from './path-links.ts'
 import { CommandAlertSettings, ShellIntegrationSettings } from './blocks-settings.tsx'
+import { TerminalSettings } from './term-settings.tsx'
 import type { PathTarget } from './types.ts'
 import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setHungMinutes, setNotify, setSound, setTermTheme } from './terminal-store.ts'
 
@@ -165,6 +166,7 @@ export function SettingsMenu(): ReactElement {
           {CONTRAST_LABELS[font.minContrast] === undefined ? <option value={font.minContrast}>{`Custom (${font.minContrast}:1)`}</option> : null}
         </select>
       </label>
+      <TerminalSettings />
       <PathLinksSettings />
       <SendSettings />
       <ShellIntegrationSettings />

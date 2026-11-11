@@ -22,6 +22,8 @@
 //   shortcuts.ts    keyboard shortcut registry (handlers and the help panel read it)
 //   ssh.ts          SSH targets: validation, labels and socket parameters
 //   placement.ts    where a new window goes (largest free gap, cascade)
+//   term-prefs.ts, term-options.ts, copy-select.ts, zoom.ts, tags.ts, tag-palette.ts
+//                   scrollback / cursor / copy-on-select, Ctrl+wheel font zoom, colour tags
 
 export * from './types.ts'
 export * from './state.ts'
@@ -57,3 +59,5 @@ export * from './mission.ts'
 export * from './shortcuts.ts'
 export * from './ssh.ts'
 export * from './placement.ts'
+export * from './term-prefs.ts'
+export * from './term-options.ts'

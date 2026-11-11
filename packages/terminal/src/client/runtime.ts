@@ -25,6 +25,7 @@ import { installBlockBar } from './block-bar.ts'
 import { handleBlockKey } from './block-actions.ts'
 import { watchBlockAlerts } from './block-notify.ts'
 import { sshParams } from './ssh.ts'
+import { termOptions } from './term-options.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
 import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
@@ -150,14 +151,13 @@ export function ensureRuntime(win: WinState): Runtime {
   const term = new Terminal({
     cols,
     rows,
-    cursorBlink: true,
+    ...termOptions(),
     fontFamily: prefs.font.family,
     fontSize: prefs.font.size,
     lineHeight: prefs.font.lineHeight,
     letterSpacing: prefs.font.letterSpacing,
     fontWeight: 'normal',
     fontWeightBold: prefs.font.boldWeight,
-    scrollback: 5000,
     allowProposedApi: true,
     // Keep text readable whatever colours a program prints (e.g. white text from a dark-themed TUI on a light background).
     minimumContrastRatio: prefs.font.minContrast,
