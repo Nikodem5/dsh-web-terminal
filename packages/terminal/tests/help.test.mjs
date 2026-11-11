@@ -165,9 +165,10 @@ test('help text that lists the agents names every provider the UI offers, not ju
   assert.doesNotMatch(send.what, /new Claude terminal/)
 })
 
-test('the agent-mark help says only Claude reports edits', () => {
-  const need = h.AGENT_MARK_HELP.find((m) => m.how === 'Needs Claude hooks')
-  assert.match(need.what, /Antigravity terminals do not/)
+test('the agent-mark help says Claude reports edits, and Antigravity only with its integration', () => {
+  const need = h.AGENT_MARK_HELP.find((m) => m.how === 'Needs agent hooks')
+  assert.match(need.what, /Antigravity does once its integration is installed/)
+  assert.ok(h.AGENT_HELP.some((m) => /Never installed on its own/.test(m.what)), 'the opt-in is spelled out')
 })
 
 test('the agent help covers each provider, the resume caveat and what a hand-typed agent gets', async () => {

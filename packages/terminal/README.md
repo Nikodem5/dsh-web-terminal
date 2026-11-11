@@ -42,7 +42,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 **Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Help panel
-The book button (or **F1**) opens a panel with nine sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, how the agent terminals are started and what each reports, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude`, `agy` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
+The book button (or **F1**) opens a panel with ten sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, how the agent terminals are started and what each reports, the opt-in Antigravity integration (Install / Remove), what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude`, `agy` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
 
 **Update from source** (last section) is for installs made with `npm run install:desktop` from a git clone: the installer records the clone and commit in `install-source.json` beside the installed package. **Pull, build and install** runs `git pull --ff-only`, `npm install`, `npm run build` and `node scripts/install.mjs <profile>` in that clone, with the output shown below the buttons; **Restart app** (after a confirm that counts busy terminals) hands off to a detached helper (`lib/relaunch.js`) that closes the app, forces it after 8 s, and starts it again. Release installs show why the update is unavailable; under `dsh web` restart it yourself. Routes: `GET`/`POST /api/dsh-web-terminal/update`, `POST /api/dsh-web-terminal/relaunch`, both refusing foreign Origins.
 
@@ -72,17 +72,19 @@ Status comes from the agent itself, not from guessing at output.
 - **A new agent terminal is covered while it starts.** A new shell started with a Claude or Antigravity command shows "Starting Claude…" (or "Starting Antigravity…") instead of the shell banner and the echoed command, until the agent reports its first state of any kind, or 5 s have passed, or the shell exits or the connection fails (so a failed start is visible). The terminal stays attached and sized underneath and keys still reach it. After the first signal the cover stays a moment (about 0.1 s) so Antigravity's repaint, which follows its first report, is on screen when it lifts. It never applies to plain shells, ssh windows, or a reattach to a live session or page reload. The shell banner stays above the agent's interface on the normal screen once the cover lifts.
 
 ### Antigravity CLI (`agy`)
-A terminal started with **◈ Antigravity** (or any startup command beginning with `agy`) reports its state like a Claude
-terminal does: the same dots, the same two attention levels, notifications and chime. It gets there differently, because
-`agy` has no per-process settings to point at (the reasoning is in `docs/adr/0002-antigravity-signals-from-terminal-output.md`).
+A terminal started with **◈ Antigravity** (or any startup command beginning with `agy`, or a path to it such as `C:...agy.exe`) reports its state like a Claude
+terminal does: the same dots, the same two attention levels, notifications and chime. Out of the box it is read from `agy`'s
+own terminal output (the reasoning is in `docs/adr/0002-antigravity-signals-from-terminal-output.md`); the opt-in
+**Antigravity integration** below adds the conversation id, changed-file marks, quota and cost, and a status that cannot be
+faked by printed output.
 
 - **How it is started.** The host adds `AGY_CLI_OSC7501=on` to the environment of every local terminal's shell. With it, `agy`
   prints a status sequence (`ESC ] 7501 ; state=<state>... BEL`) whenever its state changes, and the host reads those from the
   output of terminals the browser says were started as `agy` (never ssh windows). Nothing in `agy`'s own configuration is
   edited. `agy` has to be on the host's PATH; the help panel's diagnostics show whether it was found. A CLI that is not found gets a toolbar note ("`agy` not found on PATH") and a red diagnostics row only while no agent CLI at all was found; with at least one found, the missing one is listed in the diagnostics without colour and its button stays as it is.
 - **What it reports.** `working`, `blocked` (shown as **Needs you**, with agy's own message as the badge tooltip and the
-  notification text), `done` (**Finished**), `failed` and `idle`. Nothing else: **no usage or limits, no changed-file marks,
-  no sub-agents.** The stats bar counts the terminal by status like any other, and the Agents button and panel are hidden when every open terminal is an Antigravity one.
+  notification text), `done` (**Finished**), `failed` and `idle`. Without the integration nothing else: **no usage or limits, no changed-file marks**;
+  **no sub-agents** either way. When the shell exits, the terminal's agent is marked ended whatever it last reported. The stats bar counts the terminal by status like any other, and the Agents button and panel are hidden when every open terminal is an Antigravity one.
 - **Only when started from here.** An `agy` you type by hand into a plain shell shows no state (the dot stays Running or
   Idle), the same as a hand-typed `claude`; so does one run over ssh.
 - **Start-up sign-in blip.** `agy` briefly reports a sign-in prompt (`kind=auth`, a blocked state) at every start. The host
@@ -96,10 +98,44 @@ terminal does: the same dots, the same two attention levels, notifications and c
   `agy` terminals in one folder with no known ids both reopen the latest conversation. A terminal that never had a turn starts
   plain `agy`, and a command that already chooses a conversation (`-c`, `--continue`, `--conversation`) is left alone.
 - **Send to a new agent.** *New Antigravity terminal here* pastes the selection once `agy` has reported `idle` (its prompt is
-  up), and copies it to the clipboard instead if it has not got there within a minute.
+  up). If it has not got there within a minute the text is copied to the clipboard instead and a notice at the bottom of the page
+  says so (and whether `agy` reported any status at all). The help panel's diagnostics show, per agent, how many of its
+  terminals reported a status, and the last send that timed out.
 - **Fake status.** The sequences are plain terminal output with no per-terminal secret (Claude's hooks have one), so a
   program that prints the same bytes inside an Antigravity terminal can fake a status dot or an alert. It can only mislead;
-  it cannot run anything. Terminals not started as `agy` are not read at all.
+  it cannot run anything. Terminals not started as `agy` are not read at all. With the integration on, see below.
+
+#### Antigravity integration (opt-in)
+Nothing is installed until you press **Install Antigravity integration** in the help panel (book button, *Antigravity
+integration* section); **Remove** undoes it. Checked against `agy` 1.5.3 (`agy --help`, `agy changelog`, the CLI docs and a
+live hook run):
+
+- **Launch time (no global change).** `agy` has a per-session `--settings <file>` flag ("never saved"). With the integration on,
+  the host writes `agy-settings-<pid>.json` in its data folder and the client starts `agy --settings "<file>" ...`. Its
+  `statusLine` runs `lib/agy-statusline.mjs`, which posts agy's status-line JSON to the host with the terminal's secret
+  (`DSH_WT_TOKEN`) and runs and relays your own status line from `~/.gemini/antigravity-cli/settings.json` (with none, the
+  built-in one stays: `stack_with_default`). Your settings file is not edited.
+- **Hooks (a global agy plugin).** agy reads hooks only from `hooks.json` files (global, workspace or a plugin's), never from
+  settings, so the integration stages a small plugin (`plugin.json`, `hooks.json`, `hook.mjs`) in the data folder and runs
+  `agy plugin install <folder>`; Remove runs `agy plugin uninstall dsh-web-terminal`. Its SessionStart, PreInvocation,
+  PostToolUse and Stop hooks run `node hook.mjs <Event>` from the plugin folder and post to the URL in `DSH_WT_AGY_SIGNAL`
+  with `DSH_WT_TOKEN`; both exist only in terminals this plugin opened, so `agy` anywhere else is unaffected (the hook prints
+  `{}` and exits). Only the conversation id, tool call, error and stop reason are forwarded, never your prompt.
+- **What it adds.** The conversation id (so a reopened window resumes it even when agy did not exit cleanly), changed-file
+  marks for `write_file` / `write_to_file` / `replace_file_content` / `multi_replace_file_content` (the same markers Claude
+  drives), and the stats bar numbers below. State comes from the hooks (`PreInvocation`/`PostToolUse` working, `Stop` finished
+  or failed) and the status line (`tool_confirmation_pending` needs you, `authenticating` sign-in, `error` failed).
+- **Trusted status.** Once a terminal's agy has reported over this channel, OSC 7501 sequences in its output no longer change
+  its state (only an exit hint naming the same conversation is still read), so a program printing them cannot fake a dot or
+  an alert. A process running inside the terminal can still read `DSH_WT_TOKEN`, as with Claude.
+- **Stats bar.** From the status line: the `quota` buckets (`gemini-5h`, `gemini-weekly`, `3p-5h`...; used % is
+  `1 - remaining_fraction`), shown as the most used 5h and weekly bucket with the same "out ~" forecast as Claude's, every
+  bucket in the tooltip; `cost.total_usd` (a list-price estimate) summed over open sessions; and the open sessions' tokens
+  (agy keeps no readable all-time total). Your e-mail address in that JSON is never stored. The bar shows the numbers of every
+  provider with an open terminal, the focused terminal's first, each after its mark (✦ Claude, ◈ Antigravity); with no agent
+  terminal open it shows every provider that has numbers.
+- **Needs** `node` on PATH, and a plugin folder path without spaces (agy runs the status-line command through `cmd /c` and
+  mangles quotes); the panel says why when either is missing. Restart open Antigravity terminals after installing.
 
 ### New since you last looked
 A terminal counts as looked at while its window is focused, the Terminals page is showing and the app is in front. When you stop looking, the plugin remembers where the output ended. Output that adds at least one new line while you are away shows as a small count on the terminal's list row (separate from attention badges; in-place repaints such as a status line do not count). When you come back, a thin divider `── new since 14:32 ──` marks the first new line and stays until you look away again. If it is above the visible rows, a `↓ 42 new lines` pill at the window's bottom right (or **Ctrl+Shift+U**) jumps to it. Full-screen programs (vim, htop) are skipped, and a divider whose line has scrolled out of the scrollback is not shown. Antigravity (`agy`) terminals are skipped too: the CLI redraws its interface in place on the normal screen, so those repaints would look like new lines and the divider would land on top of it; they get no divider, count, pill or Ctrl+Shift+U jump. Attention and alerts are unchanged.
@@ -134,7 +170,7 @@ an older host without them simply shows an empty panel.
 When a Claude session in one of your open terminals edits a file (Edit, Write, MultiEdit, NotebookEdit), the code editor
 plugin, if installed, marks that file with a small lightning badge in its explorer, tabs, quick open and CHANGES list;
 hovering shows the terminal, the time and the tool. The mark is temporary: it disappears when the terminal is closed (or its
-shell restarted). Only Claude started through this plugin reports edits (its hooks do the reporting; Antigravity terminals report none); changes made by shell
+shell restarted). Only Claude started through this plugin reports edits (its hooks do the reporting), and Antigravity with its opt-in integration installed; changes made by shell
 commands or by you are not marked. See the wire contract below for the API the editor reads.
 
 ### Clickable file paths
