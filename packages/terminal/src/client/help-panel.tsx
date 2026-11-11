@@ -26,6 +26,8 @@ import {
 import type { DiagnosticsInput } from './help-data.ts'
 import { providerById, providerOfWin, providers } from './providers.ts'
 import { getLastSendTimeout } from './send-to.ts'
+import { AgyIntegrationSection } from './integration-section.tsx'
+import { describeIntegration, getIntegrations } from './integrations.ts'
 import {
   SHORTCUTS,
   SHORTCUT_GROUPS,
@@ -71,6 +73,7 @@ function readDiagnostics(now: number): DiagnosticsInput {
     now,
     agentReports: agentReports(),
     sendTimeout: sendTimeoutInfo(),
+    integrations: [{ label: 'Antigravity integration', ...describeIntegration(getIntegrations().antigravity) }],
   }
 }
 
@@ -197,6 +200,10 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
               <span>{m.what}</span>
             </div>
           ))}
+        </Section>
+
+        <Section title="Antigravity integration">
+          <AgyIntegrationSection />
         </Section>
 
         <Section title="Status colours">

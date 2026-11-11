@@ -141,12 +141,20 @@ const AGY_HAS_CONVERSATION = /(?:^|\s)(?:--conversation|--continue|-c)(?:\s|=|$)
 /**
  * Reopen where agy left off: a known conversation id becomes `--conversation <id>`; with none but a
  * terminal that has had a turn (the app closed while agy ran, so no id was printed), `-c` continues the
- * latest conversation in the folder; otherwise plain `agy`. A command that already chooses one is left alone.
+ * latest conversation in the folder; otherwise plain `agy`. A command that already chooses one keeps its choice.
+ * With the opt-in integration on, `--settings "<file>"` is added too (unless the command passes its own).
  */
-function agyLaunch(startup: string, _launch: LaunchHint, session?: string | null, turned?: boolean): string {
-  if (!AGY_COMMAND.test(startup) || AGY_HAS_CONVERSATION.test(startup)) return startup
-  const flag = isSessionId(session) ? `--conversation ${session}` : turned === true ? '-c' : undefined
-  return flag === undefined ? startup : startup.replace(AGY_COMMAND, (_all, lead: string, program: string) => `${lead}${program} ${flag}`)
+function agyLaunch(startup: string, launch: LaunchHint, session?: string | null, turned?: boolean): string {
+  if (!AGY_COMMAND.test(startup)) return startup
+  const flags: string[] = []
+  // The opt-in integration: a per-session settings file whose status line reports to the plugin (never saved by agy).
+  const settingsPath = launch?.settingsPath
+  if (typeof settingsPath === 'string' && settingsPath.length > 0 && !/(^|\s)--settings(\s|=)/.test(startup)) flags.push(`--settings "${settingsPath.replace(/\\/g, '/')}"`)
+  if (!AGY_HAS_CONVERSATION.test(startup)) {
+    const resume = isSessionId(session) ? `--conversation ${session}` : turned === true ? '-c' : undefined
+    if (resume !== undefined) flags.push(resume)
+  }
+  return flags.length === 0 ? startup : startup.replace(AGY_COMMAND, (_all, lead: string, program: string) => `${lead}${program} ${flags.join(' ')}`)
 }
 
 /** Ready once agy has reported `idle` (its prompt is up) after the startup command was typed. */
