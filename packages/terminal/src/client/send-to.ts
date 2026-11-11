@@ -9,6 +9,7 @@ import { displayName } from './names.ts'
 import { openTerminal } from './windows.ts'
 import { providerById, providerForCommand } from './providers.ts'
 import { isOverview } from './mission.ts'
+import { writeClipboard } from './clipboard.ts'
 import { showNotice } from './notices.ts'
 import type { Activity, Runtime, WinState } from './types.ts'
 
@@ -140,9 +141,7 @@ function giveUpNewAgent(selection: string, providerId: string, label: string, rt
   const notify = (copied: boolean): void => {
     showNotice(sendTimeoutNotice(label, reported, copied))
   }
-  const clipboard = navigator.clipboard
-  if (clipboard === undefined) return notify(false)
-  clipboard.writeText(selection).then(() => notify(true), () => notify(false))
+  void writeClipboard(selection).then(notify)
   emit()
 }
 

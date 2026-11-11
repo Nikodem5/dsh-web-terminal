@@ -43,7 +43,7 @@ export function SendMenu(): ReactElement | null {
   const choose = (item: Item) => {
     closeSendMenu()
     if (item.kind === 'copy') {
-      copyText(req.text)
+      void copyText(req.text, getRuntime(req.sourceId))
       back()
     } else if (item.kind === 'new') sendToNewAgent(req.text, req.sourceId, item.provider)
     else if (!sendSelection(req.text, item.id)) back()

@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import { writeClipboard } from './clipboard.ts'
 import { Pop } from './popover.tsx'
 import { UpdateSection } from './self-update.tsx'
 import { getStats, subscribeStats } from './stats.ts'
@@ -140,8 +141,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
       setCopied(state)
       setTimeout(() => setCopied(null), 2000)
     }
-    if (navigator.clipboard === undefined) return done('failed')
-    navigator.clipboard.writeText(text).then(() => done('ok'), () => done('failed'))
+    void writeClipboard(text).then((ok) => done(ok ? 'ok' : 'failed'))
   }
 
   return (

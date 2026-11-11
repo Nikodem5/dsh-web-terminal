@@ -5,6 +5,7 @@
 import type { Block } from './blocks.ts'
 import { extractOutput, failedTarget, outputRows, rerunGate, stepTarget } from './block-text.ts'
 import type { OutputText, Span } from './block-text.ts'
+import { writeClipboard } from './clipboard.ts'
 import { matchShortcut } from './shortcuts.ts'
 import { openSendText } from './send-to.ts'
 import type { Runtime } from './types.ts'
@@ -63,8 +64,7 @@ export function rerunBlocked(rt: Runtime, block: Block): string | undefined {
   return gate.ok ? undefined : gate.reason
 }
 
-const copy = (text: string): Promise<boolean> =>
-  navigator.clipboard === undefined ? Promise.resolve(false) : navigator.clipboard.writeText(text).then(() => true, () => false)
+const copy = writeClipboard // the block bar shows its own tick or cross on the button
 
 export function copyBlockOutput(rt: Runtime, block: Block): Promise<boolean> {
   const out = blockOutput(rt, block)
