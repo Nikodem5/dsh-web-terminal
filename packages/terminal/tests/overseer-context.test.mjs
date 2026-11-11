@@ -3,18 +3,19 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { buildContext, keepTail, pickFocus } from '../lib/overseer/context.js'
 import { boundHistory, buildMessages, newMarker, systemPrompt } from '../lib/overseer/prompt.js'
 
 const marker = 'OVERSEER-DATA-test123'
 const screen = (tag, lines = 5000) => Array.from({ length: lines }, (_, i) => `${tag} output line ${i}`).join('\r\n')
-const term = (num, extra = {}) => ({ num, name: `term ${num}`, cwd: `C:\\work\\proj${num}`, replay: screen(`T${num}`), ...extra })
+const term = (num, extra = {}) => ({ num, name: `term ${num}`, cwd: join('/work', `proj${num}`), replay: screen(`T${num}`), ...extra })
 
 test('pickFocus: numbers, names and folders the question mentions; shared names pick nothing', () => {
   const terminals = [
-    { num: 1, name: 'Claude Code', cwd: 'C:\\work\\api' },
-    { num: 2, name: 'Claude Code', cwd: 'C:\\work\\web' },
-    { num: 3, name: 'build watcher', cwd: 'C:\\work\\web' },
+    { num: 1, name: 'Claude Code', cwd: join('/work', 'api') },
+    { num: 2, name: 'Claude Code', cwd: join('/work', 'web') },
+    { num: 3, name: 'build watcher', cwd: join('/work', 'web') },
   ]
   assert.deepEqual([...pickFocus('what is terminal 3 doing?', terminals)], [3])
   assert.deepEqual([...pickFocus('compare T1 and #2', terminals)].sort(), [1, 2])

@@ -147,7 +147,12 @@ function hangingSpawn(hang) {
     const child = new EventEmitter()
     child.stdout = new EventEmitter()
     child.stderr = new EventEmitter()
-    child.kill = () => { call.killed = true }
+    const hold = setInterval(() => {}, 1000)
+    child.on('close', () => clearInterval(hold))
+    child.kill = () => {
+      call.killed = true
+      clearInterval(hold)
+    }
     if (!hang(call)) setImmediate(() => child.emit('close', 0))
     return child
   }
@@ -165,6 +170,7 @@ test('a hung step is killed on timeout and the run ends with an error instead of
   assert.match(status.error, /git pull timed out/)
   assert.ok(calls.find((c) => c.args.includes('pull')).killed)
   assert.equal(update.start(), true, 'a new run is accepted afterwards')
+  await until(async () => !(await update.status()).running)
 })
 
 test('a hung git query is abandoned and answers null; no git call may prompt', async () => {
