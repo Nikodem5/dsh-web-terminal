@@ -9,6 +9,7 @@ import { SendSettings } from './send-menu.tsx'
 import { setPathTarget, setPathTemplate } from './path-links.ts'
 import { CommandAlertSettings, ShellIntegrationSettings } from './blocks-settings.tsx'
 import { TerminalSettings } from './term-settings.tsx'
+import { PatternAlertSettings } from './pattern-alerts-settings.tsx'
 import type { PathTarget } from './types.ts'
 import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setHungMinutes, setNotify, setSound, setTermTheme } from './terminal-store.ts'
 
@@ -180,10 +181,11 @@ export function SettingsMenu(): ReactElement {
         <span className="wt-grow">Play a chime when an agent needs me</span>
       </label>
       <label className="wt-field">
-        Flag a working agent as stuck after (minutes, 0 = never)
+        Flag a working agent as possibly hung after no output for (minutes, 0 = never)
         <input className="wt-input" type="number" min={0} max={240} step={1} value={prefs.hungMinutes} onChange={(e) => setHungMinutes(Number(e.target.value))} />
       </label>
       <CommandAlertSettings />
+      <PatternAlertSettings />
     </Pop>
   )
 }

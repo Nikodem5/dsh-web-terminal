@@ -165,6 +165,22 @@ test('help text that lists the agents names every provider the UI offers, not ju
   assert.doesNotMatch(send.what, /new Claude terminal/)
 })
 
+test('the awareness help matches what the code does', () => {
+  const text = h.AWARENESS_HELP.map((m) => m.how + ' ' + m.what).join('\n')
+  assert.ok(css('attention.ts').includes("HUNG_LABEL = 'possibly hung'"))
+  assert.ok(text.includes('possibly hung') && text.includes('5 minutes'))
+  assert.match(css('state.ts'), /hungMinutes: 5,/)
+  const core = css('pattern-alerts-core.ts')
+  assert.match(core, /TEXT_MAX = 200/)
+  assert.match(core, /LINE_MAX = 2000/)
+  assert.match(core, /PATTERNS_MAX = 20/)
+  assert.match(core, /COOLDOWN_DEFAULT = 30/)
+  for (const name of ['Asks to proceed', 'Test failure']) assert.ok(core.includes("name: '" + name + "'") && text.includes(name))
+  assert.match(css('git-header.ts'), /BRANCH_SHOWN/)
+  assert.match(readFileSync(join(root, 'lib', 'index.js'), 'utf8'), /DSH_WT_GIT_INTERVAL_MS', 30_000/)
+  assert.ok(text.includes('every 30 s'))
+})
+
 test('the agent-mark help says only Claude reports edits', () => {
   const need = h.AGENT_MARK_HELP.find((m) => m.how === 'Needs Claude hooks')
   assert.match(need.what, /Antigravity terminals do not/)

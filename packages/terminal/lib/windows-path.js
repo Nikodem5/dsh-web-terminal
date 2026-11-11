@@ -178,4 +178,13 @@ function createWindowsPath(options = {}) {
   }
 }
 
-export { createWindowsPath, mergePath, parseRegPath, pathKey, withPath, REG_TTL_MS }
+/**
+ * A folder to run `where.exe` from. `where` looks in its current directory before PATH, so run from the host's
+ * own cwd it would hand back a binary planted in whatever folder the host was launched in as node, ssh or git.
+ * System32 is writable by administrators only and holds none of those names.
+ */
+function listerCwd(env = process.env) {
+  return `${env.SystemRoot || env.windir || 'C:\\Windows'}\\System32`
+}
+
+export { listerCwd, createWindowsPath, mergePath, parseRegPath, pathKey, withPath, REG_TTL_MS }

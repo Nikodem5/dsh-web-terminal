@@ -24,6 +24,8 @@ import { createBlocks } from './blocks.ts'
 import { installBlockBar } from './block-bar.ts'
 import { handleBlockKey } from './block-actions.ts'
 import { watchBlockAlerts } from './block-notify.ts'
+import { feedPatternAlerts, resetPatternScan } from './pattern-alerts.ts'
+import { applyGit, requestGit, watchGit } from './git-header.ts'
 import { sshParams } from './ssh.ts'
 import { installZoom, resetZoom } from './zoom.ts'
 import { installCopyOnSelect } from './copy-select.ts'
@@ -214,6 +216,7 @@ export function ensureRuntime(win: WinState): Runtime {
   runtimes.set(win.id, rt)
   rt.blocks = createBlocks(rt) // command blocks: OSC 133/633 handlers work before the terminal is opened
   watchBlockAlerts(rt)
+  watchGit(rt)
   trackUnread(rt)
   installZoom(rt, () => refit(rt))
   installCopyOnSelect(rt)
@@ -370,6 +373,7 @@ export function ensureRuntime(win: WinState): Runtime {
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         applyEdits(rt, (frame as { edits?: unknown }).edits)
         discardOutput(rt)
+        resetPatternScan(rt)
         term.reset()
         rt.blocks?.reset()
         promptBase = rt.blocks?.promptsReady ?? 0
@@ -382,6 +386,8 @@ export function ensureRuntime(win: WinState): Runtime {
           setConn(rt, 'live')
           rt.lastCols = 0
           sizeToHost(rt)
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') announceVisibility(rt)
+          requestGit(rt)
           // An ssh window has no startup typing: its remote command went to ssh as an argument.
           const startup = rt.ssh ? undefined : store.wins.find((w) => w.id === rt.id)?.startup
           if (frame.created === true && startup !== undefined && startup.trim().length > 0) {
@@ -419,6 +425,7 @@ export function ensureRuntime(win: WinState): Runtime {
         // The host dropped output on a congested socket; its replay is the screen as it really is.
         if (typeof frame.replay !== 'string') return
         discardOutput(rt)
+        resetPatternScan(rt)
         term.reset()
         rt.blocks?.reset()
         if (frame.replay.length > 0) term.write(frame.replay, () => rebaseUnread(rt))
@@ -428,6 +435,7 @@ export function ensureRuntime(win: WinState): Runtime {
         lastOutputAt = Date.now()
         wakeStartup?.()
         rt.lastOutputAt = Date.now()
+        feedPatternAlerts(rt, frame.data) // before the backpressure drop below: a matching line counts even if it is not drawn
         if (!admitOutput(rt.pendingBytes, frame.data.length)) {
           rt.droppedOutput = true
           return
@@ -437,6 +445,8 @@ export function ensureRuntime(win: WinState): Runtime {
         noteHostBusy(rt, frame.busy === true)
       } else if (frame.type === 'agent') {
         if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at, session: frame.session })
+      } else if (frame.type === 'git') {
+        applyGit(rt, (frame as { git?: unknown }).git)
       } else if (frame.type === 'subagents') {
         applySubagents(rt, (frame as { tasks?: unknown }).tasks)
       } else if (frame.type === 'edits') {
@@ -525,6 +535,15 @@ export function sizeToHost(rt: Runtime): void {
   if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) {
     rt.socket.send(JSON.stringify({ type: 'resize', cols, rows }))
   }
+}
+
+/** Tell the host whether the page is in view: it checks a hidden window's activity less often (the alerts still arrive). */
+export function announceVisibility(rt: Runtime): void {
+  if (rt.socket === null || rt.socket.readyState !== WebSocket.OPEN) return
+  rt.socket.send(JSON.stringify({ type: 'visibility', visible: document.visibilityState !== 'hidden' }))
+}
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('visibilitychange', () => { for (const rt of runtimes.values()) announceVisibility(rt) })
 }
 
 /** Smallest size auto-fit shrinks to: shrinking further would trade legibility for columns. */

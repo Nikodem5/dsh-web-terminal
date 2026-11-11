@@ -212,4 +212,12 @@ function createProcessTable(options = {}) {
   }
 }
 
-export { createProcessTable, parseSnapshot, HELPER_SCRIPT }
+/** A window whose page is hidden has its activity checked on one tick in this many. */
+const HIDDEN_EVERY = 4
+
+/** Whether a window is due on poll number `tick`: a visible one always, a hidden one every {@link HIDDEN_EVERY}-th. */
+function activityDue(hidden, tick) {
+  return !hidden || tick % HIDDEN_EVERY === 0
+}
+
+export { activityDue, createProcessTable, parseSnapshot, HELPER_SCRIPT, HIDDEN_EVERY }

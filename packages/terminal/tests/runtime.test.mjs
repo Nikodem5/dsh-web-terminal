@@ -1145,3 +1145,19 @@ test('veil: the holder carries it between windows and a restart veils the new sh
   b.remove()
   s.disposeRuntime(id, false)
 })
+
+// ── visibility ──
+
+test('the host is told when the page is hidden and when it is shown again', async () => {
+  const { sock } = await start()
+  let state = 'hidden'
+  Object.defineProperty(window.document, 'visibilityState', { configurable: true, get: () => state })
+  try {
+    window.document.dispatchEvent(new window.Event('visibilitychange'))
+    state = 'visible'
+    window.document.dispatchEvent(new window.Event('visibilitychange'))
+  } finally {
+    delete window.document.visibilityState
+  }
+  assert.deepEqual(sock.sent.filter((f) => f.type === 'visibility'), [{ type: 'visibility', visible: false }, { type: 'visibility', visible: true }])
+})

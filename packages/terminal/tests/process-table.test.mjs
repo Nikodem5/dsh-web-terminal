@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { execFileSync } from 'node:child_process'
-import { createProcessTable, parseSnapshot } from '../lib/process-table.js'
+import { HIDDEN_EVERY, activityDue, createProcessTable, parseSnapshot } from '../lib/process-table.js'
 
 /** A fake helper: records stdin writes; `reply(text)` plays stdout; `die()` plays an exit. */
 function fakeChild() {
@@ -184,4 +184,10 @@ test('real PowerShell helper answers and leaves no process after stop', { skip: 
   const deadline = Date.now() + 15_000
   while (alive() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
   assert.ok(!alive(), 'helper process is gone')
+})
+
+test('activityDue: a visible window every tick, a hidden one only every HIDDEN_EVERY-th', () => {
+  const ticks = Array.from({ length: HIDDEN_EVERY * 3 }, (_, i) => i + 1)
+  assert.ok(ticks.every((t) => activityDue(false, t)))
+  assert.equal(ticks.filter((t) => activityDue(true, t)).length, 3)
 })

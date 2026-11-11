@@ -4,11 +4,11 @@ import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { userStatusLine, userSubagentStatusLine } from '../lib/statusline.js'
+import { runUser, userStatusLine, userSubagentStatusLine } from '../lib/statusline.js'
 
 const script = join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'statusline.js')
 const root = mkdtempSync(join(tmpdir(), 'dsh-wt-statusline-'))
@@ -165,4 +165,24 @@ test('--subagents recursion guard: a user command that is this wrapper, or alrea
 test('userSubagentStatusLine reads only the subagentStatusLine command', () => {
   assert.deepEqual(userSubagentStatusLine({ CLAUDE_CONFIG_DIR: subagentConfigDir({ type: 'command', command: 'x' }) }), { command: 'x', refreshInterval: undefined })
   assert.equal(userSubagentStatusLine({ CLAUDE_CONFIG_DIR: configDir({ type: 'command', command: 'x' }) }), undefined)
+})
+
+test('a user command that outlives the timeout is killed with everything it started', async () => {
+  const pidFile = join(root, `grandchild${++n}.pid`)
+  const file = join(root, `hang${++n}.js`)
+  // Starts a long-lived grandchild that shares stdout, records its pid, then lingers itself.
+  writeFileSync(file, `const { spawn } = require('node:child_process')
+const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit'] })
+require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid))
+setInterval(() => {}, 1000)`)
+  const started = Date.now()
+  const out = await runUser(`node "${file.replaceAll('\\', '/')}"`, '{}', 'DSH_WT_STATUSLINE', 1500)
+  assert.equal(out, '')
+  assert.ok(Date.now() - started < 10_000)
+  const pid = Number(readFileSync(pidFile, 'utf8'))
+  const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
+  const deadline = Date.now() + 10_000
+  while (alive() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+  if (alive()) { try { process.kill(pid) } catch {} }
+  assert.equal(alive(), false, 'the grandchild must not survive the timeout')
 })

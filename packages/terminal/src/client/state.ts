@@ -12,6 +12,7 @@ import { cleanSsh, cleanSshList } from './ssh.ts'
 import { DEFAULT_TERM, cleanTermPrefs, cleanZoom } from './term-prefs.ts'
 import { cleanTag } from './tag-palette.ts'
 import { providerById, providerForCommand } from './providers.ts'
+import { cleanPatternAlerts, defaultPatternAlerts } from './pattern-alerts-core.ts'
 import { withAuth } from '../../../shared/client/local-auth.ts'
 import type { FontPrefs, HostInfo, LayoutWin, Prefs, Rect, Runtime, SavedLayout, Store, WinState } from './types.ts'
 
@@ -55,7 +56,8 @@ export const prefs: Prefs = {
   agentsPanel: false,
   notify: true,
   sound: true,
-  hungMinutes: 10,
+  hungMinutes: 5,
+  patternAlerts: defaultPatternAlerts(),
   // New users open paths in the Code plugin; applyPrefs keeps whatever an existing user saved.
   pathTarget: 'code',
   pathTemplate: '',
@@ -190,6 +192,8 @@ function applyPrefs(p: Record<string, unknown>): void {
   for (const key of ['fontCustom', 'autoFont', 'sidebar', 'agentsPanel', 'notify', 'sound'] as const) if (typeof p[key] === 'boolean') prefs[key] = p[key] as boolean
   if (isNum(p.fitCols)) prefs.fitCols = clamp(Math.round(p.fitCols), 40, 240)
   if (isNum(p.hungMinutes)) prefs.hungMinutes = clamp(Math.round(p.hungMinutes), 0, 240)
+  // Saved patterns are re-validated; none saved yet keeps the shipped (disabled) examples.
+  if (Array.isArray(p.patternAlerts)) prefs.patternAlerts = cleanPatternAlerts(p.patternAlerts)
   // Stored prefs without a target predate the Code option: they behaved as VS Code, so they keep that.
   prefs.pathTarget = p.pathTarget === 'code' || p.pathTarget === 'vscode' || p.pathTarget === 'cursor' || p.pathTarget === 'default' || p.pathTarget === 'custom' ? p.pathTarget : 'vscode'
   prefs.term = cleanTermPrefs(p.term)

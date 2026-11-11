@@ -238,3 +238,12 @@ for (const [label, file, id, platform] of [['Git Bash', gitBash, 'gitbash', 'win
     })
   }
 }
+
+test('inherited object keys are not shell ids: they fall back to the default shell', () => {
+  for (const platform of ['win32', 'linux']) {
+    const fallback = shellSpec(undefined, { platform, env: {} })
+    for (const id of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      assert.deepEqual(shellSpec(id, { platform, env: {} }), fallback, `${id} on ${platform}`)
+    }
+  }
+})
