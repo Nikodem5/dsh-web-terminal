@@ -6,7 +6,7 @@
 
 import { dropShellKind, planDrop } from './drop-paths.ts'
 import { pasteInput } from './send-to.ts'
-import { showNotice } from './notice.ts'
+import { showNotice } from './notices.ts'
 import { hostInfo, runtimes } from './state.ts'
 import type { DragEvent as ReactDragEvent } from 'react'
 

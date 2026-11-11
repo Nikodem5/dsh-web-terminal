@@ -195,7 +195,7 @@ export function newScanState(): ScanState {
   return { partial: '', overflow: false, fired: new Map() }
 }
 
-export interface Hit {
+export interface AlertHit {
   pattern: PatternAlert
   line: string
 }
@@ -208,8 +208,8 @@ const LINE_BREAK = /\r\n|\n|\r/
  * down is skipped without being tested. Each pattern hits at most once per call.
  * @param matchers - the active patterns for this terminal (`activeMatchers`).
  */
-export function scanChunk(state: ScanState, chunk: string, matchers: readonly Matcher[], now: number): Hit[] {
-  const hits: Hit[] = []
+export function scanChunk(state: ScanState, chunk: string, matchers: readonly Matcher[], now: number): AlertHit[] {
+  const hits: AlertHit[] = []
   // With nothing to look for there is nothing to keep either: no line is being assembled.
   if (matchers.length === 0) {
     state.partial = ''

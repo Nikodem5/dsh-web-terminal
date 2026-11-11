@@ -6,7 +6,7 @@ import { closeSendMenu, getSendRequest, sendSelection, sendTargets, sendToNewAge
 import { providers } from './providers.ts'
 import { getPrefs, getRuntime, getVersion, subscribe } from './terminal-store.ts'
 import { Pop } from './popover.tsx'
-import { copyText } from './notice.ts'
+import { copyText } from './clipboard.ts'
 
 type Item = { kind: 'copy' } | { kind: 'target'; id: string } | { kind: 'new'; provider: string }
 
