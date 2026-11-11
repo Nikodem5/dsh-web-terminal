@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { AGY_PLUGIN_NAME, buildAgyHooks, buildAgySettings, createAgyIntegration } from '../lib/agy-integration.js'
+import { AGY_PLUGIN_NAME, agyCommand, buildAgyHooks, buildAgySettings, createAgyIntegration } from '../lib/agy-integration.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const lib = join(here, '..', 'lib')
@@ -40,7 +40,7 @@ const make = (extra = {}) => {
   const dir = fresh('data')
   const gemini = fresh('gemini')
   const agy = fakeAgy(gemini, extra)
-  const integration = createAgyIntegration({ dir, geminiDir: gemini, pid: 4242, nodePath: '/bin/node', findAgy: async () => '/bin/agy', run: agy.run, version: '9.9.9', ...extra })
+  const integration = createAgyIntegration({ dir, geminiDir: gemini, pid: 4242, nodePath: '/bin/node', findAgy: async () => '/bin/agy', run: agy.run, version: '9.9.9', platform: 'linux', ...extra })
   return { dir, gemini, agy, integration }
 }
 
@@ -87,6 +87,88 @@ test('nothing happens until install; install stages, runs agy and turns the laun
   assert.equal(existsSync(settingsPath), false)
   assert.equal(existsSync(join(dir, 'agy-plugin')), false)
   assert.equal(existsSync(join(gemini, 'config', 'plugins', AGY_PLUGIN_NAME)), false)
+})
+
+test('agyCommand: a real .exe is preferred, a .cmd or .bat runs through cmd.exe with checked arguments, anything else is refused with a reason', () => {
+  const onWin = (files) => ({ platform: 'win32', exists: (f) => files.includes(f) })
+  // Elsewhere nothing changes.
+  assert.deepEqual(agyCommand('/usr/bin/agy', ['plugin', 'install', '/tmp/x'], { platform: 'linux' }), { argv: ['/usr/bin/agy', 'plugin', 'install', '/tmp/x'] })
+  // A real executable.
+  assert.deepEqual(agyCommand('C:\\bin\\agy.exe', ['plugin', 'uninstall', 'p'], onWin([])), { argv: ['C:\\bin\\agy.exe', 'plugin', 'uninstall', 'p'] })
+  // The extensionless shim `where` lists first: the .exe beside it wins over the .cmd.
+  assert.deepEqual(agyCommand('C:\\npm\\agy', ['x'], onWin(['C:\\npm\\agy.cmd', 'C:\\npm\\agy.exe'])), { argv: ['C:\\npm\\agy.exe', 'x'] })
+  // Only a .cmd: through cmd.exe, arguments verbatim and quoted only when they hold spaces.
+  assert.deepEqual(agyCommand('C:\\npm\\agy', ['plugin', 'install', 'C:\\Users\\me\\data dir\\agy-plugin'], onWin(['C:\\npm\\agy.cmd'])), {
+    argv: ['cmd.exe', '/d', '/s', '/c', '"C:\\npm\\agy.cmd plugin install "C:\\Users\\me\\data dir\\agy-plugin""'],
+    verbatim: true,
+  })
+  assert.equal(agyCommand('C:\\npm\\agy.bat', [], onWin([])).verbatim, true)
+  // Anything cmd.exe could read as syntax is refused, in the path or in an argument.
+  for (const bad of ['a&b', 'a%PATH%', 'a^b', 'a|b', 'a>b', 'a"b', 'a!b']) {
+    assert.match(agyCommand('C:\\npm\\agy.cmd', ['plugin', 'install', bad], onWin([])).error, /cmd\.exe would read as syntax/, bad)
+    assert.match(agyCommand(`C:\\${bad}\\agy.cmd`, [], onWin([])).error, /cmd\.exe would read as syntax/, bad)
+  }
+  // An extensionless file with nothing beside it cannot be spawned on Windows.
+  assert.match(agyCommand('C:\\npm\\agy', [], onWin([])).error, /neither an \.exe nor a \.cmd/)
+})
+
+test('the integration runs a .cmd shim through cmd.exe (verbatim) and a real path as it is', async () => {
+  const seen = []
+  const run = async (argv, options) => { seen.push({ argv, options }); return { code: 0, out: '' } }
+  const make2 = (path, exists) => createAgyIntegration({ dir: fresh('data'), geminiDir: fresh('gemini'), pid: 1, nodePath: '/bin/node', findAgy: async () => path, run, platform: 'win32', exists })
+  await make2('C:\\npm\\agy', (f) => f === 'C:\\npm\\agy.cmd').install()
+  assert.equal(seen[0].argv[0], 'cmd.exe')
+  assert.equal(seen[0].options.verbatim, true)
+  await make2('C:\\bin\\agy.exe', () => false).remove()
+  // remove only asks agy when the plugin is installed, so install first to see an .exe call.
+  const exeIntegration = make2('C:\\bin\\agy.exe', () => false)
+  await exeIntegration.install()
+  assert.deepEqual(seen.at(-1).argv.slice(0, 3), ['C:\\bin\\agy.exe', 'plugin', 'install'])
+  assert.equal(seen.at(-1).options.verbatim, false)
+  // A shim that cannot be run is an error to show, not a thrown spawn failure.
+  const refused = await make2('C:\\npm\\agy', () => false).install()
+  assert.match(refused.error, /^agy plugin install failed: agy was found at .* neither an \.exe/)
+})
+
+test('a disk error after a successful agy install is recorded, not thrown; remove answers the same way', async () => {
+  // The state file cannot be written: a directory sits where it must go.
+  const blocked = fresh('blocked')
+  mkdirSync(join(blocked, 'agy-integration.json'), { recursive: true })
+  const gemini = fresh('gemini')
+  const agy = fakeAgy(gemini)
+  const broken = createAgyIntegration({ dir: blocked, geminiDir: gemini, pid: 4242, nodePath: '/bin/node', findAgy: async () => '/bin/agy', run: agy.run, version: '1.0.0', platform: 'linux' })
+  const status = await broken.install()
+  assert.equal(status.enabled, false)
+  assert.match(status.error, /^the agy plugin is installed but the integration could not be turned on \(/)
+  assert.equal(status.pluginInstalled, true)
+  assert.equal(status.busy, false)
+  // Remove clears what it can and reports a disk error instead of rejecting.
+  const removed = await broken.remove()
+  assert.match(removed.error, /^could not turn the integration off: /)
+})
+
+test('a different change while one runs is answered "busy" and does not borrow its result; the same change shares it', async () => {
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  const gemini = fresh('gemini')
+  const inner = fakeAgy(gemini)
+  let started = false
+  const run = async (argv) => { started = true; await gate; return inner.run(argv) }
+  const integration = createAgyIntegration({ dir: fresh('data'), geminiDir: gemini, pid: 4242, nodePath: '/bin/node', findAgy: async () => '/bin/agy', run, version: '1.0.0', platform: 'linux' })
+  const installing = integration.install()
+  while (!started) await new Promise((resolve) => setTimeout(resolve, 5))
+  const removed = await integration.remove()
+  assert.match(removed.error, /^busy: an install is still running/)
+  assert.equal(removed.busy, true)
+  assert.equal(removed.enabled, false, 'it did not claim a result it never produced')
+  const again = integration.install()
+  release()
+  const [first, second] = await Promise.all([installing, again])
+  assert.equal(first.error, null)
+  assert.equal(second.enabled, true, 'the same action shares the running one')
+  assert.equal(inner.calls.filter((c) => c[1] === 'install').length, 1)
+  // And the other direction.
+  assert.equal((await integration.remove()).enabled, false)
 })
 
 test('a failed install leaves it off and says why; no node or no agy refuses', async () => {

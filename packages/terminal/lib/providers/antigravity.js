@@ -142,7 +142,7 @@ function prepare({ dir, pid, base, nodePath, pidAlive, which, version }) {
     nodePath,
     pidAlive,
     version,
-    findAgy: () => (which === undefined ? Promise.resolve(undefined) : which('agy')),
+    findAgy: () => findAgy(which),
     agyArgv: agyArgvOverride(),
     userStatusLine: () => userAgyStatusLine(),
   })
@@ -153,6 +153,16 @@ function prepare({ dir, pid, base, nodePath, pidAlive, which, version }) {
     integration,
     dispose: () => integration.dispose(),
   }
+}
+
+/** agy's path: on Windows a real agy.exe when there is one (a .cmd or extensionless shim cannot be spawned directly). */
+async function findAgy(which) {
+  if (which === undefined) return undefined
+  if (process.platform === 'win32') {
+    const exe = await which('agy.exe')
+    if (exe !== undefined) return exe
+  }
+  return which('agy')
 }
 
 /** DSH_WT_AGY_COMMAND (a JSON argv) runs something else as agy: tests use it. */
