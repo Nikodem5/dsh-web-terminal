@@ -23,6 +23,7 @@ function snapshotWins(): LayoutWin[] {
       h: g.h,
       pinned: w.pinned,
       minimized: false,
+      color: w.color,
     }
   })
 }
@@ -59,6 +60,7 @@ export function loadLayout(name: string): void {
       rect: { x: w.x, y: w.y, w: w.w, h: w.h },
       pinned: w.pinned,
       minimized: w.minimized,
+      color: w.color,
     })
   }
 }

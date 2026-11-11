@@ -27,6 +27,10 @@ import { watchBlockAlerts } from './block-notify.ts'
 import { feedPatternAlerts, resetPatternScan } from './pattern-alerts.ts'
 import { applyGit, requestGit, watchGit } from './git-header.ts'
 import { sshParams } from './ssh.ts'
+import { installZoom, resetZoom } from './zoom.ts'
+import { installCopyOnSelect } from './copy-select.ts'
+import { termOptions } from './term-options.ts'
+import { zoomedSize } from './term-prefs.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
 import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
@@ -152,14 +156,13 @@ export function ensureRuntime(win: WinState): Runtime {
   const term = new Terminal({
     cols,
     rows,
-    cursorBlink: true,
+    ...termOptions(),
     fontFamily: prefs.font.family,
-    fontSize: prefs.font.size,
+    fontSize: win.zoom === undefined ? prefs.font.size : zoomedSize(prefs.font.size, win.zoom),
     lineHeight: prefs.font.lineHeight,
     letterSpacing: prefs.font.letterSpacing,
     fontWeight: 'normal',
     fontWeightBold: prefs.font.boldWeight,
-    scrollback: 5000,
     allowProposedApi: true,
     // Keep text readable whatever colours a program prints (e.g. white text from a dark-themed TUI on a light background).
     minimumContrastRatio: prefs.font.minContrast,
@@ -215,6 +218,8 @@ export function ensureRuntime(win: WinState): Runtime {
   watchBlockAlerts(rt)
   watchGit(rt)
   trackUnread(rt)
+  installZoom(rt, () => refit(rt))
+  installCopyOnSelect(rt)
   ticker ??= setInterval(tick, 1000)
 
   // Bytes of the key press xterm is about to report through onData (onKey fires first, synchronously).
@@ -273,6 +278,11 @@ export function ensureRuntime(win: WinState): Runtime {
     if (isUnreadJump(event)) {
       event.preventDefault()
       jumpToUnread(rt.id)
+      return false
+    }
+    if (matchShortcut('font-reset', event)) {
+      event.preventDefault()
+      resetZoom(rt.id, () => refit(rt))
       return false
     }
     if (matchShortcut('find', event)) {
@@ -544,8 +554,9 @@ export const AUTO_FONT_FLOOR = 12
  * `fitCols` columns visible (monospace glyphs are roughly 0.6 em wide plus the letter spacing),
  * never below AUTO_FONT_FLOOR. A window too narrow for that shows fewer columns instead.
  */
-export function effectiveFontSize(widthPx: number): number {
+export function effectiveFontSize(widthPx: number, zoom?: number): number {
   const base = prefs.font.size
+  if (zoom !== undefined) return zoomedSize(base, zoom) // chosen for this terminal: no shrink to fit
   if (!prefs.autoFont) return base
   const fitting = Math.floor((widthPx / prefs.fitCols - prefs.font.letterSpacing) / 0.6)
   return Math.max(Math.min(AUTO_FONT_FLOOR, base), Math.min(base, fitting))
@@ -557,7 +568,7 @@ export function refit(rt: Runtime): void {
   if (isOverview() || !rt.holder.isConnected) return
   openRuntime(rt)
   if (rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
-  const size = effectiveFontSize(rt.holder.clientWidth)
+  const size = effectiveFontSize(rt.holder.clientWidth, store.wins.find((w) => w.id === rt.id)?.zoom)
   if (rt.term.options.fontSize !== size) rt.term.options.fontSize = size
   try {
     rt.fit.fit()

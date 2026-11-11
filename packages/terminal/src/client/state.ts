@@ -9,6 +9,8 @@
 // a layout follows window resizes and sidebar toggles.
 
 import { cleanSsh, cleanSshList } from './ssh.ts'
+import { DEFAULT_TERM, cleanTermPrefs, cleanZoom } from './term-prefs.ts'
+import { cleanTag } from './tag-palette.ts'
 import { providerById, providerForCommand } from './providers.ts'
 import { cleanPatternAlerts, defaultPatternAlerts } from './pattern-alerts-core.ts'
 import { withAuth } from '../../../shared/client/local-auth.ts'
@@ -62,6 +64,7 @@ export const prefs: Prefs = {
   shellIntegration: true,
   sendCodeBlock: true,
   commandNotifySec: 10,
+  term: { ...DEFAULT_TERM },
 }
 
 export const store: Store = { wins: [], zTop: 1, focusId: null, searchId: null, version: 0, broadcast: { on: false, live: false, ids: new Set() } }
@@ -146,6 +149,8 @@ function cleanWin(raw: unknown, index: number): WinState | undefined {
     hadTurn: raw.hadTurn === true ? true : undefined,
     cols: isGrid(raw.cols) ? raw.cols : undefined,
     rows: isGrid(raw.rows) ? raw.rows : undefined,
+    zoom: cleanZoom(raw.zoom),
+    color: cleanTag(raw.color),
   }
 }
 
@@ -168,6 +173,7 @@ function cleanLayout(raw: unknown): SavedLayout | undefined {
       h: w.h,
       pinned: w.pinned === true,
       minimized: w.minimized === true,
+      color: cleanTag(w.color),
     })
   }
   return { name: raw.name, savedAt: isNum(raw.savedAt) ? raw.savedAt : 0, wins }
@@ -190,6 +196,7 @@ function applyPrefs(p: Record<string, unknown>): void {
   if (Array.isArray(p.patternAlerts)) prefs.patternAlerts = cleanPatternAlerts(p.patternAlerts)
   // Stored prefs without a target predate the Code option: they behaved as VS Code, so they keep that.
   prefs.pathTarget = p.pathTarget === 'code' || p.pathTarget === 'vscode' || p.pathTarget === 'cursor' || p.pathTarget === 'default' || p.pathTarget === 'custom' ? p.pathTarget : 'vscode'
+  prefs.term = cleanTermPrefs(p.term)
   if (typeof p.sendCodeBlock === 'boolean') prefs.sendCodeBlock = p.sendCodeBlock
   if (typeof p.pathTemplate === 'string') prefs.pathTemplate = p.pathTemplate.slice(0, 500)
   if (typeof p.shellIntegration === 'boolean') prefs.shellIntegration = p.shellIntegration

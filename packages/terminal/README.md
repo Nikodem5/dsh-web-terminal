@@ -17,8 +17,9 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Run Claude | **✦ Claude** is the same dialog preset to `claude` (chips for `claude --resume` / `--continue`) |
 | Run Antigravity | **◈ Antigravity** is the same dialog preset to `agy` (chips for `agy` / `agy -c`), see [Antigravity CLI](#antigravity-cli-agy) |
 | Connect over ssh | **⇄ SSH** (or the **⇄ SSH** tab of the dialog): a terminal on another machine, see [SSH terminals](#ssh-terminals) |
-| Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder and startup command |
-| Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins), then *Open* (replaces the open terminals) or *Add* |
+| Placement | A new terminal opens in the largest free gap of the canvas (minimized windows take no space; a maximized one counts as the size it restores to; a window partly off-screen blocks only the part that shows), shrunk to fit but never below the resize minimum. With no gap left it cascades, skipping a spot where a window already sits. Placement stays instant with dozens of windows |
+| Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder, startup command and colour tag |
+| Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins, colour tags), then *Open* (replaces the open terminals) or *Add* |
 
 ### Windows
 | Action | How |
@@ -28,10 +29,12 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Resize | Drag any edge or corner |
 | Maximize / minimize | `□` / double-click the title bar; `–` turns a window into a chip in the toolbar |
 | Pin | `◇` / `◆` locks position and size (also skipped by layout presets) |
+| Colour tag | `⋯` → **Colour tag**: one of eight colours (or none). It shows as a strip on the window's title bar, on the terminal's row in the list and on its tile in the overview, and is saved with the window and in saved layouts. Tell similar terminals apart at a glance (one colour per project, say) |
+| Font zoom | **Ctrl+wheel** over a terminal changes that terminal's font by 1 px per notch (8-32 px, trackpad pinch works too). It is saved with the terminal; the PTY is resized once you stop (about 150 ms), not on every step. **Ctrl+0** returns to the **Aa** size. A zoomed terminal keeps its size instead of shrinking to fit the window. The page itself is never zoomed |
 | Layout presets | Grid, Columns, Rows, Main + side, Cascade (unpinned windows only) |
 | Switch terminals | **Ctrl+Alt+←/→** cycles through the visible terminals in list order (minimized ones are skipped; works while a terminal has focus). **Ctrl+Alt+1–9** jumps to the Nth terminal in the list (restoring it if minimized) |
 | New / close / focus mode | **Ctrl+Alt+T** opens the New terminal dialog, **Ctrl+Alt+W** closes the focused terminal (asks first when it is busy), **Ctrl+Alt+M** maximizes it and restores the layout on the next press |
-| Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste |
+| Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste. **Copy on select** (Aa → Terminal, off by default) copies as soon as you finish selecting and shows a short "Copied" note in the terminal; if the clipboard is not allowed it says "Copy blocked" instead and nothing is lost |
 | Find in terminal | **Ctrl+F** (or `⋯` → Find…) opens a find bar over the focused terminal: highlights every match in the scrollback, `n / total` counter, **Enter** / **Shift+Enter** next/previous, match-case / whole-word / regex toggles, **Esc** closes. Pre-fills from a one-line selection |
 | Jump to new output | **Ctrl+Shift+U** scrolls to the "new since" divider (see below) |
 | Help | **F1** or the book button in the toolbar opens the help panel (see below); **Esc** closes it. F1 is not sent to the program |
@@ -39,7 +42,7 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Links | URLs in terminal output are underlined on hover; **Ctrl+click** (Cmd+click) opens them in your system browser (plain clicks still select text) |
 
 ### Overview (mission control)
-**Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
+**Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge, folder and colour tag. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Help panel
 The book button (or **F1**) opens a panel with nine sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, how the agent terminals are started and what each reports, what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude`, `agy` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
@@ -155,7 +158,7 @@ If the shell does not expose its Workspaces, the dialog instead offers *Use the 
 of the chat session last viewed (recorded by the header bar and kept in the preferences).
 
 ### The terminal list (right)
-Every terminal with status, name, folder and a pin marker. Click to focus, **double-click the name to rename**,
+Every terminal with status, name, folder, a pin marker and its colour tag (a strip at the row's left edge). Click to focus, **double-click the name to rename**,
 drag rows to reorder (that is also the Ctrl+Alt+←/→ order), ⧉ duplicate, ✕ close. `☰` in the toolbar hides it.
 
 **Names**: by default a terminal is named after the program's own title — for Claude Code that is the session
@@ -334,6 +337,8 @@ never below 12 px, never above your size), so tiled terminals stay readable; a w
 columns instead of smaller text. Text colours in the dialogs and bars are chosen from the *measured* background, so they stay legible
 whatever the theme's tokens say. New terminals open first in the list and on top of the stack.
 
+**Aa → Terminal**: **Scrollback** (500-50 000 lines per terminal, default 5000; a lower value trims the history kept at once, and every open terminal pays for what it keeps), **Cursor** (block / bar / underline) with **Blink**, and **Copy on select**. All apply live to every open terminal and are saved with the other preferences; a damaged stored value falls back to its default.
+
 Switching tabs or sessions does **not** touch the terminals. Window layout, names, folders, favourites and
 preferences are saved in `localStorage`. **Shells also outlive a page reload**: the host keeps each PTY (and
 400 KB of scrollback) and the reloaded page reattaches. Saved terminals reconnect when the app starts, so counts and alerts (needs you, chime) work without opening the Terminals page. Only close, the process exiting, or restarting the
@@ -397,6 +402,9 @@ Restart the desktop app: plugins load at boot.
 | `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, hung-agent detection |
 | `src/client/launch.ts` | What a conversation id may look like (the launch rewrite itself lives in each provider, `providers.ts`) |
 | `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet; or the shell integration's prompt-ready signal) |
+| `src/client/placement.ts` | Where a new window goes: the largest free gap (a grid of free cells, so the cost stays small with many windows), else the cascade; minimum size for the canvas; reachable rects from layouts |
+| `src/client/zoom.ts`, `copy-select.ts`, `term-options.ts`, `term-prefs.ts`, `term-settings.tsx` | Ctrl+wheel font zoom, copy on select, scrollback / cursor settings (pure bounds and cleaning in `term-prefs.ts`) |
+| `src/client/tag-palette.ts`, `tags.ts`, `color-tag.tsx`, `tag.css.ts` | Colour tags: the palette, saving, the picker in the `⋯` menu |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
 | `build.mjs` | esbuild bundle of the client |
@@ -525,7 +533,7 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
   reachable wherever the harness web server is (loopback by default).
 - Up to 24 concurrent shells. A second connection to the same id (e.g. another browser tab) supersedes the first.
 - The page is registered under the `main` key and sidebar id `dsh-web-terminal`; the sidebar selects it by that id. On macOS the toolbar pads its top by the frame's `--dsh-frame-top-clearance`.
-- Not yet: font zoom (Ctrl+wheel), per-terminal colour tags, quick-send snippets.
+- Not yet: quick-send snippets. Font zoom is Ctrl+wheel and Ctrl+0 only (no Ctrl+= / Ctrl+-: in a shell those keys mean readline's undo).
 
 ## Roadmap (planned ideas, not built yet)
 
@@ -536,7 +544,6 @@ Ordered roughly by how much they help when running several agents. Recommended f
 - **Worktree launcher** — one click to create a git worktree and open an agent terminal in it, so parallel agents don't clash.
 
 ### Speed and navigation
-- **Smarter placement** — new terminals fill the largest free gap instead of cascading over others.
 - **Search all terminals** — one search box across every terminal's scrollback, jumping to the match.
 
 ### Files and input
@@ -544,8 +551,6 @@ Ordered roughly by how much they help when running several agents. Recommended f
 - **Quick-send snippets** — saved prompts sent to one terminal or to the broadcast group.
 
 ### Terminal polish
-- **`Ctrl+wheel` font zoom**, copy on select, scrollback size and cursor style settings.
-- **Colour tag per terminal** — a coloured strip on the title bar and list row.
 - **Shell profiles** — named presets with shell, folder, environment variables and startup command (a WSL distro, an SSH host).
 
 ### Housekeeping

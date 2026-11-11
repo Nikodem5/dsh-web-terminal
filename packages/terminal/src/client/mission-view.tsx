@@ -5,6 +5,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
+import { tagProps } from './tag-palette.ts'
 import { baseName, displayName, getRuntime, refit, runtimes, unreadCount } from './terminal-store.ts'
 import {
   exitOverview,
@@ -113,7 +114,7 @@ export function MissionOverlay({ wins, plan }: { wins: WinState[]; plan: Mission
             title={win.cwd}
             onClick={() => exitOverview(t.id)}
           >
-            <div className="wt-tile-head">
+            <div className="wt-tile-head" {...tagProps(win.color)}>
               <span className="wt-dot" data-a={activity} />
               <span className="wt-tile-name">{displayName(win)}</span>
               {rt?.attention === true ? <span className="wt-badge" data-level={rt.attentionLevel ?? 'quiet'}>{rt.attentionLabel || 'needs you'}</span> : null}

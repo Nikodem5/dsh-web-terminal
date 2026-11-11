@@ -8,6 +8,7 @@ import { requestCloseAll } from './actions.ts'
 import { SendSettings } from './send-menu.tsx'
 import { setPathTarget, setPathTemplate } from './path-links.ts'
 import { CommandAlertSettings, ShellIntegrationSettings } from './blocks-settings.tsx'
+import { TerminalSettings } from './term-settings.tsx'
 import { PatternAlertSettings } from './pattern-alerts-settings.tsx'
 import type { PathTarget } from './types.ts'
 import { DEFAULT_FONT, deleteLayout, getPrefs, getWins, loadLayout, saveLayout, setAutoFont, setFitCols, setFont, setHungMinutes, setNotify, setSound, setTermTheme } from './terminal-store.ts'
@@ -74,7 +75,7 @@ export function LayoutsMenu(): ReactElement {
         <button type="button" className="wt-btn" disabled={!savable || name.trim().length === 0} onClick={save}>Save</button>
       </div>
       <div style={{ fontSize: 11, color: 'var(--wt-dim)' }}>
-        Saves each window's name, folder, shell, startup command, position and pin. The same name overwrites.
+        Saves each window's name, folder, shell, startup command, position, pin and colour. The same name overwrites.
       </div>
     </Pop>
   )
@@ -166,6 +167,7 @@ export function SettingsMenu(): ReactElement {
           {CONTRAST_LABELS[font.minContrast] === undefined ? <option value={font.minContrast}>{`Custom (${font.minContrast}:1)`}</option> : null}
         </select>
       </label>
+      <TerminalSettings />
       <PathLinksSettings />
       <SendSettings />
       <ShellIntegrationSettings />
