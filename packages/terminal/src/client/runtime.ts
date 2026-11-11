@@ -20,7 +20,7 @@ import { applyEdits, notifyEdits } from './edits-api.ts'
 import { startupTiming, startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
-import { copyText, showNotice } from './notice.ts'
+import { showNotice } from './notices.ts'
 import { registerPathLinks } from './path-links.ts'
 import { createBlocks } from './blocks.ts'
 import { installBlockBar } from './block-bar.ts'
@@ -30,7 +30,7 @@ import { feedPatternAlerts, resetPatternScan } from './pattern-alerts.ts'
 import { applyGit, requestGit, watchGit } from './git-header.ts'
 import { sshParams } from './ssh.ts'
 import { installZoom, resetZoom } from './zoom.ts'
-import { installCopyOnSelect } from './copy-select.ts'
+import { copySelection, installCopyOnSelect } from './copy-select.ts'
 import { termOptions } from './term-options.ts'
 import { zoomedSize } from './term-prefs.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
@@ -305,8 +305,8 @@ export function ensureRuntime(win: WinState): Runtime {
       return false
     }
     if (matchShortcut('copy-always', event) || (term.hasSelection() && matchShortcut('copy', event))) {
-      // Nothing selected: leave the clipboard alone (an empty write would wipe what the user copied elsewhere).
-      if (term.hasSelection()) copyText(term.getSelection())
+      // Nothing selected: leave the clipboard alone (copySelection writes nothing for an empty selection).
+      void copySelection(rt)
       return false
     }
     // Ctrl+Shift+S: send the selection to another terminal (without one it stays a plain key).

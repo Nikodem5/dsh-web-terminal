@@ -98,7 +98,7 @@ const VIEW_CSS = `
 .wt-dim { font-size: 12px; color: var(--wt-dim); }
 .wt-note { font-size: 12px; color: var(--dsw-alias-state-warn-label, #f0b429); }
 /* page notices (notices.ts): bottom centre, above the windows */
-.wt-notices { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 70; display: flex; flex-direction: column; gap: 6px; max-width: min(560px, calc(100% - 32px)); pointer-events: none; }
+.wt-notices { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 120; display: flex; flex-direction: column; gap: 6px; max-width: min(560px, calc(100% - 32px)); pointer-events: none; }
 .wt-notice { pointer-events: auto; display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 0.5px solid var(--wt-warn); border-radius: 10px; background: var(--wt-surface); color: var(--wt-text); font-size: 12px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
 .wt-notice > span { flex: 1; }
 .wt-chip { height: 24px; padding: 0 10px; border: 0.5px solid var(--wt-line); border-radius: 12px; background: var(--wt-field); color: var(--wt-text); font: inherit; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
@@ -145,8 +145,6 @@ const VIEW_CSS = `
 .wt-remote { flex: none; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; border: 0.5px solid color-mix(in srgb, var(--wt-ssh) 60%, transparent); color: var(--wt-ssh); background: color-mix(in srgb, var(--wt-ssh) 12%, transparent); }
 .wt-disc { flex: none; display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: 12px; color: var(--wt-text); background: color-mix(in srgb, var(--wt-urgent) 16%, var(--wt-surface)); border-bottom: 0.5px solid var(--wt-urgent); }
 .wt-error { font-size: 12px; color: var(--wt-danger); }
-.wt-notices { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 120; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
-.wt-notice { max-width: min(520px, 90vw); padding: 6px 12px; border-radius: 8px; font-size: 12px; background: var(--wt-deep); color: var(--wt-text); border: 0.5px solid var(--wt-warn); box-shadow: 0 4px 14px #0006; }
 .wt-host { gap: 10px; }
 .wt-host[data-sel="true"] { background: var(--wt-hover); box-shadow: inset 2px 0 0 var(--wt-ssh); }
 .wt-host-alias { flex: none; font-weight: 600; }

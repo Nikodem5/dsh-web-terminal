@@ -11,11 +11,11 @@
 // only overrides the rows a status line prints, so nothing leaves its default rows alone).
 // Cheap and silent on purpose: it never prints errors and always exits 0.
 
-import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { postJson, readStdin } from './post.js'
+import { runUser } from './run-user.js'
 import { claudeDir } from './token-totals.js'
 
 const USER_TIMEOUT_MS = 5000
@@ -37,6 +37,8 @@ function userCommand(key, env) {
   }
 }
 
+export { runUser }
+
 /** The user's own `statusLine` setting, if it is a command. */
 export function userStatusLine(env = process.env) {
   return userCommand('statusLine', env)
@@ -45,46 +47,6 @@ export function userStatusLine(env = process.env) {
 /** The user's own `subagentStatusLine` setting, if it is a command. */
 export function userSubagentStatusLine(env = process.env) {
   return userCommand('subagentStatusLine', env)
-}
-
-/** End `child` and everything it started: `shell: true` puts cmd.exe / sh between us and the real command. */
-function killTree(child) {
-  const single = () => { try { child.kill() } catch {} }
-  try {
-    if (process.platform === 'win32' && Number.isInteger(child.pid)) {
-      // Killing cmd.exe first would orphan its children before taskkill can walk the tree: only fall back to it on failure.
-      const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
-      killer.on('error', single)
-      killer.on('close', (code) => { if (code !== 0) single() })
-      return
-    }
-    if (Number.isInteger(child.pid)) process.kill(-child.pid, 'SIGKILL') // the child leads its own process group (see runUser)
-  } catch {}
-  single()
-}
-
-/** Run the user's command with `input` on stdin; resolves with its stdout ('' on any failure). */
-export function runUser(command, input, guard, timeoutMs = USER_TIMEOUT_MS) {
-  return new Promise((resolve) => {
-    let child
-    try {
-      child = spawn(command, { shell: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: { ...process.env, [guard]: '1' } })
-    } catch {
-      return resolve('')
-    }
-    const out = []
-    const timer = setTimeout(() => {
-      killTree(child)
-      // A grandchild that survives would hold the pipe open: stop listening to it.
-      child.stdout.destroy()
-      resolve(Buffer.concat(out).toString('utf8'))
-    }, timeoutMs)
-    child.stdout.on('data', (chunk) => out.push(chunk))
-    child.stdin.on('error', () => {})
-    child.on('error', () => { clearTimeout(timer); resolve('') })
-    child.on('close', () => { clearTimeout(timer); resolve(Buffer.concat(out).toString('utf8')) })
-    child.stdin.end(input)
-  })
 }
 
 async function main() {
@@ -98,7 +60,7 @@ async function main() {
   const runnable = user !== undefined && !user.command.includes('statusline.js')
   const [, output] = await Promise.all([
     token && url ? postJson(url, token, input) : undefined,
-    runnable ? runUser(user.command, input, guard) : '',
+    runnable ? runUser(user.command, input, guard, USER_TIMEOUT_MS) : '',
   ])
   if (output) process.stdout.write(output)
 }

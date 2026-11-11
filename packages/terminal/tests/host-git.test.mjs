@@ -86,11 +86,15 @@ async function startHost() {
       return { ws, gits, token: spawned.at(-1).spec.env.DSH_WT_TOKEN }
     },
     signal(token, state) {
+      return host.post(token, 'claude', { state })
+    },
+    /** POST a body to one of the provider channels (`/signal/<name>`) as the terminal's agent would. */
+    post(token, name, body) {
       const target = new URL(settings.hooks.Stop[0].hooks[0].url)
       return new Promise((resolve, reject) => {
-        const req = request({ host: target.hostname, port: target.port, path: '/signal/claude', method: 'POST', headers: { 'x-dsh-wt-token': token } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)) })
+        const req = request({ host: target.hostname, port: target.port, path: `/signal/${name}`, method: 'POST', headers: { 'x-dsh-wt-token': token } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)) })
         req.on('error', reject)
-        req.end(JSON.stringify({ state }))
+        req.end(JSON.stringify(body))
       })
     },
   }
@@ -142,4 +146,23 @@ test('git header over the wire: attach, refresh, agent signal, folders that are 
   assert.deepEqual(remote.gits, [])
   remote.ws.close()
   local.ws.close()
+})
+
+test('an Antigravity integration signal refreshes the git chip like any other agent signal', { skip: !gitOk }, async () => {
+  const repo = join(root, 'repo-agy')
+  mkdirSync(repo)
+  git(repo, 'init', '-q', '-b', 'trunk')
+  writeFileSync(join(repo, 'a.txt'), 'a')
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-q', '-m', 'first')
+  const host = await startHost()
+  const term = await host.open(`id=a1&shell=default&cwd=${encodeURIComponent(repo)}`)
+  await until(() => term.gits.length >= 1, 'the first git frame')
+  assert.equal(term.gits.at(-1).dirty, false)
+  // agy changed a file and stopped: only its hook tells the host (no output sequence, no browser request).
+  writeFileSync(join(repo, 'agy.txt'), 'x')
+  const conversation = 'b5122a04-b51c-4cce-bcf6-f8369dd0f084'
+  assert.equal(await host.post(term.token, 'antigravity-hook', { event: 'Stop', payload: { conversationId: conversation, error: '', terminationReason: 'NO_TOOL_CALL' } }), 204)
+  await until(() => term.gits.at(-1)?.dirty === true, 'dirty after the agy hook signal')
+  term.ws.close()
 })

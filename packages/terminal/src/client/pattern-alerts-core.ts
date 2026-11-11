@@ -29,6 +29,10 @@ export const NAME_MAX = 40
 export const PATTERNS_MAX = 20
 /** Matching looks at the first this-many characters of a line (after escapes are stripped). */
 export const LINE_MAX = 2000
+/** A regular expression looks at only the first this-many of those: a repeat that is merely polynomial stays cheap. */
+export const REGEX_LINE_MAX = 500
+/** One regular expression test that takes longer than this (ms) switches its pattern off (a page that never freezes is worth a missed alert). */
+export const SLOW_MS = 25
 /** Raw characters of an unfinished line kept between chunks: a line with no break never grows memory past this. */
 export const RAW_MAX = 8192
 export const COOLDOWN_DEFAULT = 30
@@ -46,13 +50,97 @@ export function defaultPatternAlerts(): PatternAlert[] {
 
 // ── validation ─────────────────────────────────────────────────────────────
 
-/** A group that repeats and itself contains a repeat — `(a+)+`, `(.*)*`, `(\w+\s?)*` — is the classic catastrophic-backtracking shape. */
-const NESTED_REPEAT = /\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)(?:[+*]|\{\d*,\d*\})/
+/**
+ * Backtracking cannot be interrupted in JavaScript, so a user's regular expression must not be able to
+ * need it: `regexProblem` refuses the shapes that explode when saved, and the matcher still bounds line
+ * length and time (see REGEX_LINE_MAX and SLOW_MS).
+ *
+ * Exponential: a group that repeats (`+`, `*`, `{n,}`, `{n,m}`) and holds an alternative (`(a|aa)+$`,
+ * `(a|a)*b`), a repeat or an optional part (`(a+)+`, `(a{1,9})+x`, `(a?){25}a{25}`). Polynomial: many
+ * unbounded repeats in a row (`.*.*.*.*x`), so only a few are allowed in total.
+ */
+export const UNBOUNDED_MAX = 3
+
+interface Quantifier {
+  /** Characters it takes (a trailing `?`, "lazy", included). */
+  len: number
+  /** It can match more than once (`+`, `*`, `{2,}`, `{1,9}`). */
+  repeats: boolean
+  /** It has no upper limit. */
+  unbounded: boolean
+}
+
+/** The quantifier starting at `at`, if any. */
+function quantifierAt(source: string, at: number): Quantifier | undefined {
+  const c = source[at]
+  let q: Omit<Quantifier, 'len'> | undefined
+  let len = 1
+  if (c === '+' || c === '*') q = { repeats: true, unbounded: true }
+  else if (c === '?') q = { repeats: false, unbounded: false }
+  else if (c === '{') {
+    const m = /^\{(\d+)(?:(,)(\d*))?\}/.exec(source.slice(at, at + 24))
+    if (m === null) return undefined
+    const unbounded = m[2] !== undefined && m[3] === ''
+    const max = m[2] === undefined ? Number(m[1]) : unbounded ? Infinity : Number(m[3])
+    q = { repeats: max > 1, unbounded }
+    len = m[0].length
+  }
+  if (q === undefined) return undefined
+  if (source[at + len] === '?') len++
+  return { len, ...q }
+}
+
+/** What is wrong with the shape of a regex source (see UNBOUNDED_MAX), or undefined. */
+function shapeProblem(source: string): string | undefined {
+  interface Frame { alt: boolean; quantified: boolean }
+  const stack: Frame[] = [{ alt: false, quantified: false }]
+  let unbounded = 0
+  let i = 0
+  /** Skip the quantifier after an atom that ends at `end`; returns where scanning goes on. */
+  const quantified = (end: number): number => {
+    const q = quantifierAt(source, end)
+    if (q === undefined) return end
+    stack[stack.length - 1]!.quantified = true
+    if (q.unbounded) unbounded++
+    return end + q.len
+  }
+  while (i < source.length) {
+    const c = source[i]!
+    if (c === '\\') {
+      i = quantified(i + 2)
+    } else if (c === '[') {
+      let j = i + 1
+      if (source[j] === '^') j++
+      if (source[j] === ']') j++
+      while (j < source.length && source[j] !== ']') j += source[j] === '\\' ? 2 : 1
+      i = quantified(j + 1)
+    } else if (c === '(') {
+      stack.push({ alt: false, quantified: false })
+      i += /^\(\?(?:<[=!]|[:=!]|<[^>]*>)/.exec(source.slice(i, i + 40))?.[0].length ?? 1
+    } else if (c === ')') {
+      const group = stack.length > 1 ? stack.pop()! : { alt: false, quantified: false }
+      const q = quantifierAt(source, i + 1)
+      if (q?.repeats === true && (group.alt || group.quantified)) return 'A repeated group that holds an alternative or another repeat (like (a+)+ or (a|aa)*) can freeze the page; simplify it'
+      const parent = stack[stack.length - 1]!
+      parent.alt ||= group.alt
+      parent.quantified ||= group.quantified
+      i = quantified(i + 1)
+    } else if (c === '|') {
+      stack[stack.length - 1]!.alt = true
+      i++
+    } else {
+      i = quantified(i + 1)
+    }
+  }
+  if (unbounded > UNBOUNDED_MAX) return `A regular expression can have at most ${UNBOUNDED_MAX} open-ended repeats (*, + or {n,}); more can freeze the page`
+  return undefined
+}
 
 /** Why a regex source is not acceptable, or undefined. */
 export function regexProblem(source: string, caseSensitive: boolean): string | undefined {
   if (source.length > TEXT_MAX) return `A regular expression can be at most ${TEXT_MAX} characters`
-  if (NESTED_REPEAT.test(source)) return 'A repeated group that itself repeats (like (a+)+) can freeze the page; simplify it'
+  const shape = shapeProblem(source)
+  if (shape !== undefined) return shape
   let re: RegExp
   try {
     re = new RegExp(source, caseSensitive ? '' : 'i')
@@ -142,6 +230,8 @@ export function stripAnsi(raw: string): string {
 export interface Matcher {
   pattern: PatternAlert
   test(line: string): boolean
+  /** Set once a test went over SLOW_MS: it is not asked again. */
+  slow?: boolean
 }
 
 const compiled = new Map<string, { key: string; matcher: Matcher | undefined }>()
@@ -158,7 +248,7 @@ export function matcherFor(pattern: PatternAlert): Matcher | undefined {
   if (pattern.regex) {
     if (regexProblem(pattern.text, pattern.caseSensitive) === undefined) {
       const re = new RegExp(pattern.text, pattern.caseSensitive ? '' : 'i')
-      matcher = { pattern, test: (line) => re.test(line) }
+      matcher = { pattern, test: (line) => re.test(line.length > REGEX_LINE_MAX ? line.slice(0, REGEX_LINE_MAX) : line) }
     }
   } else {
     const exact = pattern.caseSensitive
@@ -170,13 +260,18 @@ export function matcherFor(pattern: PatternAlert): Matcher | undefined {
   return matcher
 }
 
+/** Forget the compiled form of a pattern (it gets a fresh chance, e.g. when the user switches it back on). */
+export function forgetMatcher(id: string): void {
+  compiled.delete(id)
+}
+
 /** The enabled patterns that apply to one terminal. */
 export function activeMatchers(patterns: readonly PatternAlert[], terminalId: string): Matcher[] {
   const out: Matcher[] = []
   for (const p of patterns) {
     if (!p.enabled || (p.scope !== SCOPE_ALL && p.scope !== terminalId)) continue
     const m = matcherFor(p)
-    if (m !== undefined) out.push(m)
+    if (m !== undefined && m.slow !== true) out.push(m)
   }
   return out
 }
@@ -195,7 +290,7 @@ export function newScanState(): ScanState {
   return { partial: '', overflow: false, fired: new Map() }
 }
 
-export interface Hit {
+export interface AlertHit {
   pattern: PatternAlert
   line: string
 }
@@ -206,10 +301,19 @@ const LINE_BREAK = /\r\n|\n|\r/
  * Feed one chunk of output; returns the patterns that matched a completed line in it.
  * Work is proportional to the chunk: only the new text is split, and a pattern still cooling
  * down is skipped without being tested. Each pattern hits at most once per call.
+ * A regular expression that takes longer than SLOW_MS on one line is switched off (`onSlow` is told).
  * @param matchers - the active patterns for this terminal (`activeMatchers`).
+ * @param options.clock - milliseconds, monotonic (tests pass their own).
  */
-export function scanChunk(state: ScanState, chunk: string, matchers: readonly Matcher[], now: number): Hit[] {
-  const hits: Hit[] = []
+export function scanChunk(
+  state: ScanState,
+  chunk: string,
+  matchers: readonly Matcher[],
+  now: number,
+  options: { onSlow?: (pattern: PatternAlert, ms: number) => void; clock?: () => number } = {},
+): AlertHit[] {
+  const clock = options.clock ?? (() => performance.now())
+  const hits: AlertHit[] = []
   // With nothing to look for there is nothing to keep either: no line is being assembled.
   if (matchers.length === 0) {
     state.partial = ''
@@ -221,8 +325,18 @@ export function scanChunk(state: ScanState, chunk: string, matchers: readonly Ma
     if (line.length === 0) return
     for (const m of matchers) {
       const last = state.fired.get(m.pattern.id)
+      if (m.slow === true) continue
       if (last !== undefined && now - last < m.pattern.cooldownSec * 1000) continue
-      if (!m.test(line)) continue
+      const began = m.pattern.regex ? clock() : 0
+      const matched = m.test(line)
+      if (m.pattern.regex) {
+        const took = clock() - began
+        if (took > SLOW_MS) {
+          m.slow = true
+          options.onSlow?.(m.pattern, took)
+        }
+      }
+      if (!matched) continue
       state.fired.set(m.pattern.id, now)
       hits.push({ pattern: m.pattern, line })
     }

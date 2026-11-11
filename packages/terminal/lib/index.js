@@ -582,6 +582,7 @@ function apply(ctx) {
       if (signal.session !== undefined) session.trustedSession = signal.session
       session.agent = { ...signal, at: Date.now() }
       send(session.ws, { type: 'agent', ...session.agent })
+      gitHeader?.signal(session, signal.state)
     },
   }
 

@@ -129,7 +129,8 @@ test('switching it off while a copy is pending cancels the copy', async () => {
   assert.deepEqual(written, [])
 })
 
-test('a denied clipboard shows "Copy blocked" and never throws', async () => {
+test('a denied clipboard shows one "Copy failed" notice (and no note in the terminal) and never throws', async () => {
+  s.clearNotices()
   const rt = await open()
   s.setCopyOnSelect(true)
   behaviour = 'deny'
@@ -141,8 +142,8 @@ test('a denied clipboard shows "Copy blocked" and never throws', async () => {
     rt.term.select(0, 0, 5)
     mock.timers.tick(s.COPY_SETTLE_MS)
     await flush()
-    assert.match(toast(rt)?.textContent ?? '', /Copy blocked/)
-    assert.equal(toast(rt)?.dataset.kind, 'fail')
+    assert.deepEqual(s.getNotices().map((n) => n.text), ['Copy failed: the clipboard refused the text'])
+    assert.equal(toast(rt), null, 'one feedback, not a notice and a toast')
     await new Promise((resolve) => setImmediate(resolve))
     assert.deepEqual(failures, [])
   } finally {
@@ -150,7 +151,8 @@ test('a denied clipboard shows "Copy blocked" and never throws', async () => {
   }
 })
 
-test('no clipboard API at all (an insecure page) is the same: a note, no crash', async () => {
+test('no clipboard API at all (an insecure page) is the same: a notice, no crash', async () => {
+  s.clearNotices()
   const rt = await open()
   s.setCopyOnSelect(true)
   behaviour = 'missing'
@@ -158,7 +160,42 @@ test('no clipboard API at all (an insecure page) is the same: a note, no crash',
   rt.term.select(0, 0, 5)
   mock.timers.tick(s.COPY_SETTLE_MS)
   await flush()
-  assert.match(toast(rt)?.textContent ?? '', /Copy blocked/)
+  assert.deepEqual(s.getNotices().map((n) => n.text), ['Copy failed: the clipboard is not available here'])
+  assert.equal(toast(rt), null)
+})
+
+test('Ctrl+Shift+C while copy on select is about to copy: one write and one note, not two', async () => {
+  s.clearNotices()
+  const rt = await open()
+  s.setCopyOnSelect(true)
+  mock.timers.enable({ apis: ['setTimeout'] })
+  rt.term.select(0, 0, 5)
+  const handler = rt.term._core._customKeyEventHandler
+  const chord = new window.KeyboardEvent('keydown', { key: 'C', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
+  assert.equal(handler(chord), false, 'the chord is claimed')
+  await flush()
+  mock.timers.tick(s.COPY_SETTLE_MS * 2) // the settle timer fires after the explicit copy
+  await flush()
+  assert.deepEqual(written, ['hello'])
+  assert.equal(rt.holder.querySelectorAll('.wt-toast').length, 1)
+  assert.equal(toast(rt).textContent, 'Copied')
+  assert.deepEqual(s.getNotices(), [])
+})
+
+test('Ctrl+Shift+C with the clipboard refused gives one notice and no note', async () => {
+  s.clearNotices()
+  const rt = await open()
+  behaviour = 'deny'
+  s.setCopyOnSelect(true)
+  mock.timers.enable({ apis: ['setTimeout'] })
+  rt.term.select(0, 0, 5)
+  const chord = new window.KeyboardEvent('keydown', { key: 'C', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
+  rt.term._core._customKeyEventHandler(chord)
+  await flush()
+  mock.timers.tick(s.COPY_SETTLE_MS * 2)
+  await flush()
+  assert.deepEqual(s.getNotices().map((n) => n.text), ['Copy failed: the clipboard refused the text'])
+  assert.equal(toast(rt), null)
 })
 
 test('a second note replaces the first instead of stacking', async () => {

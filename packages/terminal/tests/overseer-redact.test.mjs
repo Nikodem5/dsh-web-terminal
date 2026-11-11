@@ -80,3 +80,28 @@ test('non-strings and empty input', () => {
   assert.equal(redact(undefined), '')
   assert.equal(redact(''), '')
 })
+
+test('long whitespace-free runs redact in linear time (a.a.a.… once took seconds and blocked the host)', () => {
+  const runs = {
+    dots: 'a.'.repeat(50_000),
+    dashes: 'a-'.repeat(50_000),
+    dots_then_equals: `${'a.'.repeat(50_000)}=`,
+    scheme: `${'a.'.repeat(50_000)}://`,
+    spaces: ' '.repeat(100_000),
+    equals: '='.repeat(100_000),
+    colons: 'a:'.repeat(50_000),
+  }
+  for (const [name, text] of Object.entries(runs)) {
+    const started = performance.now()
+    redact(text)
+    const took = performance.now() - started
+    assert.ok(took < 750, `${name}: ${Math.round(took)} ms for ${text.length} characters`)
+  }
+})
+
+test('the bounded name match still finds secrets after a long dotted prefix, and still stops at a word that is not a secret name', () => {
+  assert.ok(!redact('my.app.config.db_password=hunter2hunter2').includes('hunter2'))
+  assert.ok(!redact(`${'x.'.repeat(60)}API_KEY=supersecretvalue`).includes('supersecretvalue'))
+  assert.ok(!redact('GITHUB_TOKEN   =   abcdef123456').includes('abcdef123456'))
+  assert.equal(redact('keyboard=us\nmonkey: banana'), 'keyboard=us\nmonkey: banana')
+})

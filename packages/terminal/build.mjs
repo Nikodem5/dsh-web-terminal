@@ -12,6 +12,7 @@ import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { STRICT_LOG_OVERRIDES, findDuplicateImports } from './check-client.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const src = join(here, 'src')
@@ -28,6 +29,13 @@ cpSync(sharedHost, sharedOut, { recursive: true })
 /** The variable name esbuild gives the bundled entry's exports in IIFE output. */
 const BUNDLED_EXPORTS = '__dsh_wt_exports__'
 
+// esbuild does not type check: catch what it lets through (see check-client.mjs) before bundling.
+const problems = findDuplicateImports(join(src, 'client'))
+if (problems.length > 0) {
+  for (const p of problems) console.error(`client source error: ${p}`)
+  process.exit(1)
+}
+
 const result = await build({
   entryPoints: [join(src, 'client', 'index.ts')],
   bundle: true,
@@ -38,6 +46,7 @@ const result = await build({
   minify: false,
   legalComments: 'none',
   logLevel: 'info',
+  logOverride: STRICT_LOG_OVERRIDES,
   outfile: out,
   jsx: 'automatic',
   alias: {
@@ -56,7 +65,7 @@ const result = await build({
   footer: { js: readFileSync(join(src, 'client-postlude.js'), 'utf8').trimEnd() },
 })
 
-if (result.errors.length > 0) {
+if (result.errors.length > 0 || result.warnings.length > 0) {
   console.error('client bundle failed')
   process.exit(1)
 }

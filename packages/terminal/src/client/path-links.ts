@@ -90,14 +90,14 @@ export function rangeOf(line: LogicalLine, m: PathMatch): IBufferRange {
 
 // ── asking the host ──
 
-export interface Hit {
+export interface PathHit {
   path: string | null
   isDir: boolean
 }
 
 /** Cache + batching of `/paths` lookups for one terminal. */
 export function createChecker(getContext: () => { terminalId: string; cwd: string }, now: () => number = Date.now) {
-  const cache = new Map<string, Hit & { at: number; ttl: number }>()
+  const cache = new Map<string, PathHit & { at: number; ttl: number }>()
   const inflight = new Map<string, Promise<void>>()
 
   const fetchBatch = async (candidates: string[]): Promise<void> => {
@@ -124,7 +124,7 @@ export function createChecker(getContext: () => { terminalId: string; cwd: strin
   }
 
   /** Resolve candidates (cached, negatives included); unknown ones go to the host in batches. */
-  return async function check(candidates: string[]): Promise<Map<string, Hit>> {
+  return async function check(candidates: string[]): Promise<Map<string, PathHit>> {
     const t = now()
     const fresh = (c: string): boolean => {
       const e = cache.get(c)
@@ -140,7 +140,7 @@ export function createChecker(getContext: () => { terminalId: string; cwd: strin
       for (const c of batch) inflight.set(c, p)
     }
     await Promise.all(unique.map((c) => inflight.get(c)))
-    const hits = new Map<string, Hit>()
+    const hits = new Map<string, PathHit>()
     for (const c of unique) {
       const e = cache.get(c)
       if (e !== undefined) hits.set(c, { path: e.path, isDir: e.isDir })
