@@ -5,6 +5,7 @@ import { isMissionShortcut, isOverview } from './mission.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
 import { socketProtocols } from '../../../shared/client/local-auth.ts'
 import { Terminal } from '@xterm/xterm'
+import type { ITerminalAddon } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -498,6 +499,45 @@ export function ensureRuntime(win: WinState): Runtime {
   return rt
 }
 
+/** The GPU renderer's factory (tests swap it: jsdom has no WebGL). */
+export const gpuRenderer: { create: () => ITerminalAddon & { onContextLoss(listener: () => void): unknown } } = { create: () => new WebglAddon() }
+/** Terminals that currently hold a GPU context: browsers cap them, so only visible windows keep one. */
+const gpu = new Map<string, ITerminalAddon>()
+
+/**
+ * GPU renderer: the default DOM one is the bottleneck for full-screen repaints. Falls back to it
+ * when WebGL is unavailable or the context is lost (many terminals can exhaust the browser's contexts).
+ */
+function attachGpu(rt: Runtime): void {
+  if (gpu.has(rt.id)) return
+  try {
+    const webgl = gpuRenderer.create()
+    webgl.onContextLoss(() => {
+      webgl.dispose()
+      if (gpu.get(rt.id) === webgl) gpu.delete(rt.id)
+    })
+    try {
+      rt.term.loadAddon(webgl)
+    } catch (error) {
+      webgl.dispose() // do not leak the GL context of an addon that failed to attach
+      throw error
+    }
+    gpu.set(rt.id, webgl)
+  } catch {}
+}
+
+/** Give a window its GPU context while it is shown and take it back while it is minimized or off the page. */
+export function setRenderer(rt: Runtime, shown: boolean): void {
+  if (!rt.opened || rt.killed) return
+  if (shown) return attachGpu(rt)
+  const webgl = gpu.get(rt.id)
+  if (webgl === undefined) return
+  gpu.delete(rt.id)
+  try {
+    webgl.dispose() // xterm goes back to its DOM renderer
+  } catch {}
+}
+
 /**
  * Give the xterm instance its DOM, once, when its holder is first in the document. Everything that
  * needs a renderer (links, fitting, focus) waits for this; the output received so far is kept.
@@ -506,18 +546,8 @@ export function openRuntime(rt: Runtime): void {
   if (rt.opened) return
   rt.opened = true
   rt.term.open(rt.holder)
-  // GPU renderer: the default DOM one is the bottleneck for full-screen repaints. Falls back to it
-  // when WebGL is unavailable or the context is lost (many terminals can exhaust the browser's contexts).
-  try {
-    const webgl = new WebglAddon()
-    webgl.onContextLoss(() => webgl.dispose())
-    try {
-      rt.term.loadAddon(webgl)
-    } catch (error) {
-      webgl.dispose() // do not leak the GL context of an addon that failed to attach
-      throw error
-    }
-  } catch {}
+  // A window minimized at the time gets no GPU context until it is shown (see setRenderer).
+  if (store.wins.find((w) => w.id === rt.id)?.minimized !== true) attachGpu(rt)
   // Links open with Ctrl/Cmd+click (like VS Code) so plain clicks still select text.
   // The desktop app routes window.open of http(s) URLs to the system browser.
   rt.term.loadAddon(
@@ -643,6 +673,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
   rt.holder.remove()
   runtimes.delete(id)
   reconnectors.delete(id)
+  gpu.delete(id)
   if ((rt.edits?.length ?? 0) > 0) notifyEdits() // `?.`: tests build partial runtimes
   // Nothing left to watch: stop the once-a-second tick until the next terminal opens.
   if (runtimes.size === 0 && ticker !== undefined) {

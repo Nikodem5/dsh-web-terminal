@@ -249,3 +249,39 @@ test('focus changes still move the new-since marks: only the terminals concerned
     window.document.hasFocus = had
   }
 })
+
+// ── 11. GPU contexts only for shown windows ──
+
+test('a minimized window gives its GPU context back, and gets one again when shown', async () => {
+  const made = []
+  const real = s.gpuRenderer.create
+  s.gpuRenderer.create = () => {
+    const addon = { disposed: false, activate() {}, dispose() { this.disposed = true }, onContextLoss() {} }
+    made.push(addon)
+    return addon
+  }
+  try {
+    const { id, rt } = await open() // openRuntime attached one
+    assert.equal(made.length, 1)
+    s.setRenderer(rt, false)
+    assert.equal(made[0].disposed, true, 'minimized: the context is released')
+    s.setRenderer(rt, false)
+    assert.equal(made.length, 1, 'releasing twice does nothing')
+    s.setRenderer(rt, true)
+    assert.equal(made.length, 2, 'shown again: a new context')
+    s.setRenderer(rt, true)
+    assert.equal(made.length, 2, 'attaching twice does nothing')
+
+    // A terminal whose window is minimized when it first opens never takes a context.
+    const other = s.openTerminal({ cwd: 'C:\work' })
+    s.updateWin(other, { minimized: true })
+    const rt2 = s.ensureRuntime(s.getWins().find((w) => w.id === other))
+    s.openRuntime(rt2)
+    assert.equal(made.length, 2, 'no context for a minimized window')
+    s.setRenderer(rt2, true)
+    assert.equal(made.length, 3)
+    assert.ok(id)
+  } finally {
+    s.gpuRenderer.create = real
+  }
+})

@@ -63,6 +63,7 @@ import {
   refit,
   renameWin,
   restartWin,
+  setRenderer,
   sshLabel,
   runningSubagents,
   setAgentsPanel,
@@ -254,6 +255,12 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
   useEffect(() => {
     if (focused) rt.term.focus()
   }, [focused, rt])
+
+  // Only shown windows keep a GPU context (browsers allow a few dozen); minimized ones and a closed page let go.
+  useEffect(() => {
+    setRenderer(rt, !win.minimized)
+    return () => setRenderer(rt, false)
+  }, [rt, win.minimized])
 
   useEffect(() => {
     if (!more) return
