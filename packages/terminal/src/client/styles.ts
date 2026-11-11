@@ -5,6 +5,7 @@
 
 import { XTERM_CSS } from './xterm.css.ts'
 import { BLOCKS_CSS } from './blocks.css.ts'
+import { COPY_CSS } from './copy.css.ts'
 
 const VIEW_CSS = `
 .wt-view { --wt-accent: #4d6bfe; --wt-work: #5b8cff; --wt-wait: #f0b429; --wt-idle: #22c55e; --wt-dead: #ef4444; --wt-urgent: #ff6b3d;
@@ -274,6 +275,7 @@ export function ensureStyles(): void {
     ['data-dsh-web-terminal-view', VIEW_CSS],
     ['data-dsh-web-terminal-xterm', XTERM_CSS],
     ['data-dsh-web-terminal-blocks', BLOCKS_CSS],
+    ['data-dsh-web-terminal-copy', COPY_CSS],
   ] as const) {
     const existing = document.querySelector(`style[${attr}]`)
     if (existing !== null) {

@@ -26,6 +26,7 @@ import { handleBlockKey } from './block-actions.ts'
 import { watchBlockAlerts } from './block-notify.ts'
 import { sshParams } from './ssh.ts'
 import { installZoom, resetZoom } from './zoom.ts'
+import { installCopyOnSelect } from './copy-select.ts'
 import { termOptions } from './term-options.ts'
 import { zoomedSize } from './term-prefs.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
@@ -215,6 +216,7 @@ export function ensureRuntime(win: WinState): Runtime {
   watchBlockAlerts(rt)
   trackUnread(rt)
   installZoom(rt, () => refit(rt))
+  installCopyOnSelect(rt)
   ticker ??= setInterval(tick, 1000)
 
   // Bytes of the key press xterm is about to report through onData (onKey fires first, synchronously).
