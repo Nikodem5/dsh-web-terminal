@@ -170,3 +170,21 @@ test('the window header and the terminal list show the folder the shell is in no
   assert.match(q('.wt-li-sub').textContent, /elsewhere/, 'and the list too')
   assert.equal(v.getWins()[0].cwd, 'C:\work\start', 'the saved start folder is untouched')
 })
+
+// ── 12. reconnect button ──
+
+test('a window opened in another tab offers a Reconnect button', async () => {
+  const id = v.openTerminal({ cwd: 'C:\work' })
+  render()
+  const rt = await until(() => v.getRuntime(id), 'the runtime')
+  const sock = await until(() => FakeWebSocket.last, 'the socket')
+  sock.push({ type: 'attached', created: false, replay: '', exited: false, exitCode: null, agent: null })
+  assert.equal(q('.wt-win [data-act="reconnect"]'), null, 'no button while live')
+  v.flushSync(() => sock.drop(4000))
+  assert.ok(rt.conn === 'lost')
+  const button = await until(() => q('.wt-win [data-act="reconnect"]'), 'the button')
+  const before = FakeWebSocket.instances.length
+  click(button)
+  assert.equal(FakeWebSocket.instances.length, before + 1)
+  assert.equal(q('.wt-win [data-act="reconnect"]'), null, 'gone once reconnecting')
+})

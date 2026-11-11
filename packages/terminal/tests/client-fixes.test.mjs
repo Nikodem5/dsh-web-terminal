@@ -113,3 +113,18 @@ test('saved window rectangles are pulled into range on load', async () => {
   assert.ok(by('huge').restore.w > 0 && by('huge').restore.x < 1)
   assert.deepEqual({ x: by('fine').x, y: by('fine').y, w: by('fine').w, h: by('fine').h }, { x: 0.1, y: 0.2, w: 0.5, h: 0.4 }, 'a sane rectangle is untouched')
 })
+
+// ── 12. a terminal that was opened in another tab ──
+
+test('reconnectWin takes a terminal back after another tab had it', async () => {
+  const { id, rt, sock } = await open()
+  sock.drop(4000)
+  assert.equal(rt.conn, 'lost')
+  assert.equal(rt.detail, s.OTHER_TAB)
+  const count = FakeWebSocket.instances.length
+  s.reconnectWin(id)
+  assert.equal(FakeWebSocket.instances.length, count + 1, 'a new socket is opened at once')
+  assert.equal(rt.conn, 'connecting')
+  s.reconnectWin(id)
+  assert.equal(FakeWebSocket.instances.length, count + 1, 'only a lost terminal reconnects')
+})

@@ -37,6 +37,15 @@ export const UNOPENED_COLS = 200
 export const UNOPENED_ROWS = 50
 
 let ticker: ReturnType<typeof setInterval> | undefined
+/** What `rt.detail` says when the host gave this terminal to another browser tab. */
+export const OTHER_TAB = 'opened in another tab'
+/** Per terminal: connect again now (its socket closed and nothing is retrying). */
+const reconnectors = new Map<string, () => void>()
+
+/** Take a terminal back after another tab took it, or retry a lost connection at once. */
+export function reconnectWin(id: string): void {
+  reconnectors.get(id)?.()
+}
 
 /**
  * Most output bytes a terminal may have queued in xterm before further output is dropped.
@@ -464,13 +473,19 @@ export function ensureRuntime(win: WinState): Runtime {
       stopStartup()
       if (rt.socket !== socket || rt.killed) return
       if (rt.conn === 'exited' || rt.conn === 'failed') return
-      if (event.code === 4000) return setConn(rt, 'lost', 'opened in another tab')
+      if (event.code === 4000) return setConn(rt, 'lost', OTHER_TAB)
       if (event.code === 1013) return setConn(rt, 'failed', 'too many terminals')
       setConn(rt, 'lost', 'reconnecting…')
       const delay = Math.min(8000, 700 * 2 ** rt.retry++)
       rt.timer = setTimeout(connect, delay)
     }
   }
+  reconnectors.set(win.id, () => {
+    if (rt.killed || rt.conn !== 'lost') return
+    clearTimeout(rt.timer)
+    rt.retry = 0
+    connect()
+  })
   // Let the holder attach and fit once before the first connect so the PTY starts at the right size.
   requestAnimationFrame(() => {
     try {
@@ -625,6 +640,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
   } catch {}
   rt.holder.remove()
   runtimes.delete(id)
+  reconnectors.delete(id)
   if ((rt.edits?.length ?? 0) > 0) notifyEdits() // `?.`: tests build partial runtimes
   // Nothing left to watch: stop the once-a-second tick until the next terminal opens.
   if (runtimes.size === 0 && ticker !== undefined) {

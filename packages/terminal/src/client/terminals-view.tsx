@@ -31,6 +31,7 @@ import { providers, showsSubagents } from './providers.ts'
 import { ensureStyles } from './styles.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
 import {
+  OTHER_TAB,
   applyAutoTermTheme,
   arrange,
   baseName,
@@ -56,6 +57,7 @@ import {
   jumpToUnread,
   loadHostInfo,
   openSearch,
+  reconnectWin,
   refit,
   renameWin,
   restartWin,
@@ -415,6 +417,9 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
         <span className="wt-sub" title={liveCwd}>{sub}</span>
         {rt.conn === 'exited' || rt.conn === 'failed' ? (
           <button type="button" className="wt-hbtn" title={remote !== undefined ? 'Reconnect' : 'Restart shell'} onClick={() => restartWin(win.id)}>↻</button>
+        ) : null}
+        {rt.conn === 'lost' && rt.detail === OTHER_TAB ? (
+          <button type="button" className="wt-hbtn" data-act="reconnect" title="This terminal was opened in another tab. Take it back here (that tab lets go of it)" onClick={() => reconnectWin(win.id)}>⇄ Reconnect</button>
         ) : null}
         <button type="button" className="wt-hbtn" data-on={win.pinned} title={win.pinned ? 'Unpin (allow move/resize)' : 'Pin in place (lock position and size)'} onClick={() => updateWin(win.id, { pinned: !win.pinned })}>
           {win.pinned ? '◆' : '◇'}
