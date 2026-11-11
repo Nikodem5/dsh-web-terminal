@@ -89,3 +89,27 @@ test('typing while the socket is down shows a notice instead of dropping keys si
   assert.equal(s.getNotices().length, 1, 'the same notice is not stacked')
   assert.ok(!sock.sent.some((f) => f.data === 'b' || f.data === 'c'), 'the keys are not queued')
 })
+
+// ── 7. saved geometry ──
+
+test('saved window rectangles are pulled into range on load', async () => {
+  const fresh = await loadStore({ fresh: true })
+  const base = { shell: 'default', cwd: '', pinned: false, maximized: false, minimized: false, z: 1 }
+  window.localStorage.setItem(fresh.K_LAYOUT, JSON.stringify({ zTop: 3, wins: [
+    { ...base, id: 'zero', x: 0.2, y: 0.2, w: 0, h: 0 },
+    { ...base, id: 'far', x: 50, y: -9, w: 0.5, h: 0.5 },
+    { ...base, id: 'huge', x: 0, y: 0, w: 40, h: 40, restore: { x: 9, y: 9, w: 0, h: 5 } },
+    { ...base, id: 'fine', x: 0.1, y: 0.2, w: 0.5, h: 0.4 },
+  ] }))
+  fresh.hydrate()
+  const by = (id) => fresh.getWins().find((w) => w.id === id)
+  for (const w of fresh.getWins()) {
+    assert.ok(w.w >= 0.05 && w.w <= 1 && w.h >= 0.05 && w.h <= 1, `${w.id} has a visible size`)
+    assert.ok(w.x < 1 && w.x + w.w > 0 && w.y >= 0 && w.y < 1, `${w.id} is on the canvas`)
+  }
+  assert.ok(by('zero').w > 0 && by('zero').h > 0)
+  assert.ok(by('far').x < 1 && by('far').y === 0)
+  assert.deepEqual([by('huge').w, by('huge').h], [1, 1])
+  assert.ok(by('huge').restore.w > 0 && by('huge').restore.x < 1)
+  assert.deepEqual({ x: by('fine').x, y: by('fine').y, w: by('fine').w, h: by('fine').h }, { x: 0.1, y: 0.2, w: 0.5, h: 0.4 }, 'a sane rectangle is untouched')
+})
