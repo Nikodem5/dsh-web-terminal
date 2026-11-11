@@ -1,5 +1,6 @@
 // The command-hook forwarder SessionStart uses: posts stdin to the host, prints nothing, never fails.
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -22,7 +23,7 @@ async function listener() {
       res.end()
     })
   })
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await listenLocal(server)
   return { posts, base: `http://127.0.0.1:${server.address().port}`, close: () => server.close() }
 }
 

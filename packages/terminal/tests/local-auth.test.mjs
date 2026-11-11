@@ -1,6 +1,7 @@
 // Access control for the plugin's routes and socket: a loopback peer, a loopback Host and the per-boot
 // token are all required, whatever the Origin header says (or omits).
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -130,7 +131,7 @@ test('upgrade: no token, a wrong token or a remote peer never reaches the handsh
   const upgrade = upgrades.find((u) => u.path === '/terminal/ws')
   const http = createServer()
   http.on('upgrade', (request, socket, head) => upgrade.handler(request, socket, head))
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await listenLocal(http)
   after(() => http.close())
   const url = `ws://127.0.0.1:${http.address().port}/terminal/ws?id=auth-${Date.now()}&shell=cmd&cols=80&rows=24`
   const status = (protocols, options) =>

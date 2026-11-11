@@ -2,6 +2,7 @@
 // throwing providers, the signal allowlist and disposal before the signal server listens.
 // Same fake-PTY approach as host-hardening.test.mjs, with a spawn that can be delayed or made to fail.
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -61,7 +62,7 @@ async function startHost({ spawn, handleOverrides } = {}) {
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
   const http = createServer()
   http.on('upgrade', (req, socket, head) => upgrade.handler(req, socket, head))
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await listenLocal(http)
   const port = http.address().port
   const host = {
     spawned,

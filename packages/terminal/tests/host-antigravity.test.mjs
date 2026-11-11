@@ -1,6 +1,7 @@
 // Antigravity end to end on the host: a terminal the client says is an Antigravity one gets `agent` frames
 // from the OSC 7501 sequences in its output; any other terminal gets none, even when the bytes are printed.
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -52,7 +53,7 @@ before(async () => {
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
   server = createServer()
   server.on('upgrade', (req, socket, head) => upgrade.handler(req, socket, head))
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await listenLocal(server)
   port = server.address().port
 })
 

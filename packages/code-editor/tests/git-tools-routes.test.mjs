@@ -1,3 +1,4 @@
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -418,7 +419,7 @@ test('network failures are fast and never prompt: unreachable host, and a server
     requests++
     res.writeHead(401, { 'www-authenticate': 'Basic realm="x"', 'content-length': '0' }).end()
   })
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await listenLocal(server)
   git(repo, 'remote', 'set-url', 'origin', `http://127.0.0.1:${server.address().port}/x.git`)
   try {
     for (const route of ['/git/fetch', '/git/push']) {
