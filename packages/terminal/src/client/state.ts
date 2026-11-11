@@ -146,6 +146,7 @@ function cleanWin(raw: unknown, index: number): WinState | undefined {
     hadTurn: raw.hadTurn === true ? true : undefined,
     cols: isGrid(raw.cols) ? raw.cols : undefined,
     rows: isGrid(raw.rows) ? raw.rows : undefined,
+    zoom: cleanZoom(raw.zoom),
   }
 }
 

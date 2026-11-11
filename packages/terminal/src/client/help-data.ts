@@ -42,6 +42,7 @@ export const MOUSE_ACTIONS: readonly MouseAction[] = [
   { how: 'Right-click a selection', what: `Send menu: copy, another terminal, or a new agent terminal (${AGENT_NAMES})` },
   { how: 'Shift+right-click a selection', what: 'The same inside programs that use the mouse (they get plain right-clicks)' },
   { how: 'Shift+drag in the terminal', what: 'Select text inside programs that use the mouse (Windows / Linux)' },
+  { how: 'Ctrl+wheel over a terminal', what: 'Zoom the font of that terminal one pixel per notch (8-32 px); it is saved with the terminal and the PTY is resized once you stop. Ctrl+0 returns to the Aa size (with shrink-to-fit)' },
   { how: 'Click "↓ N new lines"', what: 'Jump to where you left off' },
   { how: 'Click a terminal in the list', what: 'Focus it; drag to reorder, double-click the name to rename, hover for duplicate / close' },
   { how: 'Click a minimized chip', what: 'Restore that window (chips are in the toolbar)' },

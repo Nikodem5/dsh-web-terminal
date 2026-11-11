@@ -65,7 +65,7 @@ const KEYS = [
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((k) => ({ key: k, code: `Key${k}` })),
   { key: ' ', code: 'Space' },
   { key: 'Enter', code: 'Enter' },
-  ...'123456789'.split('').map((k) => ({ key: k, code: `Digit${k}` })),
+  ...'0123456789'.split('').map((k) => ({ key: k, code: `Digit${k}` })),
   { key: 'Escape', code: 'Escape' },
   { key: 'Tab', code: 'Tab' },
   { key: 'ArrowLeft', code: 'ArrowLeft' },

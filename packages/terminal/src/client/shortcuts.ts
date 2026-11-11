@@ -66,6 +66,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'copy', group: 'Copy & paste', desc: 'Copy the selection (without one, Ctrl+C is the usual interrupt)', chord: { key: ['c'], mod: 'mod', shift: 'any', alt: 'any' }, needsSelection: true },
   { id: 'copy-always', group: 'Copy & paste', desc: 'Copy the selection, even when the program would get Ctrl+C', chord: { key: ['c'], mod: 'mod', shift: true, alt: 'any' } },
   { id: 'paste', group: 'Copy & paste', desc: 'Paste from the clipboard', chord: { key: ['v'], mod: 'mod', shift: true, alt: 'any' } },
+  { id: 'font-reset', group: 'Others', desc: 'Reset the font size of this terminal after a Ctrl+wheel zoom', chord: { key: ['0'], mod: 'mod' } },
+  { id: 'font-zoom', group: 'Others', desc: 'Zoom the font of this terminal (saved with the terminal)', keys: 'Ctrl+wheel' },
   { id: 'help', group: 'Help', desc: 'Show / hide this help (F1 is not sent to the program)', chord: { key: ['F1'] } },
   { id: 'help-close', group: 'Help', desc: 'Close the help panel', keys: 'Esc' },
   { id: 'menu-close', group: 'Others', desc: 'Close an open menu (Layouts, Aa, send menu)', keys: 'Esc' },

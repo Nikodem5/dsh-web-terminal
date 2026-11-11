@@ -62,6 +62,8 @@ export interface WinState extends Rect {
   /** Last real grid size (after a fit); a terminal created before its page opens starts at this size. */
   cols?: number
   rows?: number
+  /** Font zoom: whole pixels added to the global font size (Ctrl+wheel); unset = the global size with shrink-to-fit. */
+  zoom?: number
 }
 
 /** Connection phase of one terminal runtime. */
