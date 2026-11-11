@@ -216,12 +216,17 @@ test('upgrade: every allowed Origin form is accepted', async () => {
 
 test('heartbeat: a socket that stops answering pings is terminated, the shell survives', async () => {
   const host = await startHost({ DSH_WT_HEARTBEAT_MS: '40' })
+  // A spawn waits until the providers have prepared; let that happen first, or the 40 ms heartbeat drops the
+  // mute socket before its terminal exists (with nothing to observe).
+  const warm = await host.connect(`id=${freshId()}`)
+  assert.ok(await until(() => warm.frames.length > 0))
+  warm.ws.close()
   const id = freshId()
   const mute = await host.connect(`id=${id}`, { autoPong: false })
   assert.ok(await until(() => mute.frames.length > 0))
   const code = await Promise.race([mute.closed, sleep(5000).then(() => 'timeout')])
   assert.equal(code, 1006)
-  assert.equal(host.spawned[0].handle.terminated, false)
+  assert.equal(host.spawned[1].handle.terminated, false)
   // The session is detached and can be reattached.
   const again = await host.connect(`id=${id}`)
   assert.ok(await until(() => again.frames.length > 0))

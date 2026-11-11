@@ -16,6 +16,15 @@
  * @property {(call: Call, host: HostApi) => boolean} [intercept] - Look at a `/signal/<id>` body before it is read as an agent state; return true when it was consumed.
  * @property {() => ({feed: (text: string) => Array<{state: string, detail: string, kind?: string, session?: string}>})} [observe] - Create a parser for one terminal's output, for a provider that reports in the terminal stream instead of hooks. Called once per terminal the client says was started as this provider; `feed` gets each decoded chunk and returns the signals in it (a `kind: 'auth'` signal is held back by the host and dropped if another one follows soon). It must be cheap and must not throw (the host contains it if it does).
  * @property {Record<string, (call: Call, host: HostApi) => void>} [routes] - Extra `/signal/<name>` endpoints this provider owns (not agent states). Names share one namespace with provider ids.
+ * @property {() => UsageSource} [usage] - Create this provider's usage numbers for the stats bar (once per host). Its `stats()` is reported under `providers.<id>` by the stats route, and its `serialize()` is saved in usage.json across restarts.
+ *
+ * @typedef {object} UsageSource
+ * @property {(terminalId: string, body: unknown) => boolean} [ingest] - Take one usage payload from a terminal (through `HostApi.ingestUsage`); true when something worth saving changed.
+ * @property {(terminalId: string) => void} [removeSession] - Forget a destroyed terminal's per-session numbers.
+ * @property {() => object} stats - What the stats route reports for this provider (JSON-safe).
+ * @property {() => unknown} serialize - JSON-safe state to keep across restarts.
+ * @property {(saved: unknown) => void} restore - Load what `serialize` returned; garbage is ignored.
+ * @property {(fn: () => void) => void} [onChange] - Called when state changed outside `ingest` (a background scan), so the host saves it.
  *
  * @typedef {object} PrepareEnv
  * @property {string} dir - Folder for generated files.
@@ -23,11 +32,15 @@
  * @property {string} base - `http://127.0.0.1:<port>/signal`: where hooks post, without a trailing slash.
  * @property {string|undefined} nodePath - `node` on PATH, for hooks that are commands (undefined when missing).
  * @property {(pid: number) => boolean} pidAlive - Whether a process id is alive, for sweeping files of dead hosts.
+ * @property {(command: string) => Promise<string|undefined>} [which] - A command's path on PATH (cached).
+ * @property {string|null} [version] - This plugin's version.
  *
  * @typedef {object} Prepared
  * @property {Record<string, unknown>|null} [launch] - What the client needs to start the provider's command, shown in the info route; the client's provider entry knows how to use it (Claude: `{settingsPath}` for `--settings`). `{}` when nothing is needed, null when the files could not be written.
  * @property {Record<string, string>} [env] - Variables added to every terminal's shell, for a provider that reads its hook config from the environment instead of a flag.
  * @property {() => void} [dispose] - Remove what `prepare` wrote.
+ * @property {() => (Record<string, unknown>|null)} [launchHint] - The launch hint as of now, for a provider whose hint changes while the host runs (an opt-in); used instead of `launch`.
+ * @property {{status: () => object, install: () => Promise<object>, remove: () => Promise<object>}} [integration] - An opt-in integration the user installs and removes from the UI (the integration route); `status().error` is null after a successful action.
  * @property {string|null} [statusLineReason] - Why Claude's status-line wrapper is off (null: on). Reported by the stats route.
  *
  * @typedef {object} Call
@@ -38,7 +51,8 @@
  * @typedef {object} HostApi
  * @property {(session: object) => void} notifySubagents
  * @property {(session: object) => void} notifyEdits
- * @property {(id: string, body: unknown) => void} ingestUsage
+ * @property {(providerId: string, terminalId: string, body: unknown) => void} ingestUsage - Feed a payload to that provider's usage source.
+ * @property {(session: object, signal: {provider: string, state: string, detail: string, kind?: string, session?: string}) => void} applySignal - Make a signal from the provider's own token-authenticated channel the terminal's state; from then on its terminal-output signals are ignored.
  */
 import { normalizeSignal } from '../agent-signals.js'
 import { claude } from './claude.js'

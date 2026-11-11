@@ -64,9 +64,10 @@ export const SSH_HELP: readonly MouseAction[] = [
 export const AGENT_HELP: readonly MouseAction[] = [
   { how: providers.map((p) => `${p.glyph} ${p.label}`).join(' · '), what: `Toolbar buttons that open the New terminal dialog preset to the agent's command (${providers.map((p) => `\`${p.command}\``).join(', ')}); the same commands are chips in the dialog` },
   { how: 'Claude', what: 'Status, usage, sub-agents and changed files, reported by hooks that are added with --settings when it is started from here. A terminal that remembers a conversation resumes it (--resume <id>)' },
-  { how: 'Antigravity', what: 'Status only (working, needs you, finished), read from the terminal output of agy itself; no usage, sub-agents or changed-file marks. Only in a terminal started as `agy` from here' },
+  { how: 'Antigravity', what: 'Status (working, needs you, finished), read from the terminal output of agy itself; no sub-agents. Only in a terminal started as `agy` from here' },
+  { how: 'Antigravity integration (opt-in)', what: 'Help → Antigravity integration → Install adds an agy plugin (hooks) and starts agy with a per-session --settings status line: the conversation id, changed-file marks, quota and cost in the stats bar, and a status sent with the terminal’s secret. Remove uninstalls it. Never installed on its own' },
   { how: 'Antigravity: reopening', what: 'Resumes with --conversation <id> once agy has printed one on a clean exit. With none, a terminal that had a turn reopens with `agy -c`, the latest conversation in that folder, so two Antigravity terminals in one folder can open the same one' },
-  { how: 'Antigravity: trust', what: 'Its status is read from terminal output, so a program that prints the same sequence in an Antigravity terminal can fake a status dot or alert. It can only mislead' },
+  { how: 'Antigravity: trust', what: 'Without the integration its status is read from terminal output, so a program that prints the same sequence can fake a status dot or alert (it can only mislead). With it, once agy reports over the secret channel, printed sequences are ignored' },
   { how: 'Started by hand', what: 'An agent you type into a plain shell, or run over ssh, reports nothing: the dot shows only Running or Idle (over ssh, Connected)' },
 ]
 
@@ -144,7 +145,8 @@ export const STATS_LEGEND: readonly StatsLegendItem[] = [
   { term: 'dimmed, "12m ago"', what: 'The numbers are older than 10 minutes: they come from the last Claude terminal that reported.' },
   { term: 'limits n/a', what: 'Limit tracking is off; Diagnostics below says why.' },
   { term: '$12.34', what: 'Cost at API prices for the usage in your open Claude terminals (not what a subscription bills).' },
-  { term: '2.5B tok', what: 'All-time tokens processed, cache reads included; hover for the input / output / cache split.' },
+  { term: '2.5B tok', what: 'Claude: all-time tokens processed, cache reads included; hover for the input / output / cache split. Antigravity: tokens of the open sessions only (agy keeps no readable all-time total).' },
+  { term: '✦ … ◈ …', what: 'With Claude and Antigravity terminals open, each one’s numbers follow its mark, the focused terminal’s first. Antigravity’s 5h / 7d are its most used quota buckets (hover for all), and its cost is a list-price estimate; they need the Antigravity integration.' },
   { term: '3 agents', what: 'Claude sub-agents running right now, across all terminals.' },
   { term: '● 2 working', what: 'Terminals by agent status (working, needs you, finished).' },
 ]
@@ -158,7 +160,7 @@ export interface AgentMarkHelp {
 export const AGENT_MARK_HELP: readonly AgentMarkHelp[] = [
   { how: '⚡ in the code editor', what: 'A file a Claude session in one of your open terminals changed (Edit, Write, MultiEdit, NotebookEdit). It shows in the explorer (folders above it get a faint dot), tabs, quick open and the CHANGES list; hover for the terminal, the time and the tool.' },
   { how: 'Temporary', what: 'The mark lasts while that terminal is open. Closing the terminal, or restarting its shell, removes it.' },
-  { how: 'Needs Claude hooks', what: 'Only Claude started through this plugin reports edits; Antigravity terminals do not. Shell commands and other editors are not marked.' },
+  { how: 'Needs agent hooks', what: 'Claude started through this plugin reports edits; Antigravity does once its integration is installed (write_file and the replace tools). Shell commands and other editors are not marked.' },
 ]
 
 // ── diagnostics ──
@@ -201,6 +203,12 @@ export interface DiagnosticsInput {
   /** When the limits were last reported by a Claude terminal. */
   sampledAt: number | null | undefined
   now: number
+  /** Per provider with open terminals: how many there are and how many reported a status (absent or empty: no row). */
+  agentReports?: { label: string; terminals: number; reporting: number }[]
+  /** The last "New <agent> terminal here" send that gave up, if any. */
+  sendTimeout?: { label: string; at: number; reported: boolean } | null
+  /** Opt-in integrations and their state (absent: no row). */
+  integrations?: { label: string; value: string; bad?: boolean }[]
 }
 
 /** One probe result as `found (path)` / `not found`, or `unknown` while the host has not answered. */
@@ -242,6 +250,16 @@ export function diagnosticRows(d: DiagnosticsInput): DiagnosticRow[] {
     { label: 'Shell integration', value: `${d.shellIntegration ? 'on' : 'off'} (setting); ${markers}` },
     { label: 'Terminals', value: `${c.live} live, ${c.connecting} connecting, ${c.offline} offline${c.exited > 0 ? `, ${c.exited} exited` : ''}`, bad: c.offline > 0 },
     { label: 'Stats sample', value: age },
+    ...(d.agentReports ?? []).map((r) => ({
+      label: `${r.label} status`,
+      value: `${r.reporting} of ${r.terminals} ${r.terminals === 1 ? 'terminal' : 'terminals'} reported a status`,
+      // One that is still starting has not reported yet; none at all is worth a look.
+      bad: r.reporting === 0,
+    })),
+    ...(d.sendTimeout == null
+      ? []
+      : [{ label: 'Last send to a new agent', value: `${d.sendTimeout.label} timed out at ${formatClock(d.sendTimeout.at)} (${d.sendTimeout.reported ? 'it reported, but never became ready' : 'no status was seen'}); the text was copied instead`, bad: true }]),
+    ...(d.integrations ?? []),
   ]
 }
 

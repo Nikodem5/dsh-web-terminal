@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { EDIT_MATCHER } from '../edits.js'
 import { TOKEN_ENV, TOKEN_HEADER, clean } from '../agent-signals.js'
 import { userStatusLine } from '../statusline.js'
+import { createClaudeUsage } from './claude-usage.js'
 import { noteTranscript } from '../overseer/index.js'
 
 /** Absolute path of the status-line wrapper Claude runs. */
@@ -193,13 +194,14 @@ export const claude = {
   adapter: claudeAdapter,
   prepare,
   intercept: trackSubagents,
+  usage: () => createClaudeUsage(),
   routes: {
     // A file the agent changed: not an agent state.
     'claude-edit': ({ session, body }, host) => {
       if (session.edits.ingest(body)) host.notifyEdits(session)
     },
     // The status line's payload: limits and cost, not an agent state.
-    usage: ({ id, body }, host) => host.ingestUsage(id, body),
+    usage: ({ id, body }, host) => host.ingestUsage('claude', id, body),
     // The sub-agent status line's payload: the live task list.
     subagents: ({ session, body }, host) => {
       if (session.subagents.ingestTasks(body)) host.notifySubagents(session)

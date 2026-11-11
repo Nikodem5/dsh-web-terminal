@@ -845,7 +845,7 @@ test('the registry finds a provider by id and by the command that starts it', ()
 })
 
 test('a command that matches no provider is a plain shell command', () => {
-  for (const command of ['npm run dev', 'claude-code-router start', 'echo claude', 'mclaude', 'C:\\bin\\claude.exe', '', undefined]) {
+  for (const command of ['npm run dev', 'claude-code-router start', 'echo claude', 'mclaude', 'C:\\bin\\claude-code-router.exe', '', undefined]) {
     assert.equal(s.providerForCommand(command), undefined, String(command))
   }
   assert.equal(s.providerById('gemini'), undefined)
@@ -1333,7 +1333,17 @@ test('Antigravity: recognised by its command, path and exe title', () => {
   assert.equal(agy.label, 'Antigravity')
   assert.notEqual(agy.glyph, s.providerById('claude').glyph)
   for (const c of ['agy', 'agy -c', '  agy --model x']) assert.equal(s.providerForCommand(c), agy, c)
-  for (const c of ['agyx', 'echo agy', 'C:\\bin\\agy.exe']) assert.equal(s.providerForCommand(c), undefined, c)
+  for (const c of ['agyx', 'echo agy', 'C:\\bin\\agyx.exe', 'agy-tools']) assert.equal(s.providerForCommand(c), undefined, c)
+  // A full path starts the provider too, the same way a typed command is recognised.
+  for (const c of ['C:\\bin\\agy.exe', 'C:\\Users\\me\\AppData\\Local\\agy\\bin\\agy.exe -c', '"C:\\Program Files\\agy\\agy.exe"', '/usr/local/bin/agy', 'AGY.EXE']) {
+    assert.equal(s.providerForCommand(c), agy, c)
+    assert.equal(s.isAgentCommand(c), true, c)
+  }
+  const id = 'd68c6b12-644d-4dea-93aa-b1ead1117390'
+  assert.equal(agy.launch('C:\\bin\\agy.exe', {}, id), `C:\\bin\\agy.exe --conversation ${id}`)
+  assert.equal(agy.launch('"C:\\Program Files\\agy\\agy.exe" --model x', {}, null, true), '"C:\\Program Files\\agy\\agy.exe" -c --model x')
+  assert.equal(s.providerForCommand('C:\\bin\\claude.exe --resume'), s.providerById('claude'))
+  assert.equal(s.providerById('claude').launch('C:\\bin\\claude.exe', { settingsPath: 'C:\\x\\s.json' }), 'C:\\bin\\claude.exe --settings "C:/x/s.json"')
   assert.equal(s.isAgentCommand('C:\\bin\\agy.exe --help'), true)
   assert.equal(s.providerForTitle('C:\\Users\\me\\AppData\\Local\\agy\\agy.exe'), agy)
   assert.deepEqual(agy.presets, ['agy', 'agy -c'])

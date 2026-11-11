@@ -9,11 +9,25 @@ export interface LimitWindow {
   outAt: number | null
 }
 
-export interface HostStats {
-  limits: { fiveHour: LimitWindow | null; sevenDay: LimitWindow | null; sampledAt: number | null }
-  cost: { totalUsd: number; terminals: number } | null
-  tokens: { total: number; input: number; output: number; cacheRead: number; cacheCreation: number; asOf: number | null } | null
+/** One account bucket (Antigravity reports several, e.g. gemini-5h, 3p-weekly). */
+export interface LimitBucket {
+  id: string
+  usedPct: number
+  resetsAt: number
+}
+
+/** One provider's numbers. */
+export interface ProviderStats {
+  limits: { fiveHour: LimitWindow | null; sevenDay: LimitWindow | null; sampledAt: number | null; buckets?: LimitBucket[] }
+  cost: { totalUsd: number; terminals: number; estimated?: boolean } | null
+  tokens: { total: number; input: number; output: number; cacheRead: number; cacheCreation: number; asOf: number | null; scope?: 'sessions' } | null
+  plan?: string | null
+}
+
+export interface HostStats extends ProviderStats {
   statusLine: { enabled: boolean; reason: string | null }
+  /** Per provider id (a host from before per-provider stats: only `claude`, built from the top-level fields). */
+  providers: Record<string, ProviderStats>
 }
 
 /** A limits sample older than this is shown dimmed with its age. */
@@ -29,23 +43,31 @@ function parseWindow(raw: unknown): LimitWindow | null {
   return { usedPct: w.usedPct, resetsAt: w.resetsAt, outAt: isNum(w.outAt) ? w.outAt : null }
 }
 
-/** Validate the `/stats` payload; anything unexpected (old host, bad body) yields undefined. */
-export function parseStats(raw: unknown): HostStats | undefined {
-  const r = obj(raw)
-  if (r === undefined || r.ok !== true) return undefined
+function parseBuckets(raw: unknown): LimitBucket[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw
+    .map(obj)
+    .filter((b): b is Record<string, unknown> => b !== undefined && typeof b.id === 'string' && isNum(b.usedPct) && isNum(b.resetsAt))
+    .map((b) => ({ id: b.id as string, usedPct: b.usedPct as number, resetsAt: b.resetsAt as number }))
+}
+
+/** One provider's part of the payload. */
+export function parseProviderStats(raw: unknown): ProviderStats {
+  const r = obj(raw) ?? {}
   const limits = obj(r.limits)
   const cost = obj(r.cost)
   const tokens = obj(r.tokens)
-  const line = obj(r.statusLine)
   const sampledAt = limits?.sampledAt
   const asOf = tokens?.asOf
+  const buckets = parseBuckets(limits?.buckets)
   return {
     limits: {
       fiveHour: parseWindow(limits?.fiveHour),
       sevenDay: parseWindow(limits?.sevenDay),
       sampledAt: isNum(sampledAt) ? sampledAt : null,
+      ...(buckets === undefined ? {} : { buckets }),
     },
-    cost: cost === undefined ? null : { totalUsd: numOr(cost.totalUsd, 0), terminals: numOr(cost.terminals, 0) },
+    cost: cost === undefined ? null : { totalUsd: numOr(cost.totalUsd, 0), terminals: numOr(cost.terminals, 0), ...(cost.estimated === true ? { estimated: true } : {}) },
     tokens:
       tokens === undefined
         ? null
@@ -56,9 +78,23 @@ export function parseStats(raw: unknown): HostStats | undefined {
             cacheRead: numOr(tokens.cacheRead, 0),
             cacheCreation: numOr(tokens.cacheCreation, 0),
             asOf: isNum(asOf) ? asOf : null,
+            ...(tokens.scope === 'sessions' ? { scope: 'sessions' as const } : {}),
           },
-    statusLine: { enabled: line?.enabled !== false, reason: typeof line?.reason === 'string' ? line.reason : null },
+    ...(typeof r.plan === 'string' ? { plan: r.plan } : {}),
   }
+}
+
+/** Validate the `/stats` payload; anything unexpected (old host, bad body) yields undefined. */
+export function parseStats(raw: unknown): HostStats | undefined {
+  const r = obj(raw)
+  if (r === undefined || r.ok !== true) return undefined
+  const line = obj(r.statusLine)
+  const top = parseProviderStats(r)
+  const listed = obj(r.providers)
+  const providers: Record<string, ProviderStats> = {}
+  if (listed === undefined) providers.claude = top
+  else for (const [id, value] of Object.entries(listed)) if (obj(value) !== undefined) providers[id] = parseProviderStats(value)
+  return { ...top, statusLine: { enabled: line?.enabled !== false, reason: typeof line?.reason === 'string' ? line.reason : null }, providers }
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0')
@@ -120,6 +156,12 @@ export function describeFiveHour(w: LimitWindow): { main: string; label: string;
 /** The 7d limit; the reset time goes to the tooltip instead of the line. */
 export function describeSevenDay(w: LimitWindow): { main: string; label: string; pct: string; tail: string; level: ReturnType<typeof pctLevel>; out: string | null; title: string } {
   return { main: `7d ${formatPct(w.usedPct)}`, label: '7d', pct: formatPct(w.usedPct), tail: '', level: pctLevel(w.usedPct), out: w.outAt === null ? null : `out ~${formatDayClock(w.outAt)}`, title: `7-day limit resets ${formatDayClock(w.resetsAt)}` }
+}
+
+/** Tooltip lines for a provider's account buckets (`gemini-5h 40% · resets 17:30`), or null when it has none. */
+export function describeBuckets(buckets: LimitBucket[] | undefined): string | null {
+  if (buckets === undefined || buckets.length === 0) return null
+  return buckets.map((b) => `${b.id} ${formatPct(b.usedPct)} · resets ${formatDayClock(b.resetsAt)}`).join('\n')
 }
 
 /** Tooltip with the token split. */

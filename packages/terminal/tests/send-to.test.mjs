@@ -188,3 +188,33 @@ test('send to a new agent terminal waits for the typed command, a quiet screen a
   await until(() => inputs(sock).length === 2, 'the send', 20000)
   assert.equal(inputs(sock)[1].data, '\x1b[200~```\rboom\r```\r\x1b[201~')
 })
+
+test('a new agent that never gets ready: the text is copied and a visible notice says so', async () => {
+  const copied = []
+  Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: async (t) => { copied.push(t) } }, configurable: true })
+  s.setNewAgentTimeoutForTests(300)
+  try {
+    const src = await open({ cwd: 'C:\proj' })
+    s.sendToNewAgent('hello', src.id, 'antigravity')
+    const win = await until(() => s.getWins().find((w) => w.startup === 'agy'), 'the new window')
+    const rt = s.ensureRuntime(win)
+    s.openRuntime(rt)
+    const sock = await until(() => FakeWebSocket.last !== src.sock && FakeWebSocket.last, 'its socket')
+    sock.push(attached({ created: true }))
+    const notice = await until(() => s.getNotices()[0], 'the notice')
+    assert.deepEqual(copied, ['hello'])
+    assert.match(notice.text, /^Antigravity reported no status/)
+    assert.match(notice.text, /copied to the clipboard/)
+    assert.equal(s.getLastSendTimeout().provider, 'antigravity')
+    assert.equal(s.getLastSendTimeout().reported, false)
+    s.dismissNotice(notice.id)
+    assert.equal(s.getNotices().length, 0)
+  } finally {
+    s.setNewAgentTimeoutForTests(undefined)
+  }
+})
+
+test('sendTimeoutNotice: reported vs silent, copied vs not', () => {
+  assert.match(s.sendTimeoutNotice('Claude', true, false), /^Claude did not get ready within 60 s\. The selection could not be sent or copied\.$/)
+  assert.match(s.sendTimeoutNotice('Antigravity', false, true), /Help → Diagnostics/)
+})

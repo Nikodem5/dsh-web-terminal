@@ -68,6 +68,18 @@ export function createEdits({ now = Date.now, max = MAX_EDITS } = {}) {
       while (files.size > max) files.delete(files.keys().next().value)
       return true
     },
+    /**
+     * Record a file another provider reported (already parsed by that provider), as `ingest` does.
+     * @returns true when the path was a valid absolute one (the list changed).
+     */
+    record(rawPath, tool) {
+      const path = absolute(rawPath)
+      if (path === undefined || typeof tool !== 'string' || tool.length === 0) return false
+      files.delete(path)
+      files.set(path, { at: now(), tool: tool.slice(0, 64) })
+      while (files.size > max) files.delete(files.keys().next().value)
+      return true
+    },
     /** The full list, oldest first. */
     list() {
       return [...files].map(([path, v]) => ({ path, at: v.at, tool: v.tool }))

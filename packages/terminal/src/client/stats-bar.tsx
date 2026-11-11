@@ -14,9 +14,12 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import { getStats, subscribeStats } from './stats.ts'
-import { describeFiveHour, describeSevenDay, describeTokens, formatAge, formatTokens, formatUsd, isStale } from './stats-format.ts'
+import { describeBuckets, describeFiveHour, describeSevenDay, describeTokens, formatAge, formatTokens, formatUsd, isStale } from './stats-format.ts'
+import type { ProviderStats } from './stats-format.ts'
+import { statsProviders } from './stats-providers.ts'
+import { providerById, providerOfWin, providers } from './providers.ts'
 import { ensureStyles } from './styles.ts'
-import { getVersion, noteSessionCwd, runningSubagents, runtimes, subscribe } from './terminal-store.ts'
+import { getFocusId, getVersion, getWins, noteSessionCwd, runningSubagents, runtimes, subscribe } from './terminal-store.ts'
 
 const AGENT_KINDS = [
   { activity: 'working', label: 'working' },
@@ -51,6 +54,68 @@ function Out({ text }: { text: string | null }): ReactElement | null {
   )
 }
 
+/** The limits, cost and tokens of one provider. */
+function providerParts(id: string, s: ProviderStats, marked: boolean, offTitle: string | null): ReactElement[] {
+  const provider = providerById(id)
+  const name = provider?.label ?? id
+  const mark = marked ? <span className="wt-stats-mark" title={name}>{provider?.glyph ?? id}</span> : null
+  const out: ReactElement[] = []
+  const stale = isStale(s.limits.sampledAt, Date.now())
+  const five = s.limits.fiveHour ? describeFiveHour(s.limits.fiveHour) : null
+  const seven = s.limits.sevenDay ? describeSevenDay(s.limits.sevenDay) : null
+  const buckets = describeBuckets(s.limits.buckets)
+  if (five !== null || seven !== null) {
+    const staleTitle = `Limits come from the last ${name} terminal that reported them`
+    out.push(
+      <span key={`${id}-limits`} className="wt-stats-group" data-provider={id} data-stale={stale} title={stale ? staleTitle : (offTitle ?? buckets ?? undefined)}>
+        {mark}
+        {five !== null && (
+          <span className="wt-stats-item">
+            <Limit d={five} />
+            <Out text={five.out} />
+          </span>
+        )}
+        {seven !== null && (
+          <span className="wt-stats-item" data-p="seven" title={buckets === null ? seven.title : `${seven.title}\n${buckets}`}>
+            <Limit d={seven} />
+            <Out text={seven.out} />
+          </span>
+        )}
+        {stale && s.limits.sampledAt !== null && <span className="wt-stats-item">{`· ${formatAge(Date.now() - s.limits.sampledAt)}`}</span>}
+      </span>,
+    )
+  } else if (offTitle !== null) {
+    out.push(
+      <span key={`${id}-limits`} className="wt-stats-group" data-provider={id} data-stale="true" title={offTitle}>
+        {mark}
+        <span className="wt-stats-item">limits n/a</span>
+      </span>,
+    )
+  }
+  const lead = out.length === 0 ? mark : null
+  const cost = s.cost && (s.cost.terminals > 0 || s.cost.totalUsd > 0) ? s.cost : null
+  if (cost !== null) {
+    const what = s.cost?.estimated === true ? 'List-price estimate' : 'API-price equivalent'
+    out.push(
+      <span key={`${id}-cost`} className="wt-stats-item" data-p="cost" data-provider={id} title={`${what} across ${cost.terminals} open ${name} terminals`}>
+        {lead}
+        {formatUsd(cost.totalUsd)}
+      </span>,
+    )
+  }
+  const tokens = s.tokens && s.tokens.total > 0 ? s.tokens : null
+  if (tokens !== null) {
+    const title = tokens.scope === 'sessions' ? `Tokens in the open ${name} sessions: input ${formatTokens(tokens.input)} / output ${formatTokens(tokens.output)}` : describeTokens(tokens)
+    out.push(
+      <span key={`${id}-tokens`} className="wt-stats-item" data-p="tokens" data-provider={id} title={title}>
+        {cost === null ? lead : null}
+        {formatTokens(tokens.total)} tok
+      </span>,
+    )
+  }
+  return out
+}
+
 /**
  * The compact one-line stats bar.
  * @param props - `sessionCwd` is present only in the chat header (injected by the entry).
@@ -67,15 +132,8 @@ export function StatsBar({ sessionCwd }: { sessionCwd?: () => string | undefined
   const counts = countAgents()
   const agents = AGENT_KINDS.filter((k) => (counts[k.activity] ?? 0) > 0)
   const stats = snap?.stats
-  const limits = stats?.limits
-  const sampledAt = limits?.sampledAt ?? null
-  const stale = isStale(sampledAt, Date.now())
-  const five = limits?.fiveHour ? describeFiveHour(limits.fiveHour) : null
-  const seven = limits?.sevenDay ? describeSevenDay(limits.sevenDay) : null
   const lineOff = stats !== undefined && !stats.statusLine.enabled
   const offTitle = `Limit tracking is off: ${stats?.statusLine.reason ?? 'unknown reason'}`
-  const cost = stats?.cost && (stats.cost.terminals > 0 || stats.cost.totalUsd > 0) ? stats.cost : null
-  const tokens = stats?.tokens && stats.tokens.total > 0 ? stats.tokens : null
 
   const parts: ReactElement[] = []
   if (agents.length > 0) {
@@ -98,49 +156,13 @@ export function StatsBar({ sessionCwd }: { sessionCwd?: () => string | undefined
       </span>,
     )
   }
-  if (five !== null || seven !== null) {
-    parts.push(
-      <span
-        key="limits"
-        className="wt-stats-group"
-        data-stale={stale}
-        title={stale ? 'Limits come from the last Claude terminal that reported them' : lineOff ? offTitle : undefined}
-      >
-        {five !== null && (
-          <span className="wt-stats-item">
-            <Limit d={five} />
-            <Out text={five.out} />
-          </span>
-        )}
-        {seven !== null && (
-          <span className="wt-stats-item" data-p="seven" title={seven.title}>
-            <Limit d={seven} />
-            <Out text={seven.out} />
-          </span>
-        )}
-        {stale && sampledAt !== null && <span className="wt-stats-item">{`· ${formatAge(Date.now() - sampledAt)}`}</span>}
-      </span>,
-    )
-  } else if (lineOff) {
-    parts.push(
-      <span key="limits" className="wt-stats-group" data-stale="true" title={offTitle}>
-        <span className="wt-stats-item">limits n/a</span>
-      </span>,
-    )
-  }
-  if (cost !== null) {
-    parts.push(
-      <span key="cost" className="wt-stats-item" data-p="cost" title={`API-price equivalent across ${cost.terminals} open terminals`}>
-        {formatUsd(cost.totalUsd)}
-      </span>,
-    )
-  }
-  if (tokens !== null) {
-    parts.push(
-      <span key="tokens" className="wt-stats-item" data-p="tokens" title={describeTokens(tokens)}>
-        {formatTokens(tokens.total)} tok
-      </span>,
-    )
+  if (stats !== undefined) {
+    const wins = getWins()
+    const focused = wins.find((w) => w.id === getFocusId())
+    const shown = statsProviders(wins.map((w) => providerOfWin(w)?.id), focused === undefined ? undefined : providerOfWin(focused)?.id, stats.providers, providers.map((p) => p.id))
+    // A mark per provider once more than one is shown, or when the one shown is not Claude (the bar used to be Claude's only).
+    const marked = shown.length > 1 || shown.some((id) => id !== 'claude')
+    for (const id of shown) parts.push(...providerParts(id, stats.providers[id], marked, id === 'claude' && lineOff ? offTitle : null))
   }
   if (parts.length === 0) return null
   return <div className="wt-stats">{parts}</div>

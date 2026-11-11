@@ -205,8 +205,9 @@ test('limits and token totals are saved on unload and loaded by the next host', 
   const file = join(home, 'web-terminal', 'usage.json')
   assert.ok(existsSync(file))
   const saved = JSON.parse(readFileSync(file, 'utf8'))
-  assert.equal(saved.usage.fiveHour.usedPct, 33)
-  assert.equal(saved.tokens.total, 110)
+  assert.equal(saved.version, 2)
+  assert.equal(saved.providers.claude.usage.fiveHour.usedPct, 33)
+  assert.equal(saved.providers.claude.tokens.total, 110)
 
   // A new host with no transcripts at all still shows the saved values.
   const two = await startHost({ home, env: { CLAUDE_CONFIG_DIR: join(root, 'no-such-claude-dir') } })
@@ -215,4 +216,20 @@ test('limits and token totals are saved on unload and loaded by the next host', 
   assert.equal(stats.limits.sevenDay.usedPct, 8)
   assert.equal(stats.tokens.total, 110)
   assert.deepEqual(stats.cost, { totalUsd: 0, terminals: 0 }, 'cost is per run and not restored')
+})
+
+test('a version 1 usage.json (Claude only) is read as Claude\'s; /stats also lists it per provider', async () => {
+  const home = mkdtempSync(join(root, 'v1'))
+  mkdirSync(join(home, 'web-terminal'), { recursive: true })
+  const resetsAt = Date.now() + 3600_000
+  writeFileSync(join(home, 'web-terminal', 'usage.json'), JSON.stringify({
+    version: 1,
+    usage: { sampledAt: 5, fiveHour: { usedPct: 61, resetsAt, samples: [[1, 61]] }, sevenDay: null },
+    tokens: { total: 7, input: 1, output: 2, cacheRead: 3, cacheCreation: 1, asOf: 9 },
+  }))
+  const host = await startHost({ home, env: { CLAUDE_CONFIG_DIR: join(root, 'no-such-claude-dir-v1') } })
+  const stats = await host.stats()
+  assert.equal(stats.limits.fiveHour.usedPct, 61)
+  assert.equal(stats.providers.claude.limits.fiveHour.usedPct, 61)
+  assert.equal(stats.providers.claude.tokens.total, 7)
 })

@@ -28,7 +28,7 @@ Everything runs locally.
   stats, the sub-agents panel and the "Idle" state of a fresh Claude terminal are unavailable (terminals and the other
   agent states still work). The installer needs Node as well
 - Git, for the editor's git features
-- Optional: Claude Code CLI and/or Antigravity CLI (`agy`), for the agent features (Antigravity reports status only: no usage, sub-agents or changed-file markers)
+- Optional: Claude Code CLI and/or Antigravity CLI (`agy`), for the agent features (Antigravity reports status; usage and changed-file markers with its opt-in integration; no sub-agents)
 - Windows is the primary platform, Linux is supported, macOS is untested
 
 ## Install from a release

@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -40,8 +40,8 @@ import { createSubagents } from './subagents.js'
 import { createEdits } from './edits.js'
 import { OpenError, createOpener } from './open.js'
 import { MAX_CANDIDATES, linuxCwd, resolveCandidates } from './paths.js'
-import { createTokenTotals } from './token-totals.js'
-import { createUsage } from './usage.js'
+import { createCommandCache } from './command-cache.js'
+import { createUsageStore } from './usage-store.js'
 import { createSelfUpdate } from './self-update.js'
 import { safeCall } from './shared/safe-call.js'
 import { ASK_PATH, HIDDEN_PATH, createOverseer } from './overseer/index.js'
@@ -71,6 +71,8 @@ const PLUGIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 
 /** The stats route the stats bar polls. */
 const STATS_PATH = '/api/dsh-web-terminal/stats'
+/** Opt-in provider integrations (GET state, POST install / remove). */
+const INTEGRATION_PATH = '/api/dsh-web-terminal/integration'
 /** Usage state is saved at most this often (ms), and once more on unload. */
 const USAGE_SAVE_MS = 30_000
 
@@ -166,6 +168,15 @@ function readConfig() {
 /** Where this plugin keeps files it generates (a provider's launch files, saved usage). */
 function dataDir() {
   return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'web-terminal')
+}
+
+/** A provider's current launch hint (it may change after an opt-in); null when asking it fails. */
+function safeLaunch(prepared) {
+  try {
+    return prepared.launchHint()
+  } catch {
+    return null
+  }
 }
 
 /** Whether a process id is alive (signal 0 probes without sending anything). */
@@ -265,6 +276,9 @@ async function findSsh() {
   return sshFound
 }
 
+/** Agent CLI lookups for the info route: a found path is kept, a miss is retried after 30 s (each lookup spawns a lister). */
+const agentCommands = createCommandCache({ resolve: resolveOnPath })
+
 /** The ssh part of a terminal request: the query parameters, unchecked (shellSpec validates). */
 function sshRequest(params) {
   const get = (name) => params.get(name) ?? undefined
@@ -337,33 +351,12 @@ function apply(ctx) {
   const pending = new Map()
   let disposed = false
 
-  // Usage the Claude status line reports, and the lifetime token total. Both survive restarts
-  // through usage.json so the stats bar is not empty until a terminal reports again.
-  const usage = createUsage()
-  const tokenTotals = createTokenTotals()
   // Resolved once: the async setup below must not follow a later change of DSH_HOME.
   const dir = dataDir()
-  const usageFile = join(dir, 'usage.json')
-  try {
-    const saved = JSON.parse(readFileSync(usageFile, 'utf8'))
-    usage.restore(saved?.usage)
-    tokenTotals.restore(saved?.tokens)
-  } catch {}
-  let usageDirty = false
-  let lastUsageSave = 0
-  /** Write usage.json if something changed; atomic so a crash never leaves half a file. */
-  const saveUsage = (force = false) => {
-    if (!usageDirty || (!force && Date.now() - lastUsageSave < USAGE_SAVE_MS)) return
-    usageDirty = false
-    lastUsageSave = Date.now()
-    try {
-      mkdirSync(dir, { recursive: true })
-      const tmp = `${usageFile}.${process.pid}.tmp`
-      writeFileSync(tmp, JSON.stringify({ version: 1, usage: usage.serialize(), tokens: tokenTotals.serialize() }))
-      renameSync(tmp, usageFile)
-    } catch {}
-  }
-  tokenTotals.onScanned(() => { usageDirty = true })
+  // Each provider's usage numbers (Claude: limits, cost, all-time tokens). They survive restarts
+  // through usage.json so the stats bar is not empty until a terminal reports again.
+  const usageStore = createUsageStore({ providers: registry.list(), dir, saveMs: USAGE_SAVE_MS })
+  const saveUsage = (force = false) => usageStore.save(force)
   const usageTimer = setInterval(() => saveUsage(), USAGE_SAVE_MS)
   usageTimer.unref?.()
   /** Why the status-line wrapper is not installed, or null when it is. */
@@ -511,6 +504,9 @@ function apply(ctx) {
   const observeOutput = (session, text) => {
     try {
       for (const signal of session.observer.feed(text)) {
+        // Once the provider reported over its trusted channel, printed sequences no longer set the state:
+        // only an exit hint naming the conversation that channel reported is still believed.
+        if (session.trusted === session.observerProvider && !(signal.state === 'ended' && signal.session !== undefined && signal.session === session.trustedSession)) continue
         if (signal.kind === 'auth') {
           // Held back: a later signal supersedes it, else it applies when the hold ends. A repeat does not extend it.
           if (session.authTimer === null) {
@@ -528,6 +524,24 @@ function apply(ctx) {
     } catch {
       session.observer = null
     }
+  }
+  /** The stream is over: apply what the observer still held back (`end()`, optional on an observer). */
+  const endObserved = (session) => {
+    if (session.observer === null || typeof session.observer.end !== 'function') return
+    try {
+      for (const signal of session.observer.end()) {
+        cancelAuthHold(session)
+        applyObserved(session, signal)
+      }
+    } catch {}
+    session.observer = null
+  }
+  /** The shell exited: an agent that reported in it is over too, whatever it said last (its conversation id is kept). */
+  const markAgentEnded = (session) => {
+    if (session.agent === undefined || session.agent.state === 'ended') return
+    const { kind: _kind, ...last } = session.agent
+    session.agent = { ...last, state: 'ended', detail: '', at: Date.now() }
+    send(session.ws, { type: 'agent', ...session.agent })
   }
   /** Send the sub-agent list to the attached browser, at most once per throttle window. */
   const notifySubagents = (session) => {
@@ -560,8 +574,14 @@ function apply(ctx) {
   const hostApi = {
     notifySubagents,
     notifyEdits,
-    ingestUsage: (id, body) => {
-      if (usage.ingest(id, body)) usageDirty = true
+    ingestUsage: (providerId, id, body) => usageStore.ingest(providerId, id, body),
+    /** A signal from a provider's own token-authenticated channel: it becomes the state, and output sequences stop counting (see observeOutput). */
+    applySignal: (session, signal) => {
+      cancelAuthHold(session)
+      session.trusted = signal.provider
+      if (signal.session !== undefined) session.trustedSession = signal.session
+      session.agent = { ...signal, at: Date.now() }
+      send(session.ws, { type: 'agent', ...session.agent })
     },
   }
 
@@ -630,7 +650,7 @@ function apply(ctx) {
         try { signalServer.close() } catch {}
         return resolve()
       }
-      const env = { dir, pid: process.pid, base: `http://127.0.0.1:${signalServer.address().port}/signal`, nodePath, pidAlive }
+      const env = { dir, pid: process.pid, base: `http://127.0.0.1:${signalServer.address().port}/signal`, nodePath, pidAlive, which: (command) => agentCommands.find(command), version: VERSION }
       for (const provider of registry.list()) {
         try {
           const result = provider.prepare?.(env)
@@ -670,9 +690,10 @@ function apply(ctx) {
         await Promise.all(
           registry.list().map(async (provider) => {
             let path
-            for (const command of provider.commands) if ((path = await resolveOnPath(command)) !== undefined) break
+            for (const command of provider.commands) if ((path = await agentCommands.find(command)) !== undefined) break
             // No prepare step: nothing to inject, so the client can launch it as typed ({} = ready, null = files could not be written).
-            const launch = provider.prepare === undefined ? {} : (prepared.get(provider.id)?.launch ?? null)
+            const ready = prepared.get(provider.id)
+            const launch = provider.prepare === undefined ? {} : ((ready?.launchHint !== undefined ? safeLaunch(ready) : ready?.launch) ?? null)
             return [provider.id, { available: path !== undefined, path: path ?? null, launch }]
           }),
         ),
@@ -694,18 +715,35 @@ function apply(ctx) {
     },
   }), noop)
 
+  // Opt-in provider integrations (Antigravity's plugin and launch settings): GET lists their state,
+  // POST {provider, action: 'install' | 'remove'} runs one. Nothing is installed without that POST.
+  const disposeIntegration = optional('integration route', () => registerSecured({
+    kind: 'exact',
+    path: INTEGRATION_PATH,
+    handler: async (req, res) => {
+      // The body is read before waiting, so no chunk arrives before its listener.
+      const body = req.method === 'POST' ? await readJsonBody(req, res) : null
+      if (body === undefined) return
+      await signalReady
+      const all = () => Object.fromEntries([...prepared].filter(([, p]) => p.integration !== undefined).map(([id, p]) => [id, p.integration.status()]))
+      if (body === null) return writeJson(res, 200, { ok: true, integrations: all() })
+      const integration = typeof body.provider === 'string' ? prepared.get(body.provider)?.integration : undefined
+      if (integration === undefined || (body.action !== 'install' && body.action !== 'remove')) return writeJson(res, 400, { ok: false, error: 'unknown provider or action' })
+      const status = await (body.action === 'install' ? integration.install() : integration.remove())
+      writeJson(res, 200, { ok: status.error === null, status, integrations: all() })
+    },
+  }), noop)
+
   const disposeStats = optional('stats route', () => registerSecured({
     kind: 'exact',
     path: STATS_PATH,
     handler: async (_req, res) => {
       await signalReady
-      writeJson(res, 200, {
-        ok: true,
-        limits: usage.limits(),
-        cost: usage.cost(),
-        tokens: tokenTotals.get(),
-        statusLine: { enabled: statusLineReason === null, reason: statusLineReason },
-      })
+      const statusLine = { enabled: statusLineReason === null, reason: statusLineReason }
+      const providers = usageStore.stats()
+      // The top-level fields are Claude's, as before per-provider stats existed.
+      const claude = providers.claude ?? { limits: { fiveHour: null, sevenDay: null, sampledAt: null }, cost: null, tokens: null }
+      writeJson(res, 200, { ok: true, limits: claude.limits, cost: claude.cost, tokens: claude.tokens, statusLine, providers })
     },
   }), noop)
 
@@ -832,7 +870,7 @@ function apply(ctx) {
     if (session === undefined) return
     sessions.delete(id)
     tokens.delete(session.token)
-    usage.removeSession(id)
+    usageStore.removeSession(id)
     clearTimeout(session.subTimer)
     clearTimeout(session.editTimer)
     gitHeader?.forget(session)
@@ -986,6 +1024,8 @@ function apply(ctx) {
       }
       const token = randomBytes(24).toString('hex')
       const spawning = (async () => {
+        // The providers' variables exist only once they have prepared (see signalReady).
+        await signalReady
         // Git Bash may live anywhere; fall back to the stock path so the spawn error stays meaningful.
         let file = shellId === 'gitbash' && process.platform === 'win32' ? ((await gitBash.resolve()) ?? shell.file) : shell.file
         if (shellId === 'ssh') file = (await findSsh()) ?? file
@@ -1036,6 +1076,8 @@ function apply(ctx) {
       })
       handle.done.then(
         (outcome) => {
+          // Output the observer still holds (an exit hint with no newline after it), then the agent is over.
+          endObserved(live)
           live.exited = true
           cancelAuthHold(live)
           live.lastActive = Date.now()
@@ -1048,6 +1090,7 @@ function apply(ctx) {
             dropPending(live)
             send(live.ws, catchUpFrame(live))
           }
+          markAgentEnded(live)
           send(live.ws, { type: 'exit', exitCode: live.exitCode })
         },
         () => {},
@@ -1126,6 +1169,7 @@ function apply(ctx) {
     safeCall(disposeToken)
     safeCall(disposeInfo)
     safeCall(disposeStats)
+    safeCall(disposeIntegration)
     safeCall(disposePaths)
     safeCall(disposeOpen)
     safeCall(disposeUpdate)
