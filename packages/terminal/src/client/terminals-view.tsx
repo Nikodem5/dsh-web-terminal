@@ -27,6 +27,7 @@ import { warnsMissingAgents } from './help-data.ts'
 import { providers, showsSubagents } from './providers.ts'
 import { ensureStyles } from './styles.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
+import { noteStageSize } from './placement.ts'
 import {
   arrange,
   baseName,
@@ -503,6 +504,9 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     observer.observe(document.body, { attributes: true })
     return () => observer.disconnect()
   }, [])
+
+  // New windows are sized for the canvas, so placement needs to know how big it is.
+  useEffect(() => noteStageSize(stage.w, stage.h), [stage])
 
   useEffect(() => {
     loadHostInfo()
