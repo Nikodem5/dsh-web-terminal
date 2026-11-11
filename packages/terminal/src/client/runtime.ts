@@ -24,7 +24,13 @@ import { createBlocks } from './blocks.ts'
 import { installBlockBar } from './block-bar.ts'
 import { handleBlockKey } from './block-actions.ts'
 import { watchBlockAlerts } from './block-notify.ts'
+import { feedPatternAlerts, resetPatternScan } from './pattern-alerts.ts'
+import { applyGit, requestGit, watchGit } from './git-header.ts'
 import { sshParams } from './ssh.ts'
+import { installZoom, resetZoom } from './zoom.ts'
+import { installCopyOnSelect } from './copy-select.ts'
+import { termOptions } from './term-options.ts'
+import { zoomedSize } from './term-prefs.ts'
 import { openSendMenu, registerSendMenu } from './send-to.ts'
 import { isUnreadJump, jumpToUnread, rebaseUnread, syncUnread, trackUnread, untrackUnread } from './unread.ts'
 import type { AgentSignal, Conn, Runtime, WinState } from './types.ts'
@@ -134,7 +140,7 @@ function socketBase(): string {
 
 /** Key combinations the app handles itself, so the terminal must not swallow them. */
 function isAppShortcut(event: KeyboardEvent): boolean {
-  return windowShortcut(event) !== null || isMissionShortcut(event) || matchShortcut('help', event)
+  return windowShortcut(event) !== null || isMissionShortcut(event) || matchShortcut('help', event) || matchShortcut('overseer', event)
 }
 
 /** Build (once) the xterm + socket for a window. */
@@ -150,14 +156,13 @@ export function ensureRuntime(win: WinState): Runtime {
   const term = new Terminal({
     cols,
     rows,
-    cursorBlink: true,
+    ...termOptions(),
     fontFamily: prefs.font.family,
-    fontSize: prefs.font.size,
+    fontSize: win.zoom === undefined ? prefs.font.size : zoomedSize(prefs.font.size, win.zoom),
     lineHeight: prefs.font.lineHeight,
     letterSpacing: prefs.font.letterSpacing,
     fontWeight: 'normal',
     fontWeightBold: prefs.font.boldWeight,
-    scrollback: 5000,
     allowProposedApi: true,
     // Keep text readable whatever colours a program prints (e.g. white text from a dark-themed TUI on a light background).
     minimumContrastRatio: prefs.font.minContrast,
@@ -211,7 +216,10 @@ export function ensureRuntime(win: WinState): Runtime {
   runtimes.set(win.id, rt)
   rt.blocks = createBlocks(rt) // command blocks: OSC 133/633 handlers work before the terminal is opened
   watchBlockAlerts(rt)
+  watchGit(rt)
   trackUnread(rt)
+  installZoom(rt, () => refit(rt))
+  installCopyOnSelect(rt)
   ticker ??= setInterval(tick, 1000)
 
   // Bytes of the key press xterm is about to report through onData (onKey fires first, synchronously).
@@ -270,6 +278,11 @@ export function ensureRuntime(win: WinState): Runtime {
     if (isUnreadJump(event)) {
       event.preventDefault()
       jumpToUnread(rt.id)
+      return false
+    }
+    if (matchShortcut('font-reset', event)) {
+      event.preventDefault()
+      resetZoom(rt.id, () => refit(rt))
       return false
     }
     if (matchShortcut('find', event)) {
@@ -360,6 +373,7 @@ export function ensureRuntime(win: WinState): Runtime {
         applySubagents(rt, (frame as { subagents?: unknown }).subagents)
         applyEdits(rt, (frame as { edits?: unknown }).edits)
         discardOutput(rt)
+        resetPatternScan(rt)
         term.reset()
         rt.blocks?.reset()
         promptBase = rt.blocks?.promptsReady ?? 0
@@ -372,6 +386,8 @@ export function ensureRuntime(win: WinState): Runtime {
           setConn(rt, 'live')
           rt.lastCols = 0
           sizeToHost(rt)
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') announceVisibility(rt)
+          requestGit(rt)
           // An ssh window has no startup typing: its remote command went to ssh as an argument.
           const startup = rt.ssh ? undefined : store.wins.find((w) => w.id === rt.id)?.startup
           if (frame.created === true && startup !== undefined && startup.trim().length > 0) {
@@ -409,6 +425,7 @@ export function ensureRuntime(win: WinState): Runtime {
         // The host dropped output on a congested socket; its replay is the screen as it really is.
         if (typeof frame.replay !== 'string') return
         discardOutput(rt)
+        resetPatternScan(rt)
         term.reset()
         rt.blocks?.reset()
         if (frame.replay.length > 0) term.write(frame.replay, () => rebaseUnread(rt))
@@ -418,6 +435,7 @@ export function ensureRuntime(win: WinState): Runtime {
         lastOutputAt = Date.now()
         wakeStartup?.()
         rt.lastOutputAt = Date.now()
+        feedPatternAlerts(rt, frame.data) // before the backpressure drop below: a matching line counts even if it is not drawn
         if (!admitOutput(rt.pendingBytes, frame.data.length)) {
           rt.droppedOutput = true
           return
@@ -427,6 +445,8 @@ export function ensureRuntime(win: WinState): Runtime {
         noteHostBusy(rt, frame.busy === true)
       } else if (frame.type === 'agent') {
         if (typeof frame.state === 'string') applyAgentSignal(rt, { provider: frame.provider ?? 'unknown', state: frame.state, detail: frame.detail ?? '', at: frame.at, session: frame.session })
+      } else if (frame.type === 'git') {
+        applyGit(rt, (frame as { git?: unknown }).git)
       } else if (frame.type === 'subagents') {
         applySubagents(rt, (frame as { tasks?: unknown }).tasks)
       } else if (frame.type === 'edits') {
@@ -517,6 +537,15 @@ export function sizeToHost(rt: Runtime): void {
   }
 }
 
+/** Tell the host whether the page is in view: it checks a hidden window's activity less often (the alerts still arrive). */
+export function announceVisibility(rt: Runtime): void {
+  if (rt.socket === null || rt.socket.readyState !== WebSocket.OPEN) return
+  rt.socket.send(JSON.stringify({ type: 'visibility', visible: document.visibilityState !== 'hidden' }))
+}
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('visibilitychange', () => { for (const rt of runtimes.values()) announceVisibility(rt) })
+}
+
 /** Smallest size auto-fit shrinks to: shrinking further would trade legibility for columns. */
 export const AUTO_FONT_FLOOR = 12
 
@@ -525,8 +554,9 @@ export const AUTO_FONT_FLOOR = 12
  * `fitCols` columns visible (monospace glyphs are roughly 0.6 em wide plus the letter spacing),
  * never below AUTO_FONT_FLOOR. A window too narrow for that shows fewer columns instead.
  */
-export function effectiveFontSize(widthPx: number): number {
+export function effectiveFontSize(widthPx: number, zoom?: number): number {
   const base = prefs.font.size
+  if (zoom !== undefined) return zoomedSize(base, zoom) // chosen for this terminal: no shrink to fit
   if (!prefs.autoFont) return base
   const fitting = Math.floor((widthPx / prefs.fitCols - prefs.font.letterSpacing) / 0.6)
   return Math.max(Math.min(AUTO_FONT_FLOOR, base), Math.min(base, fitting))
@@ -538,7 +568,7 @@ export function refit(rt: Runtime): void {
   if (isOverview() || !rt.holder.isConnected) return
   openRuntime(rt)
   if (rt.holder.clientWidth < 20 || rt.holder.clientHeight < 20) return
-  const size = effectiveFontSize(rt.holder.clientWidth)
+  const size = effectiveFontSize(rt.holder.clientWidth, store.wins.find((w) => w.id === rt.id)?.zoom)
   if (rt.term.options.fontSize !== size) rt.term.options.fontSize = size
   try {
     rt.fit.fit()

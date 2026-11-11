@@ -17,8 +17,9 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Run Claude | **✦ Claude** is the same dialog preset to `claude` (chips for `claude --resume` / `--continue`) |
 | Run Antigravity | **◈ Antigravity** is the same dialog preset to `agy` (chips for `agy` / `agy -c`), see [Antigravity CLI](#antigravity-cli-agy) |
 | Connect over ssh | **⇄ SSH** (or the **⇄ SSH** tab of the dialog): a terminal on another machine, see [SSH terminals](#ssh-terminals) |
-| Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder and startup command |
-| Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins), then *Open* (replaces the open terminals) or *Add* |
+| Placement | A new terminal opens in the largest free gap of the canvas (minimized windows take no space; a maximized one counts as the size it restores to; a window partly off-screen blocks only the part that shows), shrunk to fit but never below the resize minimum. With no gap left it cascades, skipping a spot where a window already sits. Placement stays instant with dozens of windows |
+| Duplicate | `⋯` menu in the window, or ⧉ in the list: same shell, folder, startup command and colour tag |
+| Saved layouts | **▾ Layouts**: *Save current* (windows, names, folders, shells, startup commands, positions, pins, colour tags), then *Open* (replaces the open terminals) or *Add* |
 
 ### Windows
 | Action | How |
@@ -28,10 +29,12 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Resize | Drag any edge or corner |
 | Maximize / minimize | `□` / double-click the title bar; `–` turns a window into a chip in the toolbar |
 | Pin | `◇` / `◆` locks position and size (also skipped by layout presets) |
+| Colour tag | `⋯` → **Colour tag**: one of eight colours (or none). It shows as a strip on the window's title bar, on the terminal's row in the list and on its tile in the overview, and is saved with the window and in saved layouts. Tell similar terminals apart at a glance (one colour per project, say) |
+| Font zoom | **Ctrl+wheel** over a terminal changes that terminal's font by 1 px per notch (8-32 px, trackpad pinch works too). It is saved with the terminal; the PTY is resized once you stop (about 150 ms), not on every step. **Ctrl+0** returns to the **Aa** size. A zoomed terminal keeps its size instead of shrinking to fit the window. The page itself is never zoomed |
 | Layout presets | Grid, Columns, Rows, Main + side, Cascade (unpinned windows only) |
 | Switch terminals | **Ctrl+Alt+←/→** cycles through the visible terminals in list order (minimized ones are skipped; works while a terminal has focus). **Ctrl+Alt+1–9** jumps to the Nth terminal in the list (restoring it if minimized) |
 | New / close / focus mode | **Ctrl+Alt+T** opens the New terminal dialog, **Ctrl+Alt+W** closes the focused terminal (asks first when it is busy), **Ctrl+Alt+M** maximizes it and restores the layout on the next press |
-| Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste |
+| Copy / paste | `Ctrl+C` copies when text is selected (otherwise it is SIGINT); `Ctrl+Shift+C/V` always copy/paste. **Copy on select** (Aa → Terminal, off by default) copies as soon as you finish selecting and shows a short "Copied" note in the terminal; if the clipboard is not allowed it says "Copy blocked" instead and nothing is lost |
 | Find in terminal | **Ctrl+F** (or `⋯` → Find…) opens a find bar over the focused terminal: highlights every match in the scrollback, `n / total` counter, **Enter** / **Shift+Enter** next/previous, match-case / whole-word / regex toggles, **Esc** closes. Pre-fills from a one-line selection |
 | Jump to new output | **Ctrl+Shift+U** scrolls to the "new since" divider (see below) |
 | Help | **F1** or the book button in the toolbar opens the help panel (see below); **Esc** closes it. F1 is not sent to the program |
@@ -39,10 +42,10 @@ works with the sidebar expanded or collapsed and no chat session is involved.
 | Links | URLs in terminal output are underlined on hover; **Ctrl+click** (Cmd+click) opens them in your system browser (plain clicks still select text) |
 
 ### Overview (mission control)
-**Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge and folder. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
+**Overview** in the toolbar (or **Ctrl+Shift+Space**) shows every terminal, minimized ones included, as a live tile in an automatic grid. Each tile carries the name, status dot, attention badge, folder and colour tag. Type to filter by name or folder, arrows move the selection, **Enter** or a click opens that terminal (restoring it if minimized), **Esc** leaves without changing focus. Terminals are only scaled with CSS, never resized, so TUIs do not redraw and the host sees no resize; your layout (rects, stacking, minimized) is untouched and never saved in overview form.
 
 ### Help panel
-The book button (or **F1**) opens a panel with ten sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, how the agent terminals are started and what each reports, the opt-in Antigravity integration (Install / Remove), what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude`, `agy` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
+The book button (or **F1**) opens a panel with eleven sections: every keyboard shortcut (with a filter box), the mouse actions, the SSH notes, how the agent terminals are started and what each reports, the Overseer, the opt-in Antigravity integration (Install / Remove), what the status dots, badges and command-bar colours mean, a legend for the stats bar, and live diagnostics (plugin version, whether `node`, `claude`, `agy` and `ssh` were found and how many hosts `~/.ssh/config` lists, whether the status-line wrapper is on and why not, shell integration for the focused terminal, connection counts, age of the last limits sample). **Copy diagnostics** puts a plain-text report on the clipboard (versions, paths and states only; no tokens). The version and the `node` lookup come from `/api/dsh-web-terminal/info` (`version`, `node: { available, path }`). The panel is the source of truth for shortcuts: it and the key handlers read one registry (`src/client/shortcuts.ts`), and a test checks the real terminal handler against it.
 
 **Update from source** (last section) is for installs made with `npm run install:desktop` from a git clone: the installer records the clone and commit in `install-source.json` beside the installed package. **Pull, build and install** runs `git pull --ff-only`, `npm install`, `npm run build` and `node scripts/install.mjs <profile>` in that clone, with the output shown below the buttons; **Restart app** (after a confirm that counts busy terminals) hands off to a detached helper (`lib/relaunch.js`) that closes the app, forces it after 8 s, and starts it again. Release installs show why the update is unavailable; under `dsh web` restart it yourself. Routes: `GET`/`POST /api/dsh-web-terminal/update`, `POST /api/dsh-web-terminal/relaunch`, both refusing foreign Origins.
 
@@ -59,12 +62,52 @@ Status comes from the agent itself, not from guessing at output.
   **Idle**, **Exited**, **Offline**. A plain shell shows only facts (running or not), never a guess.
 - **Two levels of attention**, raised only while you are looking elsewhere (another window, tab or terminal):
   - *Needs you* (permission, question, failure, the agent died mid-task, the shell exited mid-task or with an error,
-    or a working agent that has been silent for 10 minutes): red-orange border, `needs you` badge, desktop
+    or a working agent that has printed nothing for 5 minutes: `possibly hung`): red-orange border, `needs you` badge, desktop
     notification and a chime.
   - *Finished* (a turn ended) and the terminal bell: amber border and badge; a desktop notification only when the
     whole app is in the background.
   - Answering clears it: typing into the terminal, the agent's next turn, or focusing the terminal.
-- **Aa** → Notifications: desktop notifications, the chime, and the "stuck after N minutes" threshold (0 = never).
+- **Aa** → Notifications: desktop notifications, the chime, and the "possibly hung after N minutes" threshold (default 5, 0 = never).
+- **Possibly hung.** A terminal whose agent reports *working* but has produced no output for N minutes gets an urgent
+  `possibly hung` badge, once per silent spell. The moment output resumes the badge is taken back and the check re-arms; a new
+  agent signal re-arms it too. It runs once a second in the page for every terminal, minimized or not.
+
+### Pattern alerts
+**Aa → Pattern alerts** lists output triggers. A pattern is plain text or a regular expression (JavaScript syntax), with a
+*Match case* option, a name for the badge, a scope (all terminals, or one), an urgent / quiet level and a cooldown in seconds
+(default 30) before it may flag the same terminal again. When a finished line of a terminal's output matches, the terminal gets the
+usual attention badge (the same one agents use, so the border, the notification and the chime follow the level) named after the
+pattern, with the matching line in its tooltip. Nothing is raised for a terminal you are looking at.
+
+- Lines are checked after escape codes (colours, cursor moves, titles) are removed; `\n`, `\r\n` and a bare `\r` end a line, and a
+  line split across output chunks is put back together. Only the first 2000 characters of a line count, and an unfinished line is
+  kept up to 8 KB, so an endless line costs nothing.
+- It works on the live output the page receives, so a minimized window, or the Chat page being open, makes no difference. What was
+  on screen when the page reloaded (the replay) is history and is not checked. Output the page itself skips drawing under heavy load
+  is still checked.
+- Refused when you save: empty text, text over 200 characters, an invalid regular expression, one that matches an empty line, and one
+  with a repeated group inside a repeat (like `(a+)+`, the usual way to build a regex that freezes the page). At most 20 patterns. Saved
+  patterns are checked again when the page loads.
+- Two examples ship **switched off**: *Asks to proceed* (`Do you want to proceed?`, urgent) and *Test failure* (a regular expression for
+  `FAIL`, `3 tests failed`, `not ok 4`; quiet). Patterns are kept in this browser's preferences, like the other Aa settings.
+- Matching is in the browser, so a pattern cannot flag a terminal while no page is open; the host keeps the terminal running either way.
+
+### Git status in the title bar
+Each local terminal shows `⎇ branch` in its title bar, with `●` when the working tree has uncommitted or untracked files. Hover
+for the full branch name (long ones are cut), or "Detached HEAD at <commit>". The host works it out with `git status --porcelain=v2 --branch`
+in the terminal's folder (the shell's current folder when shell integration reports it, otherwise the folder it started in), so
+nothing is guessed in the browser.
+
+- **When**: when the page attaches, after a command ends and a new prompt appears (only when a command ran or the folder changed),
+  when the terminal's agent reports it finished / went idle / failed / ended, and on a slow 30 s interval for terminals a page is
+  attached to. Lookups for one terminal are at least 2 s apart (a burst becomes one run plus one trailing run), at most 3 git
+  processes run at once across all terminals, each has an 8 s timeout, and a terminal that is closed stops being looked at.
+  `DSH_WT_GIT_GAP_MS` and `DSH_WT_GIT_INTERVAL_MS` change the 2 s and 30 s (the tests use them).
+- **Never blocks**: git runs as an async child process, outside the output path; `--no-optional-locks` keeps it from taking the
+  index lock and `core.fsmonitor=false` from running a repository's fsmonitor hook. Output past 1 MB is treated as dirty.
+- **Nothing shown** for a folder that is not a repository, when `git` is not on the host's PATH (looked for again after a minute), when
+  a lookup fails or times out, and for ssh windows (their folder is on another machine; the host does not look and the page ignores the frame).
+- Untracked files count as dirty. A very large untracked tree can make the lookup slow; it then times out and the chip hides.
 - **Broadcast**: **⇉ Broadcast** adds checkboxes to the list. Type a command in the bar and Enter sends it to
   every checked terminal; **Live mirror typing** also copies keystrokes typed in one checked terminal into the
   others.
@@ -151,7 +194,7 @@ If the shell does not expose its Workspaces, the dialog instead offers *Use the 
 of the chat session last viewed (recorded by the header bar and kept in the preferences).
 
 ### The terminal list (right)
-Every terminal with status, name, folder and a pin marker. Click to focus, **double-click the name to rename**,
+Every terminal with status, name, folder, a pin marker and its colour tag (a strip at the row's left edge). Click to focus, **double-click the name to rename**,
 drag rows to reorder (that is also the Ctrl+Alt+←/→ order), ⧉ duplicate, ✕ close. `☰` in the toolbar hides it.
 
 **Names**: by default a terminal is named after the program's own title — for Claude Code that is the session
@@ -165,6 +208,32 @@ status, label, type, short model name (`haiku-5-5`), elapsed time (ticking while
 first; completed ones are dimmed and drop off about five minutes after they end. The stats bar adds `N agents` while any
 run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;
 an older host without them simply shows an empty panel.
+
+### Overseer (ask what the terminals are doing)
+`Overseer` in the toolbar (or Ctrl+Shift+O, Cmd+Shift+O on macOS) opens a chat panel where you ask a model about your
+terminals without interrupting them: "what is T3 doing?", "what did the agent in the api folder decide about caching?",
+"which terminals are waiting for me?". It is strictly **read-only**: it never types into, starts or stops a terminal, and
+the model gets no tools. Answers stream in (Stop ends one, Clear forgets the conversation) and cite terminals as `T3`;
+click one to focus that window. Every question, follow-ups included, reads the terminals afresh.
+
+It uses the app's `llm` service and its default model (the app's model settings); nothing is hardcoded. Without a model
+service, or with no default model selected, the panel says so and the terminals work as usual.
+
+What each question sends, under a fixed size limit (about 60 000 characters, `DSH_WT_OVERSEER_BUDGET`): the terminal list
+(number, name, title, folder, agent state, what it waits for, sub-agents, files the agent changed) and, per terminal, the
+recent screen text as plain text (colours stripped, progress-bar overwrites applied, repeated redraws reduced) and, for a
+Claude terminal, a condensed conversation read from its transcript (prompts, replies, one line per tool call, sub-agent
+hand-offs and reports; never raw tool output). Terminals the question names or the picker selects get most of the room;
+the others a short tail. The answer notes when content was left out. Terminal content is fenced as untrusted data in the
+prompt, and the model is told to describe it, never to follow instructions in it.
+
+**Privacy.** Terminal content is sent to the model provider configured in the app, each time you ask; a note says so
+once before the first question. Obvious secrets (vendor API keys and tokens, `KEY=value` / `"apiKey": "..."` lines,
+private key blocks, Authorization and Cookie headers, passwords in URLs) are replaced with `[REDACTED]` first, but that is
+a best effort, not a guarantee. ◉ / ⊘ next to a terminal in the panel hides it from the Overseer entirely: the host saves
+that list (`~/.dsh/web-terminal/overseer.json`) and leaves those terminals out of every request. The transcript read for
+a terminal is only the one its own authenticated Claude hook reported, and only inside the Claude config folder
+(`CLAUDE_CONFIG_DIR` or `~/.claude`); it is read from the end, incrementally and asynchronously.
 
 ### Files changed by an agent
 When a Claude session in one of your open terminals edits a file (Edit, Write, MultiEdit, NotebookEdit), the code editor
@@ -330,6 +399,8 @@ never below 12 px, never above your size), so tiled terminals stay readable; a w
 columns instead of smaller text. Text colours in the dialogs and bars are chosen from the *measured* background, so they stay legible
 whatever the theme's tokens say. New terminals open first in the list and on top of the stack.
 
+**Aa → Terminal**: **Scrollback** (500-50 000 lines per terminal, default 5000; a lower value trims the history kept at once, and every open terminal pays for what it keeps), **Cursor** (block / bar / underline) with **Blink**, and **Copy on select**. All apply live to every open terminal and are saved with the other preferences; a damaged stored value falls back to its default.
+
 Switching tabs or sessions does **not** touch the terminals. Window layout, names, folders, favourites and
 preferences are saved in `localStorage`. **Shells also outlive a page reload**: the host keeps each PTY (and
 400 KB of scrollback) and the reloaded page reattaches. Saved terminals reconnect when the app starts, so counts and alerts (needs you, chime) work without opening the Terminals page. Only close, the process exiting, or restarting the
@@ -360,6 +431,8 @@ Restart the desktop app: plugins load at boot.
 |---|---|
 | `lib/index.js` | Host half: `/terminal/ws`, `/api/dsh-web-terminal/info`, persistent PTY sessions, process-tree activity polling |
 | `lib/git-bash.js` | Finds Git Bash wherever Git for Windows is installed |
+| `lib/git-header.js`, `src/client/git-header.ts` | Git branch / dirty marker per terminal: the host scheduler (async git, throttle, concurrency cap, cache) and the client request / chip |
+| `src/client/pattern-alerts-core.ts`, `pattern-alerts.ts`, `pattern-alerts-settings.tsx` | Output pattern alerts: validation and line matching (pure), the runtime hook and list editing, the Aa block |
 | `lib/ssh-target.js`, `lib/ssh-config.js`, `src/client/ssh.ts` | SSH: target validation and argv (pure, shared with the browser bundle), the `~/.ssh/config` host list, client labels and socket parameters |
 | `lib/paths.js`, `lib/open.js` | Clickable paths: existence check with cwd rules; opening in an editor from an argv (no shell) |
 | `src/client/paths.ts`, `path-links.ts` | Path detection (pure) and the xterm link provider |
@@ -388,9 +461,12 @@ Restart the desktop app: plugins load at boot.
 | `src/client/state.ts`, `types.ts` | Window store, preferences, live runtime map, persistence; shared types |
 | `src/client/windows.ts` | Open, close, focus, maximize, layout presets |
 | `src/client/runtime.ts` | xterm + WebSocket behind each window: connect, reconnect, sizing, restart, log export |
-| `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, stuck detection |
+| `src/client/attention.ts` | Status from agent signals, attention levels, notifications, chime, hung-agent detection |
 | `src/client/launch.ts` | What a conversation id may look like (the launch rewrite itself lives in each provider, `providers.ts`) |
 | `src/client/prompt-ready.ts` | When a fresh shell is ready for the startup command (first output, then quiet; or the shell integration's prompt-ready signal) |
+| `src/client/placement.ts` | Where a new window goes: the largest free gap (a grid of free cells, so the cost stays small with many windows), else the cascade; minimum size for the canvas; reachable rects from layouts |
+| `src/client/zoom.ts`, `copy-select.ts`, `term-options.ts`, `term-prefs.ts`, `term-settings.tsx` | Ctrl+wheel font zoom, copy on select, scrollback / cursor settings (pure bounds and cleaning in `term-prefs.ts`) |
+| `src/client/tag-palette.ts`, `tags.ts`, `color-tag.tsx`, `tag.css.ts` | Colour tags: the palette, saving, the picker in the `⋯` menu |
 | `src/client/search.ts`, `layouts.ts`, `broadcast.ts`, `preferences.ts`, `appearance.ts`, `names.ts`, `theme.ts` | Find, saved layouts, broadcast, folders and switches, font/colour prefs, window names, palette |
 | `src/client/styles.ts`, `xterm.css.ts` | Stylesheets |
 | `build.mjs` | esbuild bundle of the client |
@@ -406,13 +482,14 @@ For an ssh window the query is `shell=ssh&sshHost=<alias>` or `sshTarget=<[user@
 an invalid request is answered with an `error` frame and no process is started.
 
 Browser → host: `{"type":"input","data"}`, `{"type":"resize","cols","rows"}`, `{"type":"signal","signal"}`,
-`{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only).
+`{"type":"kill"}` (end the shell), `{"type":"close"}` (detach only), `{"type":"git-refresh","cwd"}` (look at the terminal's git state now; `cwd` is the shell's current folder when known, ignored unless absolute).
 
 Host → browser: `{"type":"attached","created","replay","exited","exitCode","agent","subagents","edits"}` (always first; `created` is true only
 for a brand-new shell, which is when the startup command runs; `agent` is the last agent signal or `null`;
 `subagents` is the current `SubagentInfo[]`, `[]` when none; `edits` is the changed-file list below, `[]` when none),
 `{"type":"edits","files":[{path,at,tool}]}` (the terminal's whole changed-file list, at most about three times a second),
 `{"type":"subagents","tasks":SubagentInfo[]}` (the terminal's whole sub-agent list, sent when it changes, at most about twice a second),
+`{"type":"git","git":{"branch","dirty","detached"?}|null}` (the terminal's git state when it changes; `null` = not a repository; never sent for ssh windows),
 `{"type":"data","data"}`, `{"type":"activity","busy"}` (a program runs under the shell),
 `{"type":"agent","provider","state","detail","at"}` (an agent signal; `state` is one of `idle`, `working`,
 `needs-you`, `finished`, `failed`, `ended`), `{"type":"subagents","tasks"}` (full sub-agent list; `attached` also carries `subagents`), `{"type":"exit","exitCode"}`, `{"type":"error","message"}`.
@@ -464,6 +541,16 @@ agent changed): `window.__dshTerminals = { version: 1, listEdits(), subscribe(cb
 `[{terminalId, name, live, files: [{path, at, tool}]}]` for terminals that are currently open, and `subscribe(cb)` returns
 an unsubscribe function. The same changes fire a `dsh-terminals:edits` event on `window`. Closing a terminal removes its
 entries and notifies subscribers.
+
+### Overseer
+`POST /api/dsh-web-terminal/overseer/ask` with `{question, history: [{question, answer}], terminals: [{id, num, name,
+title?, cwd?, activity?, attention?}], selected: [num] | null, hidden: [windowId]}` (`id` is the socket's session id).
+Pre-stream failures answer JSON `{ok: false, code: "no-llm" | "no-model" | "bad-request", error}`. Otherwise the reply is
+`text/event-stream`: `meta` (`{model, terminals, focus, sections, truncated, budget, used}`), `delta` (`{text}`), `error`
+(`{code, error}`) and `done` (`{reason: "stop" | "max-tokens" | "aborted" | "error"}`); closing the request aborts the model
+call. `GET /api/dsh-web-terminal/overseer/hidden` returns `{ok, hidden}`; `POST {id, hidden}` changes one window. Both go
+through the same loopback + Host + token check as every other route. Claude hook payloads now also record
+`transcript_path` and `session_id` on the terminal's host record. Code: `lib/overseer/`, `src/client/overseer-*.ts(x)`.
 
 ### Usage and the stats endpoint
 
@@ -518,21 +605,17 @@ status line keeps working (`/stats` then reports `statusLine.enabled: false`).
   reachable wherever the harness web server is (loopback by default).
 - Up to 24 concurrent shells. A second connection to the same id (e.g. another browser tab) supersedes the first.
 - The page is registered under the `main` key and sidebar id `dsh-web-terminal`; the sidebar selects it by that id. On macOS the toolbar pads its top by the frame's `--dsh-frame-top-clearance`.
-- Not yet: font zoom (Ctrl+wheel), per-terminal colour tags, quick-send snippets.
+- Not yet: quick-send snippets. Font zoom is Ctrl+wheel and Ctrl+0 only (no Ctrl+= / Ctrl+-: in a shell those keys mean readline's undo).
 
 ## Roadmap (planned ideas, not built yet)
 
 Ordered roughly by how much they help when running several agents. Recommended first picks are marked ★.
 
 ### Agent awareness
-- ★ **Pattern alerts** — notify when a terminal prints something you choose (`error`, `Do you want to proceed?` for an agent waiting on a permission prompt, a test-failure line).
-- **Idle-too-long alert** — flag a "working" terminal that has produced no output for N minutes (hung agent).
 - **Resume a Claude session** — a picker in the New terminal dialog listing recent Claude sessions for the folder, opening one with `claude --resume <id>`.
-- **Git status in the header** — branch name and dirty marker per terminal.
 - **Worktree launcher** — one click to create a git worktree and open an agent terminal in it, so parallel agents don't clash.
 
 ### Speed and navigation
-- **Smarter placement** — new terminals fill the largest free gap instead of cascading over others.
 - **Search all terminals** — one search box across every terminal's scrollback, jumping to the match.
 
 ### Files and input
@@ -540,8 +623,6 @@ Ordered roughly by how much they help when running several agents. Recommended f
 - **Quick-send snippets** — saved prompts sent to one terminal or to the broadcast group.
 
 ### Terminal polish
-- **`Ctrl+wheel` font zoom**, copy on select, scrollback size and cursor style settings.
-- **Colour tag per terminal** — a coloured strip on the title bar and list row.
 - **Shell profiles** — named presets with shell, folder, environment variables and startup command (a WSL distro, an SSH host).
 
 ### Housekeeping

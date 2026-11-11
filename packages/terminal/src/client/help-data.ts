@@ -42,6 +42,9 @@ export const MOUSE_ACTIONS: readonly MouseAction[] = [
   { how: 'Right-click a selection', what: `Send menu: copy, another terminal, or a new agent terminal (${AGENT_NAMES})` },
   { how: 'Shift+right-click a selection', what: 'The same inside programs that use the mouse (they get plain right-clicks)' },
   { how: 'Shift+drag in the terminal', what: 'Select text inside programs that use the mouse (Windows / Linux)' },
+  { how: 'Ctrl+wheel over a terminal', what: 'Zoom the font of that terminal one pixel per notch (8-32 px); it is saved with the terminal and the PTY is resized once you stop. Ctrl+0 returns to the Aa size (with shrink-to-fit)' },
+  { how: 'Select text (with Aa: Copy on select)', what: 'Off by default. When on, the selection is copied the moment you finish selecting and a short "Copied" note shows in the terminal; "Copy blocked" appears when the clipboard is not allowed' },
+  { how: '⋯ menu: Colour tag', what: 'Pick one of eight colours (or none): a strip on the window title bar, the terminal list row and the overview tile. Saved with the window and in saved layouts' },
   { how: 'Click "↓ N new lines"', what: 'Jump to where you left off' },
   { how: 'Click a terminal in the list', what: 'Focus it; drag to reorder, double-click the name to rename, hover for duplicate / close' },
   { how: 'Click a minimized chip', what: 'Restore that window (chips are in the toolbar)' },
@@ -68,6 +71,15 @@ export const AGENT_HELP: readonly MouseAction[] = [
   { how: 'Started by hand', what: 'An agent you type into a plain shell, or run over ssh, reports nothing: the dot shows only Running or Idle (over ssh, Connected)' },
 ]
 
+/** The Overseer panel (README: Overseer). Each line is checked against overseer-panel.tsx / overseer-state.ts and lib/overseer/. */
+export const OVERSEER_HELP: readonly MouseAction[] = [
+  { how: 'Overseer button, or Ctrl+Shift+O', what: 'Ask a model what the terminals are doing ("what is T3 doing?", "which terminals are waiting for me?"). It uses the app\'s default model and only reads: it never types into, starts or stops a terminal' },
+  { how: 'What is sent', what: 'Each question sends the terminal list (names, folders, agent state, sub-agents, changed files), the recent screen text of every visible terminal and, for Claude, a condensed conversation (prompts, replies, one line per tool call; no tool output) to the model provider configured in the app' },
+  { how: 'Privacy', what: 'A note asks once before the first question. Obvious secrets (API keys, tokens, KEY=value lines, private keys, Authorization headers) are replaced before sending, but not everything can be caught: ◉ / ⊘ next to a terminal hides it from the Overseer entirely, and the host enforces that for every question' },
+  { how: 'Picker: All / T1, T2…', what: 'Picked terminals (and terminals the question names) are read in depth; the others get a short summary. Each question has a size limit, and the answer says when content was left out' },
+  { how: 'Click T3 in an answer', what: 'Focus that terminal. Stop ends an answer early, Clear forgets the conversation; follow-up questions read the terminals afresh' },
+]
+
 export interface AttentionLegend {
   level: 'urgent' | 'quiet'
   badge: string
@@ -76,8 +88,17 @@ export interface AttentionLegend {
 
 /** Badge texts come from attention.ts (alertFor, exitAlert, hostRestartAlert, hungAlert, the bell). */
 export const ATTENTION_LEGEND: readonly AttentionLegend[] = [
-  { level: 'urgent', badge: 'needs you', what: 'Urgent: blocked on a permission or question; also failed, stuck?, or exited / host restarted mid-task. Orange glow, a chime (if sound is on) and a notification, unless you are looking at it.' },
+  { level: 'urgent', badge: 'needs you', what: 'Urgent: blocked on a permission or question; also failed, possibly hung (no output for a while), or exited / host restarted mid-task. Orange glow, a chime (if sound is on) and a notification, unless you are looking at it.' },
   { level: 'quiet', badge: 'finished', what: 'Quiet: a turn ended, the bell rang, or a shell exited cleanly. Yellow badge; a notification only when the app is in the background.' },
+]
+
+/** The awareness features: output patterns, the idle alert and the git chip. Each line is checked against pattern-alerts-core.ts, attention.ts and git-header.ts. */
+export const AWARENESS_HELP: readonly MouseAction[] = [
+  { how: 'Aa → Pattern alerts', what: 'Flag a terminal when a finished line of its output matches text or a regular expression (case optional). The badge names the pattern and its tooltip shows the line. Each pattern applies to all terminals or one, can be switched off, and has a cooldown (default 30 s) before it flags the same terminal again' },
+  { how: 'Pattern alerts: examples', what: '"Asks to proceed" (Do you want to proceed?) and "Test failure" ship switched off; tick one to use it' },
+  { how: 'Pattern alerts: limits', what: 'Output is checked even when the window is minimized. Escape codes are removed first and only the first 2000 characters of a line count. A pattern is at most 200 characters, up to 20 patterns; an invalid expression, one that matches an empty line or one with a repeated group inside a repeat is refused when you save it. Lines already on screen when you reload are not checked' },
+  { how: 'possibly hung', what: 'A terminal whose agent reports Working but has printed nothing for 5 minutes (Aa → Alerts, 0 = never) gets this urgent badge, once. It goes away as soon as output resumes' },
+  { how: '⎇ branch in the title bar', what: "The git branch of the terminal's folder (the shell's current one with shell integration), with ● when there are uncommitted or untracked files. Long names are cut; hover for the full one. Refreshed after a command, when an agent finishes and every 30 s; nothing for folders outside a repository, when git is missing, and for ssh windows" },
 ]
 
 /** The hover header of a command (block-bar.ts); the order is the order of its buttons. */

@@ -662,7 +662,7 @@ test('tick flags a working agent that has been silent past the threshold, once',
   rt.agent.since = Date.now() - 11 * 60_000
   s.tick()
   assert.equal(rt.attentionLevel, 'urgent')
-  assert.equal(rt.attentionLabel, 'stuck?')
+  assert.equal(rt.attentionLabel, 'possibly hung')
   s.clearAttention(rt)
   s.tick()
   assert.equal(rt.attention, false, 'does not re-alert for the same stretch of silence')
@@ -670,6 +670,51 @@ test('tick flags a working agent that has been silent past the threshold, once',
   rt.agent.since = Date.now() - 11 * 60_000
   s.tick()
   assert.equal(rt.attention, true, 'a new turn can be flagged again')
+})
+
+test('the idle alert is taken back when output resumes, and can fire again for the next silence', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, signal('working'))
+  rt.agent.since = Date.now() - 11 * 60_000
+  s.tick()
+  assert.equal(rt.attentionLabel, 'possibly hung')
+  assert.equal(rt.hungRaised, true)
+  s.tick()
+  assert.equal(rt.attention, true, 'still flagged while the silence lasts')
+  rt.lastOutputAt = Date.now() + 1
+  s.tick()
+  assert.equal(rt.attention, false, 'output resumed: the flag clears')
+  assert.equal(rt.hungRaised, false)
+  rt.lastOutputAt = 0
+  rt.agent.since = Date.now() - 11 * 60_000
+  s.tick()
+  assert.equal(rt.attentionLabel, 'possibly hung', 'a second silence is flagged again')
+})
+
+test('resumed output only clears its own flag, not another alert that came since', () => {
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, signal('working'))
+  rt.agent.since = Date.now() - 11 * 60_000
+  s.tick()
+  s.raiseAttention(rt, { level: 'urgent', label: 'needs you', reason: 'x' })
+  rt.lastOutputAt = Date.now() + 1
+  s.tick()
+  assert.equal(rt.attentionLabel, 'needs you')
+  assert.equal(rt.hungRaised, false, 'but the idle alert is re-armed')
+})
+
+test('the idle alert defaults to 5 minutes and 0 turns it off', () => {
+  assert.equal(s.getPrefs().hungMinutes, 5)
+  const min = 60_000
+  assert.equal(s.hungAlert(agent('working'), 0, 4 * min, 5), undefined)
+  assert.equal(s.hungAlert(agent('working'), 0, 5 * min, 5).label, 'possibly hung')
+  s.setHungMinutes(0)
+  const rt = terminalWithRuntime()
+  s.applyAgentSignal(rt, signal('working'))
+  rt.agent.since = Date.now() - 999 * min
+  s.tick()
+  assert.equal(rt.attention, false)
+  s.setHungMinutes(5)
 })
 
 test('focusing a terminal clears its attention', () => {

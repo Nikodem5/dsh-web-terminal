@@ -5,6 +5,8 @@
 
 import { XTERM_CSS } from './xterm.css.ts'
 import { BLOCKS_CSS } from './blocks.css.ts'
+import { COPY_CSS } from './copy.css.ts'
+import { TAG_CSS } from './tag.css.ts'
 
 const VIEW_CSS = `
 .wt-view { --wt-accent: #4d6bfe; --wt-work: #5b8cff; --wt-wait: #f0b429; --wt-idle: #22c55e; --wt-dead: #ef4444; --wt-urgent: #ff6b3d;
@@ -149,6 +151,8 @@ const VIEW_CSS = `
 .wt-host .wt-grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes wt-pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wt-work) 60%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
 .wt-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; cursor: text; }
+.wt-git { flex: none; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; border: 0.5px solid var(--wt-line); color: var(--wt-dim); }
+.wt-git[data-dirty="true"] { color: var(--wt-warn); border-color: color-mix(in srgb, var(--wt-warn) 55%, transparent); }
 .wt-sub { flex: 1; min-width: 0; font-size: 11px; color: var(--wt-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wt-badge[data-level="urgent"] { background: var(--wt-urgent); color: #fff; }
 .wt-badge { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: var(--wt-wait); color: #1b1d23; white-space: nowrap; }
@@ -281,6 +285,8 @@ export function ensureStyles(): void {
     ['data-dsh-web-terminal-view', VIEW_CSS],
     ['data-dsh-web-terminal-xterm', XTERM_CSS],
     ['data-dsh-web-terminal-blocks', BLOCKS_CSS],
+    ['data-dsh-web-terminal-copy', COPY_CSS],
+    ['data-dsh-web-terminal-tags', TAG_CSS],
   ] as const) {
     const existing = document.querySelector(`style[${attr}]`)
     if (existing !== null) {

@@ -6,6 +6,8 @@ import type { SearchAddon } from '@xterm/addon-search'
 import type { SubagentInfo } from './subagents.ts'
 import type { BlockModel } from './blocks.ts'
 import type { EditInfo } from './edits-api.ts'
+import type { TermPrefs } from './term-prefs.ts'
+import type { PatternAlert } from './pattern-alerts-core.ts'
 
 /** Rectangle in canvas fractions (0..1). */
 export interface Rect {
@@ -61,6 +63,10 @@ export interface WinState extends Rect {
   /** Last real grid size (after a fit); a terminal created before its page opens starts at this size. */
   cols?: number
   rows?: number
+  /** Font zoom: whole pixels added to the global font size (Ctrl+wheel); unset = the global size with shrink-to-fit. */
+  zoom?: number
+  /** Colour tag: an id from tag-palette.ts. */
+  color?: string
 }
 
 /** Connection phase of one terminal runtime. */
@@ -154,6 +160,8 @@ export interface Runtime {
   subagents: SubagentInfo[]
   /** Files this terminal's agent changed (the host's `edits` list). */
   edits: EditInfo[]
+  /** Git branch and dirty marker of the terminal's folder, as the host last reported; undefined when not a repository, over ssh, or unknown. */
+  git?: GitInfo
   /** The "may be stuck" alert already fired for the current working spell. */
   hungRaised: boolean
   /** Needs the user's eyes: an agent is blocked, failed or finished, or the shell exited, while unattended. */
@@ -172,6 +180,15 @@ export interface Runtime {
   // ── end command blocks ──
 }
 
+/** What the host reports about the git checkout a terminal sits in. */
+export interface GitInfo {
+  /** Branch name, or the short commit when HEAD is detached. */
+  branch: string
+  /** Uncommitted changes or untracked files. */
+  dirty: boolean
+  detached?: boolean
+}
+
 /** Font preferences shared by every terminal. */
 export interface FontPrefs {
   family: string
@@ -186,7 +203,7 @@ export interface FontPrefs {
 }
 
 /** One window inside a saved layout. */
-export type LayoutWin = Pick<WinState, 'title' | 'nameManual' | 'shell' | 'cwd' | 'startup' | 'ssh' | 'x' | 'y' | 'w' | 'h' | 'pinned' | 'minimized'>
+export type LayoutWin = Pick<WinState, 'title' | 'nameManual' | 'shell' | 'cwd' | 'startup' | 'ssh' | 'x' | 'y' | 'w' | 'h' | 'pinned' | 'minimized' | 'color'>
 
 export interface SavedLayout {
   name: string
@@ -258,6 +275,8 @@ export interface Prefs {
   sound: boolean
   /** Minutes without output or signals before a working agent is flagged as stuck; 0 turns it off. */
   hungMinutes: number
+  /** Output triggers that raise a terminal's attention badge (pattern-alerts-core.ts). */
+  patternAlerts: PatternAlert[]
   /** Editor for Ctrl+clicked file paths, and the command template when it is `custom`. */
   pathTarget: PathTarget
   pathTemplate: string
@@ -267,6 +286,8 @@ export interface Prefs {
   sendCodeBlock: boolean
   /** A command that ran at least this many seconds raises a done / failed flag when the terminal is unattended; 0 = never. */
   commandNotifySec: number
+  /** Scrollback, cursor and copy-on-select (term-prefs.ts). */
+  term: TermPrefs
 }
 
 /** Everything the view reads; mutated in place, `version` bumps on change. */

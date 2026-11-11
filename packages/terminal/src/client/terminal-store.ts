@@ -21,6 +21,9 @@
 //   unread.ts       "new since you last looked" divider and jump
 //   shortcuts.ts    keyboard shortcut registry (handlers and the help panel read it)
 //   ssh.ts          SSH targets: validation, labels and socket parameters
+//   placement.ts    where a new window goes (largest free gap, cascade)
+//   term-prefs.ts, term-options.ts, copy-select.ts, zoom.ts, tags.ts, tag-palette.ts
+//                   scrollback / cursor / copy-on-select, Ctrl+wheel font zoom, colour tags
 
 export * from './types.ts'
 export * from './state.ts'
@@ -29,6 +32,9 @@ export * from './windows.ts'
 export * from './runtime.ts'
 export * from './start.ts'
 export * from './attention.ts'
+export * from './pattern-alerts.ts'
+export * from './pattern-alerts-core.ts'
+export * from './git-header.ts'
 export * from './veil.ts'
 export * from './search.ts'
 export * from './layouts.ts'
@@ -57,3 +63,10 @@ export * from './block-notify.ts'
 export * from './mission.ts'
 export * from './shortcuts.ts'
 export * from './ssh.ts'
+export * from './placement.ts'
+export * from './term-prefs.ts'
+export * from './term-options.ts'
+export * from './copy-select.ts'
+export * from './zoom.ts'
+export * from './tags.ts'
+export * from './tag-palette.ts'

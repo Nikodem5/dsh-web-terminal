@@ -16,6 +16,7 @@ import { SendMenu } from './send-menu.tsx'
 import { reviewFolder, showReview } from './code-editor.ts'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
+import { OverseerPanel, OverseerToggle, useOverseer, useOverseerShortcut } from './overseer-panel.tsx'
 import { HelpIcon, HelpPanel } from './help-panel.tsx'
 import { Notices } from './notices-view.tsx'
 import { ACTIVITY_TITLE } from './help-data.ts'
@@ -28,6 +29,9 @@ import { warnsMissingAgents } from './help-data.ts'
 import { providers, showsSubagents } from './providers.ts'
 import { ensureStyles } from './styles.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
+import { noteStageSize } from './placement.ts'
+import { tagProps } from './tag-palette.ts'
+import { ColorTagRow } from './color-tag.tsx'
 import {
   arrange,
   baseName,
@@ -46,6 +50,7 @@ import {
   getSearchId,
   getVersion,
   getWins,
+  gitLabel,
   hostInfo,
   hydrate,
   isDarkSurface,
@@ -361,6 +366,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
   // An ssh window's folder lives on the other machine: the badge names the target instead.
   const sub = rt.conn === 'live' ? (win.ssh !== undefined ? '' : win.cwd) : rt.detail.length > 0 ? `${rt.conn} · ${rt.detail}` : rt.conn
   const remote = win.ssh !== undefined ? sshLabel(win.ssh) : undefined
+  const git = win.ssh === undefined ? gitLabel(rt.git) : undefined
 
   return (
     <div
@@ -377,6 +383,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     >
       <div
         className="wt-head"
+        {...tagProps(win.color)}
         onPointerDown={onHeaderDown}
         onDoubleClick={(e) => {
           if (!(e.target as HTMLElement).closest('button, input')) toggleMaximize(win.id)
@@ -404,6 +411,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
           </span>
         )}
         {remote !== undefined ? <span className="wt-remote" title={`Connected over ssh to ${remote}`}>⇄ {remote}</span> : null}
+        {git !== undefined ? <span className="wt-git" data-dirty={rt.git?.dirty === true} title={git.title}>{git.text}</span> : null}
         {rt.attention ? <span className="wt-badge" data-level={rt.attentionLevel ?? 'quiet'} title={rt.attentionReason}>{rt.attentionLabel || 'needs you'}</span> : null}
         <span className="wt-sub" title={win.cwd}>{sub}</span>
         {rt.conn === 'exited' || rt.conn === 'failed' ? (
@@ -426,6 +434,8 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
             <button type="button" className="wt-item wt-link" data-act="review-changes" style={{ color: 'inherit', textAlign: 'left' }} title="Open this folder's uncommitted changes in the Code editor" onClick={() => { reviewFolder(rt.cwd || win.cwd); setMore(false) }}>± Review changes in this folder</button>
           ) : null}
           <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'idle' || rt.activity === 'finished' || rt.activity === 'exited' || rt.activity === 'disconnected' || window.confirm(remote !== undefined ? 'This ssh session is still connected. Reconnect (the current one is closed)?' : 'This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ {remote !== undefined ? 'Reconnect' : 'Restart shell'}</button>
+          <div className="wt-pop-title">Colour tag</div>
+          <ColorTagRow id={win.id} color={win.color} />
           <div style={{ fontSize: 11, color: 'var(--wt-dim)', padding: '2px 8px' }}>
             {remote !== undefined ? `⇄ ${remote}${win.ssh?.command !== undefined ? ` · runs “${win.ssh.command}”` : ''}` : `${baseName(win.cwd) || win.cwd}${win.startup !== undefined ? ` · runs “${win.startup}”` : ''}`}
           </div>
@@ -492,6 +502,8 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   const [scheme, setScheme] = useState<'dark' | 'light'>('dark')
   const plan = missionPlan(wins, stage)
   useMissionControl(wins, focusId, plan)
+  const overseerOpen = useOverseer().open
+  useOverseerShortcut()
 
   // Pick text colours from the MEASURED background so inputs and labels always contrast.
   useLayoutEffect(() => {
@@ -504,6 +516,9 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     observer.observe(document.body, { attributes: true })
     return () => observer.disconnect()
   }, [])
+
+  // New windows are sized for the canvas, so placement needs to know how big it is.
+  useEffect(() => noteStageSize(stage.w, stage.h), [stage])
 
   useEffect(() => {
     loadHostInfo()
@@ -640,6 +655,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
               Agents{runningAgents > 0 ? <span className="wt-btn-count">{runningAgents}</span> : null}
             </button>
           ) : null}
+          <OverseerToggle />
           <button type="button" className="wt-btn wt-btn-icon" data-on={prefs.sidebar} title={prefs.sidebar ? 'Hide the terminal list' : 'Show the terminal list'} onClick={() => setSidebar(!prefs.sidebar)}>☰</button>
         </div>
       </div>
@@ -678,6 +694,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
         </div>
       </div>
       {prefs.agentsPanel && agentsShown ? <AgentsPanel wins={wins} /> : null}
+      {overseerOpen ? <OverseerPanel wins={wins} /> : null}
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
       </div>
       <SendMenu />
