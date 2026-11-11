@@ -192,3 +192,60 @@ test('blockOutputBlocked reads no text from the buffer; blank output is found ou
   assert.ok('disabled' in s.blockOutput(rt, block), 'extracting finds that there is only blank output')
   assert.equal(await s.copyBlockOutput(rt, block), false)
 })
+
+// ── 8. unread bookkeeping while output streams in the background ──
+
+test('background output redraws at most once per frame, and not at all once the badge is capped', async () => {
+  const { id, rt } = await open()
+  let emits = 0
+  const stop = s.subscribe(() => emits++)
+  try {
+    const line = async (n) => {
+      rt.term.write(`line ${n}\r\n`)
+      await new Promise((resolve) => rt.term.write('', resolve))
+    }
+    const t0 = Date.now()
+    for (let i = 0; i < 150; i++) await line(i)
+    const frames = Math.ceil((Date.now() - t0) / 16) + 2
+    assert.ok(s.unreadCount(id) > 99, 'the lines were counted')
+    assert.ok(emits <= frames, `${emits} redraws for 150 writes in ${Date.now() - t0} ms (at most ${frames} frames)`)
+    assert.ok(emits < 100, 'not one redraw per write')
+    await sleep(120) // let a pending frame emit
+    const settled = emits
+    for (let i = 150; i < 250; i++) await line(i)
+    await sleep(120)
+    assert.equal(emits, settled, 'the badge reads 99+ either way: nothing to redraw')
+  } finally {
+    stop()
+  }
+})
+
+test('focus changes still move the new-since marks: only the terminals concerned are re-decided', async () => {
+  const a = await open()
+  const b = await open()
+  // Neither is focused or looked at: both keep counting.
+  for (const t of [a, b]) {
+    t.rt.term.write('x\r\ny\r\n')
+    await new Promise((resolve) => t.rt.term.write('', resolve))
+  }
+  await sleep(80)
+  assert.ok(s.unreadCount(a.id) > 0 && s.unreadCount(b.id) > 0)
+  // Focus a while the page is focused: a is looked at, so it is not "unread"; b still is.
+  const had = window.document.hasFocus
+  window.document.hasFocus = () => true
+  s.setViewMounted(true)
+  try {
+    s.focusWin(a.id)
+    assert.equal(s.unreadCount(a.id), 0, 'the focused terminal is looked at')
+    assert.ok(s.unreadCount(b.id) > 0, 'the other one still counts')
+    s.focusWin(b.id)
+    assert.equal(s.unreadCount(b.id), 0)
+    a.rt.term.write('more\r\n')
+    await new Promise((resolve) => a.rt.term.write('', resolve))
+    await sleep(80)
+    assert.ok(s.unreadCount(a.id) > 0, 'a, no longer focused, counts again')
+  } finally {
+    s.setViewMounted(false)
+    window.document.hasFocus = had
+  }
+})
