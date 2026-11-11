@@ -32,11 +32,15 @@
  * @property {string} base - `http://127.0.0.1:<port>/signal`: where hooks post, without a trailing slash.
  * @property {string|undefined} nodePath - `node` on PATH, for hooks that are commands (undefined when missing).
  * @property {(pid: number) => boolean} pidAlive - Whether a process id is alive, for sweeping files of dead hosts.
+ * @property {(command: string) => Promise<string|undefined>} [which] - A command's path on PATH (cached).
+ * @property {string|null} [version] - This plugin's version.
  *
  * @typedef {object} Prepared
  * @property {Record<string, unknown>|null} [launch] - What the client needs to start the provider's command, shown in the info route; the client's provider entry knows how to use it (Claude: `{settingsPath}` for `--settings`). `{}` when nothing is needed, null when the files could not be written.
  * @property {Record<string, string>} [env] - Variables added to every terminal's shell, for a provider that reads its hook config from the environment instead of a flag.
  * @property {() => void} [dispose] - Remove what `prepare` wrote.
+ * @property {() => (Record<string, unknown>|null)} [launchHint] - The launch hint as of now, for a provider whose hint changes while the host runs (an opt-in); used instead of `launch`.
+ * @property {{status: () => object, install: () => Promise<object>, remove: () => Promise<object>}} [integration] - An opt-in integration the user installs and removes from the UI (the integration route); `status().error` is null after a successful action.
  * @property {string|null} [statusLineReason] - Why Claude's status-line wrapper is off (null: on). Reported by the stats route.
  *
  * @typedef {object} Call
@@ -48,6 +52,7 @@
  * @property {(session: object) => void} notifySubagents
  * @property {(session: object) => void} notifyEdits
  * @property {(providerId: string, terminalId: string, body: unknown) => void} ingestUsage - Feed a payload to that provider's usage source.
+ * @property {(session: object, signal: {provider: string, state: string, detail: string, kind?: string, session?: string}) => void} applySignal - Make a signal from the provider's own token-authenticated channel the terminal's state; from then on its terminal-output signals are ignored.
  */
 import { normalizeSignal } from '../agent-signals.js'
 import { claude } from './claude.js'

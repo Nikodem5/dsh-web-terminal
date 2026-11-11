@@ -1,11 +1,15 @@
 // dsh-web-terminal — the Antigravity CLI (`agy`) provider (host half).
 //
-// agy has no per-process config, so it is read from its own terminal output instead of hooks
+// Without the opt-in integration (lib/agy-integration.js) agy is read from its own terminal output
 // (docs/adr/0002): with AGY_CLI_OSC7501=on it prints `ESC ] 7501 ; state=<state>[:kind=..]:app=antigravity[:msg=<base64>] BEL`
 // status sequences, and on a clean exit a plain-text hint with the conversation id. Only terminals the
 // client says were started as `agy` are read (`Provider.observe`).
 //
 import { clean } from '../agent-signals.js'
+import { createAgyIntegration } from '../agy-integration.js'
+import { geminiDir, userAgyStatusLine } from '../agy-statusline.mjs'
+import { agyHookSignal, agyStatusSignal } from './antigravity-signals.js'
+import { createAntigravityUsage } from './antigravity-usage.js'
 
 /** Unterminated sequences longer than this are dropped, so a stray prefix never buffers without bound. */
 const MAX_SEQUENCE = 64 * 1024
@@ -125,12 +129,65 @@ export function createAntigravityObserver() {
   }
 }
 
+/**
+ * Set up the opt-in integration (nothing is installed here: see lib/agy-integration.js) and the variables
+ * every terminal gets: AGY_CLI_OSC7501 (agy reports nothing without it; harmless in shells whose output is
+ * not read) and DSH_WT_AGY_SIGNAL, where the integration's hook and status line post.
+ */
+function prepare({ dir, pid, base, nodePath, pidAlive, which, version }) {
+  const integration = createAgyIntegration({
+    dir,
+    geminiDir: geminiDir(),
+    pid,
+    nodePath,
+    pidAlive,
+    version,
+    findAgy: () => (which === undefined ? Promise.resolve(undefined) : which('agy')),
+    agyArgv: agyArgvOverride(),
+    userStatusLine: () => userAgyStatusLine(),
+  })
+  return {
+    launch: {},
+    launchHint: () => integration.launch(),
+    env: { AGY_CLI_OSC7501: 'on', DSH_WT_AGY_SIGNAL: base },
+    integration,
+    dispose: () => integration.dispose(),
+  }
+}
+
+/** DSH_WT_AGY_COMMAND (a JSON argv) runs something else as agy: tests use it. */
+function agyArgvOverride() {
+  try {
+    const argv = JSON.parse(process.env.DSH_WT_AGY_COMMAND ?? 'null')
+    return Array.isArray(argv) && argv.length > 0 && argv.every((a) => typeof a === 'string') ? argv : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The session's state when it is this provider's, for the status line to compare against. */
+const currentOf = (session) => (session.agent?.provider === 'antigravity' ? session.agent : undefined)
+
 /** @type {import('./index.js').Provider} */
 export const antigravity = {
   id: 'antigravity',
   label: 'Antigravity CLI',
   commands: ['agy'],
-  // agy reports nothing without this variable; harmless in shells whose output is not read.
-  prepare: () => ({ launch: {}, env: { AGY_CLI_OSC7501: 'on' } }),
+  prepare,
   observe: createAntigravityObserver,
+  usage: () => createAntigravityUsage(),
+  routes: {
+    // The installed plugin's hooks: state, conversation id and the files agy wrote.
+    'antigravity-hook': ({ session, body }, host) => {
+      const { signal, edit, session: conversation } = agyHookSignal(body)
+      if (edit !== undefined && session.edits.record(edit.path, edit.tool)) host.notifyEdits(session)
+      if (signal !== undefined) host.applySignal(session, { provider: 'antigravity', ...signal, ...(conversation === undefined ? {} : { session: conversation }) })
+    },
+    // The launch-time status line: usage numbers, plus the state when it changed.
+    'antigravity-status': ({ id, session, body }, host) => {
+      host.ingestUsage('antigravity', id, body)
+      const { signal, session: conversation } = agyStatusSignal(body, currentOf(session))
+      if (signal !== undefined) host.applySignal(session, { provider: 'antigravity', ...signal, ...(conversation === undefined ? {} : { session: conversation }) })
+    },
+  },
 }

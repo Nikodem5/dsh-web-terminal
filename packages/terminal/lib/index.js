@@ -69,6 +69,8 @@ const PLUGIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 
 /** The stats route the stats bar polls. */
 const STATS_PATH = '/api/dsh-web-terminal/stats'
+/** Opt-in provider integrations (GET state, POST install / remove). */
+const INTEGRATION_PATH = '/api/dsh-web-terminal/integration'
 /** Usage state is saved at most this often (ms), and once more on unload. */
 const USAGE_SAVE_MS = 30_000
 
@@ -164,6 +166,15 @@ function readConfig() {
 /** Where this plugin keeps files it generates (a provider's launch files, saved usage). */
 function dataDir() {
   return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'web-terminal')
+}
+
+/** A provider's current launch hint (it may change after an opt-in); null when asking it fails. */
+function safeLaunch(prepared) {
+  try {
+    return prepared.launchHint()
+  } catch {
+    return null
+  }
 }
 
 /** Whether a process id is alive (signal 0 probes without sending anything). */
@@ -472,6 +483,9 @@ function apply(ctx) {
   const observeOutput = (session, text) => {
     try {
       for (const signal of session.observer.feed(text)) {
+        // Once the provider reported over its trusted channel, printed sequences no longer set the state:
+        // only an exit hint naming the conversation that channel reported is still believed.
+        if (session.trusted === session.observerProvider && !(signal.state === 'ended' && signal.session !== undefined && signal.session === session.trustedSession)) continue
         if (signal.kind === 'auth') {
           // Held back: a later signal supersedes it, else it applies when the hold ends. A repeat does not extend it.
           if (session.authTimer === null) {
@@ -540,6 +554,14 @@ function apply(ctx) {
     notifySubagents,
     notifyEdits,
     ingestUsage: (providerId, id, body) => usageStore.ingest(providerId, id, body),
+    /** A signal from a provider's own token-authenticated channel: it becomes the state, and output sequences stop counting (see observeOutput). */
+    applySignal: (session, signal) => {
+      cancelAuthHold(session)
+      session.trusted = signal.provider
+      if (signal.session !== undefined) session.trustedSession = signal.session
+      session.agent = { ...signal, at: Date.now() }
+      send(session.ws, { type: 'agent', ...session.agent })
+    },
   }
 
   const signalServer = createServer((req, res) => {
@@ -606,7 +628,7 @@ function apply(ctx) {
         try { signalServer.close() } catch {}
         return resolve()
       }
-      const env = { dir, pid: process.pid, base: `http://127.0.0.1:${signalServer.address().port}/signal`, nodePath, pidAlive }
+      const env = { dir, pid: process.pid, base: `http://127.0.0.1:${signalServer.address().port}/signal`, nodePath, pidAlive, which: (command) => agentCommands.find(command), version: VERSION }
       for (const provider of registry.list()) {
         try {
           const result = provider.prepare?.(env)
@@ -648,7 +670,8 @@ function apply(ctx) {
             let path
             for (const command of provider.commands) if ((path = await agentCommands.find(command)) !== undefined) break
             // No prepare step: nothing to inject, so the client can launch it as typed ({} = ready, null = files could not be written).
-            const launch = provider.prepare === undefined ? {} : (prepared.get(provider.id)?.launch ?? null)
+            const ready = prepared.get(provider.id)
+            const launch = provider.prepare === undefined ? {} : ((ready?.launchHint !== undefined ? safeLaunch(ready) : ready?.launch) ?? null)
             return [provider.id, { available: path !== undefined, path: path ?? null, launch }]
           }),
         ),
@@ -667,6 +690,25 @@ function apply(ctx) {
         maxSessions: MAX_SESSIONS,
         sessions: [...sessions.entries()].map(([id, session]) => ({ id, exited: session.exited, cwd: session.cwd, shell: session.shellId })),
       })
+    },
+  }), noop)
+
+  // Opt-in provider integrations (Antigravity's plugin and launch settings): GET lists their state,
+  // POST {provider, action: 'install' | 'remove'} runs one. Nothing is installed without that POST.
+  const disposeIntegration = optional('integration route', () => registerSecured({
+    kind: 'exact',
+    path: INTEGRATION_PATH,
+    handler: async (req, res) => {
+      // The body is read before waiting, so no chunk arrives before its listener.
+      const body = req.method === 'POST' ? await readJsonBody(req, res) : null
+      if (body === undefined) return
+      await signalReady
+      const all = () => Object.fromEntries([...prepared].filter(([, p]) => p.integration !== undefined).map(([id, p]) => [id, p.integration.status()]))
+      if (body === null) return writeJson(res, 200, { ok: true, integrations: all() })
+      const integration = typeof body.provider === 'string' ? prepared.get(body.provider)?.integration : undefined
+      if (integration === undefined || (body.action !== 'install' && body.action !== 'remove')) return writeJson(res, 400, { ok: false, error: 'unknown provider or action' })
+      const status = await (body.action === 'install' ? integration.install() : integration.remove())
+      writeJson(res, 200, { ok: status.error === null, status, integrations: all() })
     },
   }), noop)
 
@@ -1081,6 +1123,7 @@ function apply(ctx) {
     safeCall(disposeToken)
     safeCall(disposeInfo)
     safeCall(disposeStats)
+    safeCall(disposeIntegration)
     safeCall(disposePaths)
     safeCall(disposeOpen)
     safeCall(disposeUpdate)
