@@ -9,7 +9,7 @@ import { disposeRuntime } from './runtime.ts'
 import { sshTitle } from './ssh.ts'
 import { occupiedRects, placeNew, reachableRect } from './placement.ts'
 import { cleanTag } from './tag-palette.ts'
-import type { Rect, SshTarget, WinState } from './types.ts'
+import type { Activity, Rect, SshTarget, WinState } from './types.ts'
 
 // ── window operations ──────────────────────────────────────────────────────
 
@@ -147,17 +147,21 @@ export function closeAll(): void {
   persistSoon()
 }
 
+/** Whether a terminal in this state is doing something the user might not want to lose (closing or restarting it ends that). */
+export const isBusyActivity = (a: Activity | undefined): boolean => a === 'working' || a === 'needs-you' || a === 'running'
+
 /** Terminals whose shell is doing something the user might not want to lose. */
 export function busyAmong(ids: string[]): WinState[] {
-  return store.wins.filter((w) => ids.includes(w.id)).filter((w) => {
-    const a = runtimes.get(w.id)?.activity
-    return a === 'working' || a === 'needs-you' || a === 'running'
-  })
+  return store.wins.filter((w) => ids.includes(w.id)).filter((w) => isBusyActivity(runtimes.get(w.id)?.activity))
 }
 
 /** Layout presets over the non-pinned, non-minimized windows. */
 export type Preset = 'grid' | 'columns' | 'rows' | 'main-side' | 'cascade'
-export function arrange(preset: Preset): void {
+/** Shortest a window may be, in px (the resize limit in terminals-view.tsx): the Rows preset wraps into columns rather than go below it. */
+export const MIN_ROW_PX = 130
+
+/** @param stageHeightPx - canvas height in px, so Rows can respect the minimum window height (unknown: one column). */
+export function arrange(preset: Preset, stageHeightPx?: number): void {
   const targets = store.wins.filter((w) => !w.pinned && !w.minimized)
   const n = targets.length
   if (n === 0) return
@@ -176,7 +180,10 @@ export function arrange(preset: Preset): void {
   } else if (preset === 'columns') {
     for (let i = 0; i < n; i++) rects.push(cell(i, 0, n, 1))
   } else if (preset === 'rows') {
-    for (let i = 0; i < n; i++) rects.push(cell(0, i, 1, n))
+    const maxRows = stageHeightPx === undefined || !(stageHeightPx > 0) ? n : Math.max(1, Math.floor(stageHeightPx / MIN_ROW_PX))
+    const cols = Math.ceil(n / maxRows)
+    const per = Math.ceil(n / cols)
+    for (let i = 0; i < n; i++) rects.push(cell(Math.floor(i / per), i % per, cols, per))
   } else if (preset === 'main-side') {
     if (n === 1) rects.push({ x: gap, y: gap, w: 1 - gap * 2, h: 1 - gap * 2 })
     else {

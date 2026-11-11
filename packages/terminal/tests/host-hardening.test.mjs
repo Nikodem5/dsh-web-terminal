@@ -3,6 +3,7 @@
 // host-protocol.test.mjs, but each group applies its own plugin instance so the
 // environment-driven timings can be shortened.
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -71,7 +72,7 @@ async function startHost(env = {}) {
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
   const http = createServer()
   http.on('upgrade', (req, socket, head) => upgrade.handler(req, socket, head))
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await listenLocal(http)
   const port = http.address().port
   const host = {
     spawned,

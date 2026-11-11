@@ -318,8 +318,10 @@ export function createBlocks(rt: Runtime): BlockModel {
         break
       }
       case 'cwd': {
+        const moved = rt.cwd !== event.cwd
         rt.cwd = event.cwd
         if (current !== undefined && current.state === 'prompt') current.cwd = event.cwd
+        if (moved) emit() // the window header and the terminal list show the live folder
         break
       }
     }

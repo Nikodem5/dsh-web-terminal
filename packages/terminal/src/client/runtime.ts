@@ -5,6 +5,7 @@ import { isMissionShortcut, isOverview } from './mission.ts'
 import { matchShortcut, windowShortcut } from './shortcuts.ts'
 import { socketProtocols } from '../../../shared/client/local-auth.ts'
 import { Terminal } from '@xterm/xterm'
+import type { ITerminalAddon } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -19,6 +20,7 @@ import { applyEdits, notifyEdits } from './edits-api.ts'
 import { startupTiming, startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
+import { copyText, showNotice } from './notice.ts'
 import { registerPathLinks } from './path-links.ts'
 import { createBlocks } from './blocks.ts'
 import { installBlockBar } from './block-bar.ts'
@@ -40,6 +42,15 @@ export const UNOPENED_COLS = 200
 export const UNOPENED_ROWS = 50
 
 let ticker: ReturnType<typeof setInterval> | undefined
+/** What `rt.detail` says when the host gave this terminal to another browser tab. */
+export const OTHER_TAB = 'opened in another tab'
+/** Per terminal: connect again now (its socket closed and nothing is retrying). */
+const reconnectors = new Map<string, () => void>()
+
+/** Take a terminal back after another tab took it, or retry a lost connection at once. */
+export function reconnectWin(id: string): void {
+  reconnectors.get(id)?.()
+}
 
 /**
  * Most output bytes a terminal may have queued in xterm before further output is dropped.
@@ -226,9 +237,12 @@ export function ensureRuntime(win: WinState): Runtime {
   let keyData: string | undefined
   term.onData((data) => {
     rt.lastInputAt = Date.now()
-    if (rt.socket !== null && rt.socket.readyState === WebSocket.OPEN) rt.socket.send(JSON.stringify({ type: 'input', data }))
+    const sent = rt.socket !== null && rt.socket.readyState === WebSocket.OPEN
+    if (sent) rt.socket?.send(JSON.stringify({ type: 'input', data }))
     const fromKey = keyData === data
     keyData = undefined
+    // Typing into a terminal that is (re)connecting goes nowhere; say so (not queued: it could land in the wrong prompt later).
+    if (!sent && (rt.conn === 'connecting' || rt.conn === 'lost') && (fromKey || !isTerminalReport(data))) showNotice('Not connected: typed input is not sent while the terminal reconnects')
     // Live mirror: only what the user typed or pasted. onData also carries xterm's automatic answers to
     // program queries (cursor position, device attributes, focus and mouse reports), which belong to this
     // terminal's program alone and would be typed into the other shells.
@@ -291,7 +305,8 @@ export function ensureRuntime(win: WinState): Runtime {
       return false
     }
     if (matchShortcut('copy-always', event) || (term.hasSelection() && matchShortcut('copy', event))) {
-      navigator.clipboard?.writeText(term.getSelection()).catch(() => {})
+      // Nothing selected: leave the clipboard alone (an empty write would wipe what the user copied elsewhere).
+      if (term.hasSelection()) copyText(term.getSelection())
       return false
     }
     // Ctrl+Shift+S: send the selection to another terminal (without one it stays a plain key).
@@ -300,7 +315,9 @@ export function ensureRuntime(win: WinState): Runtime {
       return false
     }
     if (matchShortcut('paste', event)) {
-      navigator.clipboard?.readText().then((text) => term.paste(text)).catch(() => {})
+      const clipboard = navigator.clipboard
+      if (clipboard === undefined) showNotice('Paste failed: the clipboard is not available here')
+      else clipboard.readText().then((text) => term.paste(text)).catch(() => showNotice('Paste failed: the clipboard refused access'))
       return false
     }
     return true
@@ -469,13 +486,19 @@ export function ensureRuntime(win: WinState): Runtime {
       stopStartup()
       if (rt.socket !== socket || rt.killed) return
       if (rt.conn === 'exited' || rt.conn === 'failed') return
-      if (event.code === 4000) return setConn(rt, 'lost', 'opened in another tab')
+      if (event.code === 4000) return setConn(rt, 'lost', OTHER_TAB)
       if (event.code === 1013) return setConn(rt, 'failed', 'too many terminals')
       setConn(rt, 'lost', 'reconnecting…')
       const delay = Math.min(8000, 700 * 2 ** rt.retry++)
       rt.timer = setTimeout(connect, delay)
     }
   }
+  reconnectors.set(win.id, () => {
+    if (rt.killed || rt.conn !== 'lost') return
+    clearTimeout(rt.timer)
+    rt.retry = 0
+    connect()
+  })
   // Let the holder attach and fit once before the first connect so the PTY starts at the right size.
   requestAnimationFrame(() => {
     try {
@@ -486,6 +509,45 @@ export function ensureRuntime(win: WinState): Runtime {
   return rt
 }
 
+/** The GPU renderer's factory (tests swap it: jsdom has no WebGL). */
+export const gpuRenderer: { create: () => ITerminalAddon & { onContextLoss(listener: () => void): unknown } } = { create: () => new WebglAddon() }
+/** Terminals that currently hold a GPU context: browsers cap them, so only visible windows keep one. */
+const gpu = new Map<string, ITerminalAddon>()
+
+/**
+ * GPU renderer: the default DOM one is the bottleneck for full-screen repaints. Falls back to it
+ * when WebGL is unavailable or the context is lost (many terminals can exhaust the browser's contexts).
+ */
+function attachGpu(rt: Runtime): void {
+  if (gpu.has(rt.id)) return
+  try {
+    const webgl = gpuRenderer.create()
+    webgl.onContextLoss(() => {
+      webgl.dispose()
+      if (gpu.get(rt.id) === webgl) gpu.delete(rt.id)
+    })
+    try {
+      rt.term.loadAddon(webgl)
+    } catch (error) {
+      webgl.dispose() // do not leak the GL context of an addon that failed to attach
+      throw error
+    }
+    gpu.set(rt.id, webgl)
+  } catch {}
+}
+
+/** Give a window its GPU context while it is shown and take it back while it is minimized or off the page. */
+export function setRenderer(rt: Runtime, shown: boolean): void {
+  if (!rt.opened || rt.killed) return
+  if (shown) return attachGpu(rt)
+  const webgl = gpu.get(rt.id)
+  if (webgl === undefined) return
+  gpu.delete(rt.id)
+  try {
+    webgl.dispose() // xterm goes back to its DOM renderer
+  } catch {}
+}
+
 /**
  * Give the xterm instance its DOM, once, when its holder is first in the document. Everything that
  * needs a renderer (links, fitting, focus) waits for this; the output received so far is kept.
@@ -494,18 +556,8 @@ export function openRuntime(rt: Runtime): void {
   if (rt.opened) return
   rt.opened = true
   rt.term.open(rt.holder)
-  // GPU renderer: the default DOM one is the bottleneck for full-screen repaints. Falls back to it
-  // when WebGL is unavailable or the context is lost (many terminals can exhaust the browser's contexts).
-  try {
-    const webgl = new WebglAddon()
-    webgl.onContextLoss(() => webgl.dispose())
-    try {
-      rt.term.loadAddon(webgl)
-    } catch (error) {
-      webgl.dispose() // do not leak the GL context of an addon that failed to attach
-      throw error
-    }
-  } catch {}
+  // A window minimized at the time gets no GPU context until it is shown (see setRenderer).
+  if (store.wins.find((w) => w.id === rt.id)?.minimized !== true) attachGpu(rt)
   // Links open with Ctrl/Cmd+click (like VS Code) so plain clicks still select text.
   // The desktop app routes window.open of http(s) URLs to the system browser.
   rt.term.loadAddon(
@@ -626,11 +678,14 @@ export function disposeRuntime(id: string, kill: boolean): void {
   } catch {}
   untrackUnread(id)
   rt.blockBar?.dispose()
+  rt.blocks?.dispose() // its OSC handlers and the markers on the buffer
   try {
     rt.term.dispose()
   } catch {}
   rt.holder.remove()
   runtimes.delete(id)
+  reconnectors.delete(id)
+  gpu.delete(id)
   if ((rt.edits?.length ?? 0) > 0) notifyEdits() // `?.`: tests build partial runtimes
   // Nothing left to watch: stop the once-a-second tick until the next terminal opens.
   if (runtimes.size === 0 && ticker !== undefined) {

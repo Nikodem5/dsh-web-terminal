@@ -1,6 +1,7 @@
 // "Changed by agent" files: the PostToolUse edit hook, the `edits` frame, the attached replay, clearing
 // on destroy. A fake PTY and a strict ctx (reading anything not injected throws, like cordis').
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -52,7 +53,7 @@ before(async () => {
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
   server = createServer()
   server.on('upgrade', (req, socket, head) => upgrade.handler(req, socket, head))
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await listenLocal(server)
   port = server.address().port
 })
 

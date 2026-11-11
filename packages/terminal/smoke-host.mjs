@@ -7,6 +7,7 @@
 //   2. reconnecting with the same id reattaches to the surviving shell and replays scrollback,
 //   3. /info lists the live session, and a `kill` frame ends it.
 
+import { listenLocal } from '../shared/test/listen.mjs'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -87,7 +88,7 @@ console.log(`GET /info -> shells=${JSON.stringify(probe.shells)} claude=${probe.
 // Real server: the harness's webserver does exactly this for upgrade routes.
 const server = createServer()
 server.on('upgrade', (req, socket, head) => upgrade.handler(req, socket, head))
-await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+await listenLocal(server)
 const port = server.address().port
 
 const marker = `dshwt${Date.now()}`

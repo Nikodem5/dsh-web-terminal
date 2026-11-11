@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
-import { runtimes } from './terminal-store.ts'
+import { isBusyActivity, runtimes } from './terminal-store.ts'
 import { withAuth } from '../../../shared/client/local-auth.ts'
 
 const UPDATE = '/api/dsh-web-terminal/update'
@@ -41,7 +41,7 @@ const short = (commit: string | null): string => (commit === null ? '?' : commit
 
 /** Terminals with something running: a restart ends them. */
 function busyCount(): number {
-  return [...runtimes.values()].filter((rt) => rt.activity === 'working' || rt.activity === 'needs-you' || rt.activity === 'running').length
+  return [...runtimes.values()].filter((rt) => isBusyActivity(rt.activity)).length
 }
 
 export function UpdateSection(): ReactElement {

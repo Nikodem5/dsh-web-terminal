@@ -13,6 +13,11 @@ import { requestClose, requestCloseAll } from './actions.ts'
 import { Pop } from './popover.tsx'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { SendMenu } from './send-menu.tsx'
+import { Notices } from './notice-view.tsx'
+import { showNotice } from './notice.ts'
+import { isModalOpen, setModalOpen } from './modal.ts'
+import { pressable } from './pressable.ts'
+import { getSendRequest } from './send-to.ts'
 import { reviewFolder, showReview } from './code-editor.ts'
 import { NewTerminalDialog } from './new-dialog.tsx'
 import { AgentsPanel } from './agents-panel.tsx'
@@ -32,6 +37,8 @@ import { noteStageSize } from './placement.ts'
 import { tagProps } from './tag-palette.ts'
 import { ColorTagRow } from './color-tag.tsx'
 import {
+  OTHER_TAB,
+  applyAutoTermTheme,
   arrange,
   baseName,
   broadcastLine,
@@ -56,9 +63,11 @@ import {
   jumpToUnread,
   loadHostInfo,
   openSearch,
+  reconnectWin,
   refit,
   renameWin,
   restartWin,
+  setRenderer,
   sshLabel,
   runningSubagents,
   setAgentsPanel,
@@ -215,6 +224,8 @@ interface WindowProps {
 function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps): ReactElement {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [dragging, setDragging] = useState(false)
+  // While dragging or resizing the rectangle lives here (re-rendering only this window); the store gets it once, on release.
+  const [live, setLive] = useState<Rect | null>(null)
   const [renaming, setRenaming] = useState(false)
   // Escape blurs the input to close it, and blur commits; this tells the blur handler to discard instead.
   const cancelRename = useRef(false)
@@ -249,6 +260,12 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     if (focused) rt.term.focus()
   }, [focused, rt])
 
+  // Only shown windows keep a GPU context (browsers allow a few dozen); minimized ones and a closed page let go.
+  useEffect(() => {
+    setRenderer(rt, !win.minimized)
+    return () => setRenderer(rt, false)
+  }, [rt, win.minimized])
+
   useEffect(() => {
     if (!more) return
     const close = () => setMore(false)
@@ -263,7 +280,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     }
   }, [more])
 
-  const px = toPx(win, stage)
+  const px = toPx(live ?? win, stage)
   const tile = mission?.tiles.get(win.id)
 
   /** Drag the window by its header, with edge snapping and Windows-style zones. */
@@ -283,6 +300,8 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     const targets = targetsFor(win.id, stage)
     let moved = false
     let zone: Rect | null = null
+    let zoneKey = ''
+    let last: Rect | null = null
     setDragging(true)
 
     const move = (e: PointerEvent) => {
@@ -305,15 +324,24 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
       r.x = Math.min(Math.max(r.x, -r.w + 80), stage.w - 80)
       r.y = Math.min(Math.max(r.y, 0), stage.h - 30)
       zone = zoneFor(e.clientX - bounds.left, e.clientY - bounds.top, stage)
-      onGhost(zone)
-      updateWin(win.id, { ...toFrac(r, stage), maximized: false, restore: wasMax ? undefined : win.restore })
+      const key = zone === null ? '' : `${zone.x},${zone.y},${zone.w},${zone.h}`
+      if (key !== zoneKey) {
+        zoneKey = key
+        onGhost(zone) // only when the snap zone changes: the whole page redraws for it
+      }
+      const first = last === null
+      last = toFrac(r, stage)
+      setLive(last)
+      if (first && wasMax) updateWin(win.id, { ...last, maximized: false, restore: undefined })
     }
     const up = () => {
       header.removeEventListener('pointermove', move)
       header.removeEventListener('pointerup', up)
       header.removeEventListener('pointercancel', up)
       setDragging(false)
+      setLive(null)
       onGhost(null)
+      if (zone === null && last !== null) updateWin(win.id, { ...last, maximized: false })
       if (zone !== null) {
         const full = zone.w === 1 && zone.h === 1
         updateWin(win.id, {
@@ -337,6 +365,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     grip.setPointerCapture(event.pointerId)
     const start = { px: event.clientX, py: event.clientY, rect: toPx(win, stage) }
     const targets = targetsFor(win.id, stage)
+    let last: Rect | null = null
     setDragging(true)
 
     const move = (e: PointerEvent) => {
@@ -349,13 +378,16 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
       if (dir.includes('w')) x = snapEdge(Math.min(right - MIN_W, x + dx), targets.xs)
       if (dir.includes('s')) bottom = snapEdge(Math.max(y + MIN_H, bottom + dy), targets.ys)
       if (dir.includes('n')) y = snapEdge(Math.min(bottom - MIN_H, y + dy), targets.ys)
-      updateWin(win.id, toFrac({ x, y, w: Math.max(MIN_W, right - x), h: Math.max(MIN_H, bottom - y) }, stage))
+      last = toFrac({ x, y, w: Math.max(MIN_W, right - x), h: Math.max(MIN_H, bottom - y) }, stage)
+      setLive(last)
     }
     const up = () => {
       grip.removeEventListener('pointermove', move)
       grip.removeEventListener('pointerup', up)
       grip.removeEventListener('pointercancel', up)
       setDragging(false)
+      setLive(null)
+      if (last !== null) updateWin(win.id, last)
     }
     grip.addEventListener('pointermove', move)
     grip.addEventListener('pointerup', up)
@@ -363,7 +395,8 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
   }
 
   // An ssh window's folder lives on the other machine: the badge names the target instead.
-  const sub = rt.conn === 'live' ? (win.ssh !== undefined ? '' : win.cwd) : rt.detail.length > 0 ? `${rt.conn} · ${rt.detail}` : rt.conn
+  const liveCwd = rt.cwd || win.cwd // the folder the shell is in now (shell integration), else where it started
+  const sub = rt.conn === 'live' ? (win.ssh !== undefined ? '' : liveCwd) : rt.detail.length > 0 ? `${rt.conn} · ${rt.detail}` : rt.conn
   const remote = win.ssh !== undefined ? sshLabel(win.ssh) : undefined
   const git = win.ssh === undefined ? gitLabel(rt.git) : undefined
 
@@ -405,23 +438,26 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
             }}
           />
         ) : (
-          <span className="wt-name" title="Click to rename (empty = automatic name). Double-click the title bar to maximize." onClick={() => setRenaming(true)}>
+          <span className="wt-name" title="Click to rename (empty = automatic name). Double-click the title bar to maximize." {...pressable(() => setRenaming(true))} onClick={() => setRenaming(true)}>
             {name}
           </span>
         )}
         {remote !== undefined ? <span className="wt-remote" title={`Connected over ssh to ${remote}`}>⇄ {remote}</span> : null}
         {git !== undefined ? <span className="wt-git" data-dirty={rt.git?.dirty === true} title={git.title}>{git.text}</span> : null}
         {rt.attention ? <span className="wt-badge" data-level={rt.attentionLevel ?? 'quiet'} title={rt.attentionReason}>{rt.attentionLabel || 'needs you'}</span> : null}
-        <span className="wt-sub" title={win.cwd}>{sub}</span>
+        <span className="wt-sub" title={liveCwd}>{sub}</span>
         {rt.conn === 'exited' || rt.conn === 'failed' ? (
           <button type="button" className="wt-hbtn" title={remote !== undefined ? 'Reconnect' : 'Restart shell'} onClick={() => restartWin(win.id)}>↻</button>
+        ) : null}
+        {rt.conn === 'lost' && rt.detail === OTHER_TAB ? (
+          <button type="button" className="wt-hbtn" data-act="reconnect" title="This terminal was opened in another tab. Take it back here (that tab lets go of it)" onClick={() => reconnectWin(win.id)}>⇄ Reconnect</button>
         ) : null}
         <button type="button" className="wt-hbtn" data-on={win.pinned} title={win.pinned ? 'Unpin (allow move/resize)' : 'Pin in place (lock position and size)'} onClick={() => updateWin(win.id, { pinned: !win.pinned })}>
           {win.pinned ? '◆' : '◇'}
         </button>
         <button type="button" className="wt-hbtn" title="More" onPointerDown={(e) => e.stopPropagation()} onClick={() => setMore((v) => !v)}>⋯</button>
         <button type="button" className="wt-hbtn" title="Minimize" onClick={() => updateWin(win.id, { minimized: true })}>–</button>
-        <button type="button" className="wt-hbtn" title={win.maximized ? 'Restore' : 'Maximize'} onClick={() => toggleMaximize(win.id)}>{win.maximized ? '❐' : '□'}</button>
+        <button type="button" className="wt-hbtn" data-act="maximize" disabled={win.pinned} title={win.pinned ? 'Unpin this window to maximize it' : win.maximized ? 'Restore' : 'Maximize'} onClick={() => toggleMaximize(win.id)}>{win.maximized ? '❐' : '□'}</button>
         <button type="button" className="wt-hbtn" data-danger="true" title="Close and end the shell" onClick={() => requestClose([win.id])}>✕</button>
       </div>
       {more ? (
@@ -432,11 +468,11 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
           {showReview(win.ssh !== undefined) ? (
             <button type="button" className="wt-item wt-link" data-act="review-changes" style={{ color: 'inherit', textAlign: 'left' }} title="Open this folder's uncommitted changes in the Code editor" onClick={() => { reviewFolder(rt.cwd || win.cwd); setMore(false) }}>± Review changes in this folder</button>
           ) : null}
-          <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'idle' || rt.activity === 'finished' || rt.activity === 'exited' || rt.activity === 'disconnected' || window.confirm(remote !== undefined ? 'This ssh session is still connected. Reconnect (the current one is closed)?' : 'This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ {remote !== undefined ? 'Reconnect' : 'Restart shell'}</button>
+          <button type="button" className="wt-item wt-link" style={{ color: 'inherit', textAlign: 'left' }} onClick={() => { if (rt.activity === 'offline' || rt.activity === 'idle' || rt.activity === 'finished' || rt.activity === 'exited' || rt.activity === 'disconnected' || window.confirm(remote !== undefined ? 'This ssh session is still connected. Reconnect (the current one is closed)?' : 'This terminal is still running something. Restart it?')) restartWin(win.id); setMore(false) }}>↻ {remote !== undefined ? 'Reconnect' : 'Restart shell'}</button>
           <div className="wt-pop-title">Colour tag</div>
           <ColorTagRow id={win.id} color={win.color} />
           <div style={{ fontSize: 11, color: 'var(--wt-dim)', padding: '2px 8px' }}>
-            {remote !== undefined ? `⇄ ${remote}${win.ssh?.command !== undefined ? ` · runs “${win.ssh.command}”` : ''}` : `${baseName(win.cwd) || win.cwd}${win.startup !== undefined ? ` · runs “${win.startup}”` : ''}`}
+            {remote !== undefined ? `⇄ ${remote}${win.ssh?.command !== undefined ? ` · runs “${win.ssh.command}”` : ''}` : `${baseName(liveCwd) || liveCwd}${win.startup !== undefined ? ` · runs “${win.startup}”` : ''}`}
           </div>
         </Pop>
       ) : null}
@@ -516,6 +552,10 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     return () => observer.disconnect()
   }, [])
 
+  // With terminal colours on "Follow the app", an app theme switch repaints the open terminals.
+  useEffect(() => {
+    applyAutoTermTheme()
+  }, [scheme])
   // New windows are sized for the canvas, so placement needs to know how big it is.
   useEffect(() => noteStageSize(stage.w, stage.h), [stage])
 
@@ -535,7 +575,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
         return
       }
       const action = windowShortcut(e)
-      if (action === null) return
+      if (action === null || isModalOpen() || getSendRequest() !== null) return // a dialog / panel / menu owns the keys
       e.preventDefault()
       e.stopPropagation()
       const current = getFocusId()
@@ -567,6 +607,15 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
     return () => observer.disconnect()
   }, [])
 
+  useLayoutEffect(() => {
+    setModalOpen('dialog', dialog !== null)
+    return () => setModalOpen('dialog', false)
+  }, [dialog !== null])
+  useLayoutEffect(() => {
+    setModalOpen('help', menu === 'help')
+    return () => setModalOpen('help', false)
+  }, [menu === 'help'])
+
   useEffect(() => {
     if (menu === null) return
     const close = () => setMenu(null)
@@ -592,7 +641,12 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   const sendBroadcast = () => {
     const text = bcText.trim()
     if (text.length === 0) return
-    broadcastLine(text)
+    const sent = broadcastLine(text)
+    if (sent === 0) {
+      showNotice('Not sent: none of the selected terminals is connected')
+      return // keep the line so it can be sent once they are back
+    }
+    if (sent < broadcast.ids.size) showNotice(`Sent to ${sent} of ${broadcast.ids.size} selected terminals; the others are not connected`)
     setBcText('')
   }
   const runningAgents = runningSubagents()
@@ -613,7 +667,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
           <span className="wt-sep" />
           <div className="wt-seg">
             {PRESETS.map((p) => (
-              <button key={p.id} type="button" className="wt-btn wt-btn-preset" title={p.title} disabled={visibleCount === 0} onClick={() => arrange(p.id)}>{p.label}</button>
+              <button key={p.id} type="button" className="wt-btn wt-btn-preset" title={p.title} disabled={visibleCount === 0} onClick={() => arrange(p.id, stage.h)}>{p.label}</button>
             ))}
           </div>
           <span className="wt-sep" />
@@ -697,6 +751,7 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
       {prefs.sidebar ? <Sidebar wins={wins} focusId={focusId} /> : null}
       </div>
       <SendMenu />
+      <Notices />
       {dialog !== null ? <NewTerminalDialog startup={dialog.startup} mode={dialog.mode} workspaces={workspaceChoices(workspaceItems)} onClose={() => setDialog(null)} /> : null}
     </div>
   )

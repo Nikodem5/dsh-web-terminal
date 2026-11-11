@@ -1,6 +1,7 @@
 // Host: the git header end to end over the real WebSocket route with a real repository.
 // A `git-refresh` frame, an attach and an agent signal each bring a `git` frame; ssh terminals get none.
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -69,7 +70,7 @@ async function startHost() {
   }
   const http = createServer()
   http.on('upgrade', (req, socket, head) => routes.upgrade.find((r) => r.path === '/terminal/ws').handler(req, socket, head))
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await listenLocal(http)
   const settings = JSON.parse(readFileSync(info.providers.claude.launch.settingsPath, 'utf8'))
   const host = {
     /** Open a terminal; collects every `git` frame it receives. */

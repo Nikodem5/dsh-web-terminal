@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { Pop } from './popover.tsx'
+import { NumberField } from './number-field.tsx'
 import { requestCloseAll } from './actions.ts'
 import { SendSettings } from './send-menu.tsx'
 import { setPathTarget, setPathTemplate } from './path-links.ts'
@@ -119,11 +120,11 @@ export function SettingsMenu(): ReactElement {
       <div className="wt-row">
         <label className="wt-field wt-grow">
           Size
-          <input className="wt-input" type="number" min={8} max={32} step={1} value={font.size} onChange={(e) => setFont({ size: Number(e.target.value) })} />
+          <NumberField min={8} max={32} step={1} value={font.size} onCommit={(n) => setFont({ size: n })} />
         </label>
         <label className="wt-field wt-grow">
           Line height
-          <input className="wt-input" type="number" min={1} max={2} step={0.05} value={font.lineHeight} onChange={(e) => setFont({ lineHeight: Number(e.target.value) })} />
+          <NumberField min={1} max={2} step={0.05} value={font.lineHeight} onCommit={(n) => setFont({ lineHeight: n })} />
         </label>
       </div>
       <label className="wt-item" style={{ cursor: 'pointer' }} title="In narrow windows the font shrinks just enough to keep this many columns visible; it never grows past the size above.">
@@ -132,7 +133,7 @@ export function SettingsMenu(): ReactElement {
       </label>
       <label className="wt-field">
         Columns to keep visible
-        <input className="wt-input" type="number" min={40} max={240} step={5} disabled={!prefs.autoFont} value={prefs.fitCols} onChange={(e) => setFitCols(Number(e.target.value))} />
+        <NumberField min={40} max={240} step={5} disabled={!prefs.autoFont} value={prefs.fitCols} onCommit={setFitCols} />
       </label>
       <button type="button" className="wt-btn" onClick={() => setFont({ ...DEFAULT_FONT })}>Reset font</button>
       <div className="wt-pop-title" data-section="readability">Readability</div>
@@ -147,7 +148,7 @@ export function SettingsMenu(): ReactElement {
       <div className="wt-row">
         <label className="wt-field wt-grow">
           Letter spacing (px)
-          <input className="wt-input" type="number" min={0} max={2} step={1} value={font.letterSpacing} onChange={(e) => setFont({ letterSpacing: Number(e.target.value) })} />
+          <NumberField min={0} max={2} step={1} value={font.letterSpacing} onCommit={(n) => setFont({ letterSpacing: n })} />
         </label>
         <label className="wt-field wt-grow">
           Bold weight
@@ -182,7 +183,7 @@ export function SettingsMenu(): ReactElement {
       </label>
       <label className="wt-field">
         Flag a working agent as possibly hung after no output for (minutes, 0 = never)
-        <input className="wt-input" type="number" min={0} max={240} step={1} value={prefs.hungMinutes} onChange={(e) => setHungMinutes(Number(e.target.value))} />
+        <NumberField min={0} max={240} step={1} value={prefs.hungMinutes} onCommit={setHungMinutes} />
       </label>
       <CommandAlertSettings />
       <PatternAlertSettings />

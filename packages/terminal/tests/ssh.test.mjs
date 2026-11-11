@@ -4,6 +4,7 @@
 //
 //   node --test tests/ssh.test.mjs
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -227,7 +228,7 @@ async function host() {
   }))
   const http = createServer()
   http.on('upgrade', (req, socket, head) => upgrades[0].handler(req, socket, head))
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await listenLocal(http)
   stops.push(() => { for (const t of teardowns) t(); http.close() })
   const connect = (query) =>
     new Promise((resolve, reject) => {

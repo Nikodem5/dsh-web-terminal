@@ -7,6 +7,7 @@ import type { ReactElement } from 'react'
 import { browseFolder, canBrowse } from './actions.ts'
 import type { WorkspaceChoice } from './workspaces.ts'
 import { providers } from './providers.ts'
+import { pressable } from './pressable.ts'
 import { forgetRecent, forgetSsh, getPrefs, hostInfo, openTerminal, quickText, resolveSsh, sshKey, sshLabel, toggleFavourite, toggleSshFavourite } from './terminal-store.ts'
 import type { SshTarget } from './terminal-store.ts'
 
@@ -97,7 +98,7 @@ export function NewTerminalDialog({ startup: presetStartup, mode: firstMode = 'l
                     const detail = `${h.user !== null ? `${h.user}@` : ''}${h.hostName ?? h.alias}${h.port !== null ? `:${h.port}` : ''}`
                     const picked = alias === h.alias && !typing
                     return (
-                      <div key={h.alias} className="wt-folder wt-host" role="option" aria-selected={picked} data-sel={picked} title={detail} onClick={() => { setAlias(h.alias); setQuick('') }}>
+                      <div key={h.alias} className="wt-folder wt-host" {...pressable(() => { setAlias(h.alias); setQuick('') }, 'option')} aria-selected={picked} data-sel={picked} title={detail} onClick={() => { setAlias(h.alias); setQuick('') }}>
                         <span className="wt-host-alias">{h.alias}</span>
                         <span className="wt-grow wt-dim">{detail}</span>
                       </div>
@@ -118,7 +119,7 @@ export function NewTerminalDialog({ startup: presetStartup, mode: firstMode = 'l
                   const on = starred.includes(sshKey(t))
                   const text = t.command !== undefined ? `${sshLabel(t)} · ${t.command}` : sshLabel(t)
                   return (
-                    <div key={sshKey(t)} className="wt-folder" title={text} onClick={() => useTarget(t)}>
+                    <div key={sshKey(t)} className="wt-folder" title={text} {...pressable(() => useTarget(t))} onClick={() => useTarget(t)}>
                       <button type="button" className="wt-star" data-on={on} title="Favourite this target" onClick={(e) => { e.stopPropagation(); toggleSshFavourite(t); force((n) => n + 1) }}>{on ? '★' : '☆'}</button>
                       <span className="wt-grow"><bdi>{text}</bdi></span>
                       {!on ? <button type="button" className="wt-link" title="Forget this target" onClick={(e) => { e.stopPropagation(); forgetSsh(t); force((n) => n + 1) }}>✕</button> : null}
@@ -166,7 +167,7 @@ export function NewTerminalDialog({ startup: presetStartup, mode: firstMode = 'l
             {folders.length > 0 ? (
               <div className="wt-folders">
                 {folders.map((p) => (
-                  <div key={p} className="wt-folder" onClick={() => setCwd(p)} title={p}>
+                  <div key={p} className="wt-folder" {...pressable(() => setCwd(p))} onClick={() => setCwd(p)} title={p}>
                     <button type="button" className="wt-star" data-on={prefs.favourites.includes(p)} onClick={(e) => { e.stopPropagation(); toggleFavourite(p); force((n) => n + 1) }}>{prefs.favourites.includes(p) ? '★' : '☆'}</button>
                     <span className="wt-grow"><bdi>{p}</bdi></span>
                     {!prefs.favourites.includes(p) ? (

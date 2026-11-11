@@ -14,7 +14,7 @@ import { unattended } from './attention.ts'
 import { mission } from './mission.ts'
 import { repaintsInPlace } from './providers.ts'
 import { matchShortcut } from './shortcuts.ts'
-import type { Runtime } from './types.ts'
+import type { Runtime, WinState } from './types.ts'
 
 // ── pure helpers ───────────────────────────────────────────────────────────
 
@@ -58,10 +58,40 @@ interface UnreadState {
   deco: IDecoration | undefined
   /** The marker is above the visible rows (the pill shows). */
   above: boolean
+  /** What the views last had a reason to redraw for (see shownKey): output that changes none of it needs no emit. */
+  shown: string
 }
 
 const states = new Map<string, UnreadState>()
 let wired = false
+
+/** The part of a terminal's state the views draw: the list badge (capped at 99+) and the jump pill. */
+function shownKey(st: UnreadState): string {
+  const live = st.marker !== undefined && !st.marker.isDisposed
+  const badge = live && !st.looking ? Math.min(st.lines, 100) : 0
+  const pill = live && st.looking && st.above ? Math.max(1, st.lines) : 0
+  return `${badge}|${pill}`
+}
+
+/** Redraw the views now, remembering what they were told. */
+function publish(st: UnreadState): void {
+  st.shown = shownKey(st)
+  emit()
+}
+
+let framePending = false
+/** One redraw per animation frame however much output arrived (a timer too: a hidden page gets no frames). */
+function emitSoon(): void {
+  if (framePending) return
+  framePending = true
+  const go = (): void => {
+    if (!framePending) return
+    framePending = false
+    emit()
+  }
+  requestAnimationFrame(go)
+  setTimeout(go, 50)
+}
 
 /** Absolute line of the cursor in the active buffer. */
 const cursorLine = (rt: Runtime): number => rt.term.buffer.active.baseY + rt.term.buffer.active.cursorY
@@ -104,7 +134,7 @@ function setMark(st: UnreadState): void {
     st.deco?.dispose()
     st.deco = undefined
     st.above = false
-    emit()
+    publish(st)
   })
 }
 
@@ -132,10 +162,12 @@ function refresh(st: UnreadState): void {
   if (marker === undefined || marker.isDisposed) return
   const lines = onNormal(st.rt) ? newLinesSince(marker.line, cursorLine(st.rt)) : st.lines
   const above = st.deco !== undefined && marker.line < st.rt.term.buffer.active.viewportY
-  if (lines !== st.lines || above !== st.above) {
-    st.lines = lines
-    st.above = above
-    emit()
+  st.lines = lines
+  st.above = above
+  // Printing in the background moves `lines` on every write; only a change of what is drawn is worth a redraw.
+  if (shownKey(st) !== st.shown) {
+    st.shown = shownKey(st)
+    emitSoon()
   }
 }
 
@@ -147,7 +179,7 @@ function evaluate(st: UnreadState): void {
     st.looking = looking
     if (st.marker !== undefined || st.deco !== undefined || st.wantDivider || st.lines > 0) {
       dropMarks(st)
-      emit()
+      publish(st)
     }
     return
   }
@@ -165,11 +197,24 @@ function evaluate(st: UnreadState): void {
   } else {
     dropMarks(st)
   }
-  emit()
+  publish(st)
 }
 
+/** The windows (by id) as of the last evaluation, to tell which changed. */
+let seenWins: readonly WinState[] = []
+
+/**
+ * Re-decide the terminals a change can concern. Whether the user is looking needs the focused window, so only
+ * the one that was looked at, the one focused now and a window that was edited (minimized, reassigned) can differ.
+ */
 function evaluateAll(): void {
-  for (const st of states.values()) evaluate(st)
+  const wins = store.wins
+  const before = seenWins
+  seenWins = wins
+  const all = before.length !== wins.length || wins.some((w, i) => w.id !== before[i]!.id)
+  const edited = new Set<string>()
+  if (!all) for (let i = 0; i < wins.length; i++) if (wins[i] !== before[i]) edited.add(wins[i]!.id)
+  for (const st of states.values()) if (all || st.looking || st.rt.id === store.focusId || edited.has(st.rt.id)) evaluate(st)
 }
 
 function wire(): void {
@@ -188,14 +233,14 @@ function wire(): void {
 /** Start following a terminal; called once when its runtime is built. */
 export function trackUnread(rt: Runtime): void {
   wire()
-  const st: UnreadState = { rt, looking: false, marker: undefined, since: Date.now(), lines: 0, wantDivider: false, deco: undefined, above: false }
+  const st: UnreadState = { rt, looking: false, marker: undefined, since: Date.now(), lines: 0, wantDivider: false, deco: undefined, above: false, shown: '0|0' }
   states.set(rt.id, st)
   rt.term.onWriteParsed(() => refresh(st))
   rt.term.onScroll(() => refresh(st))
   // Back from a full-screen program while away: the history starts here.
   rt.term.buffer.onBufferChange(() => {
     if (!st.looking && st.marker === undefined && onNormal(rt)) setMark(st)
-    emit()
+    publish(st)
   })
   evaluate(st)
   if (!st.looking) setMark(st)
@@ -207,7 +252,7 @@ export function rebaseUnread(rt: Runtime): void {
   if (st === undefined) return
   dropMarks(st)
   if (!st.looking) setMark(st)
-  emit()
+  publish(st)
 }
 
 /** The terminal was opened into the DOM: a divider that was waiting for it can be drawn. */

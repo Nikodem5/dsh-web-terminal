@@ -2,6 +2,7 @@
 // A real cordis context THROWS on a property that was not injected (`ctx.wtSpawn` once did, which left
 // the upgrade route registered with no connection listener: every terminal sat on "connecting").
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -55,7 +56,7 @@ async function attach(ctxParts) {
   }
   const http = createServer()
   http.on('upgrade', (req, socket, head) => upgrades[0].handler(req, socket, head))
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await listenLocal(http)
   stops.push(() => { for (const t of teardowns) t(); http.close() })
   const ws = new WebSocket(`ws://127.0.0.1:${http.address().port}/terminal/ws?id=r${Date.now()}&shell=cmd&cols=80&rows=24`, authed())
   const frame = await new Promise((resolve, reject) => {

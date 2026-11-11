@@ -114,6 +114,15 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.m
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isRect = (v: unknown): v is Rect => isObj(v) && isNum(v.x) && isNum(v.y) && isNum(v.w) && isNum(v.h)
 
+/** Smallest saved window, as a fraction of the canvas: a zero-sized or far off-canvas window could not be grabbed again. */
+const MIN_FRAC = 0.08
+/** A stored rectangle pulled into range: a visible size, with a grabbable part of it on the canvas. */
+export function saneRect(r: Rect): Rect {
+  const w = clamp(r.w, MIN_FRAC, 1)
+  const h = clamp(r.h, MIN_FRAC, 1)
+  return { x: clamp(r.x, -w + MIN_FRAC, 1 - MIN_FRAC), y: clamp(r.y, 0, 1 - MIN_FRAC), w, h }
+}
+
 /** A stored window, repaired or dropped: a bad geometry would break the layout, a bad z would make zTop NaN. */
 const isGrid = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 2 && v <= 1000
 
@@ -134,16 +143,13 @@ function cleanWin(raw: unknown, index: number): WinState | undefined {
     startup,
     provider,
     ssh,
-    x: raw.x,
-    y: raw.y,
-    w: raw.w,
-    h: raw.h,
+    ...saneRect(raw),
     // z only orders windows, so a missing one is replaced by the list position instead of dropping the window.
     z: isNum(raw.z) ? raw.z : index + 1,
     pinned: raw.pinned === true,
     maximized: raw.maximized === true,
     minimized: raw.minimized === true,
-    restore: isRect(raw.restore) ? { x: raw.restore.x, y: raw.restore.y, w: raw.restore.w, h: raw.restore.h } : undefined,
+    restore: isRect(raw.restore) ? saneRect(raw.restore) : undefined,
     gen: isNum(raw.gen) ? raw.gen : undefined,
     agentSession: typeof raw.agentSession === 'string' ? raw.agentSession : undefined,
     hadTurn: raw.hadTurn === true ? true : undefined,
@@ -167,10 +173,7 @@ function cleanLayout(raw: unknown): SavedLayout | undefined {
       cwd: str(w.cwd, ''),
       startup: typeof w.startup === 'string' ? w.startup : undefined,
       ssh,
-      x: w.x,
-      y: w.y,
-      w: w.w,
-      h: w.h,
+      ...saneRect(w),
       pinned: w.pinned === true,
       minimized: w.minimized === true,
       color: cleanTag(w.color),

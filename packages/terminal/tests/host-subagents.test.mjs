@@ -1,6 +1,7 @@
 // Sub-agent frames of the host half, with a fake PTY: the `subagents` frame, the `attached` field,
 // throttling, retention and session end.
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -57,7 +58,7 @@ before(async () => {
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
   server = createServer()
   server.on('upgrade', (req, socket, head) => upgrade.handler(req, socket, head))
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await listenLocal(server)
   port = server.address().port
 })
 

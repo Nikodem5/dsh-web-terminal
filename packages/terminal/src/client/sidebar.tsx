@@ -5,6 +5,7 @@
 import { useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { requestClose } from './actions.ts'
+import { pressable } from './pressable.ts'
 import { tagProps } from './tag-palette.ts'
 import {
   baseName,
@@ -105,7 +106,11 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
                 focusWin(win.id)
                 getRuntime(win.id)?.term.focus()
               }}
-              title={rt !== undefined && rt.attentionReason.length > 0 ? rt.attentionReason : win.ssh !== undefined ? `ssh ${sshLabel(win.ssh)}` : win.cwd}
+              {...pressable(() => {
+                focusWin(win.id)
+                getRuntime(win.id)?.term.focus()
+              })}
+              title={rt !== undefined && rt.attentionReason.length > 0 ? rt.attentionReason : win.ssh !== undefined ? `ssh ${sshLabel(win.ssh)}` : rt?.cwd || win.cwd}
             >
               {broadcast.on ? (
                 <input type="checkbox" checked={broadcast.ids.has(win.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleBroadcastTarget(win.id)} />
@@ -141,7 +146,7 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
                   </span>
                 )}
                 <span className="wt-li-sub">
-                  {LABEL[activity]} · {win.ssh !== undefined ? `⇄ ${sshLabel(win.ssh)}` : baseName(win.cwd) || win.cwd}
+                  {LABEL[activity]} · {win.ssh !== undefined ? `⇄ ${sshLabel(win.ssh)}` : baseName(rt?.cwd || win.cwd) || rt?.cwd || win.cwd}
                   {win.pinned ? ' · pinned' : ''}
                 </span>
               </span>

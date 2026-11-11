@@ -2,6 +2,7 @@
 // shell, and how `/signal/<id>` reaches a registered adapter. Fake providers stand in for ones that do not
 // exist yet (env-var injection, zero-config). A fake PTY and a strict ctx, like the other host tests.
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -77,7 +78,7 @@ before(async () => {
   const upgrade = routes.upgrade.find((r) => r.path === '/terminal/ws')
   server = createServer()
   server.on('upgrade', (req, socket, head) => upgrade.handler(req, socket, head))
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await listenLocal(server)
   port = server.address().port
 })
 

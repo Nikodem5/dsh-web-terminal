@@ -1,5 +1,6 @@
 // Test harness: a STRICT cordis-like ctx (reading anything not injected throws), a real HTTP server that dispatches
 // the registered exact routes and upgrades, temp dirs and temp git repos.
+import { listenLocal } from '../../../shared/test/listen.mjs'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -86,7 +87,7 @@ export async function startHost(options = {}) {
     if (route === undefined) return socket.destroy()
     route.handler(req, socket, head)
   })
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await listenLocal(http)
   const port = http.address().port
   let stopped = false
   const stop = async () => {

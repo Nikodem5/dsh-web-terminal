@@ -1,5 +1,6 @@
 // Host stats: the /signal/usage route, the /stats response, the status-line settings and persistence.
 
+import { listenLocal } from '../../shared/test/listen.mjs'
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -77,7 +78,7 @@ async function startHost({ env = {}, home = mkdtempSync(join(root, 'home')) } = 
   }
   const http = createServer()
   http.on('upgrade', (req, socket, head) => routes.upgrade.find((r) => r.path === '/terminal/ws').handler(req, socket, head))
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await listenLocal(http)
   const info = await call('/api/dsh-web-terminal/info')
   const settings = JSON.parse(readFileSync(info.providers.claude.launch.settingsPath, 'utf8'))
   let stopped = false

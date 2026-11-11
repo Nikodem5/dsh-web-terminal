@@ -8,7 +8,7 @@
 import { blockDuration, formatDuration } from './blocks.ts'
 import type { Block } from './blocks.ts'
 import { blockAt, stickyFor } from './block-text.ts'
-import { blockOutput, blockSpans, copyBlockCommand, copyBlockOutput, jumpToBlock, rerunBlock, rerunBlocked, selectBlockOutput, sendBlockOutput } from './block-actions.ts'
+import { blockOutputBlocked, blockSpans, copyBlockCommand, copyBlockOutput, jumpToBlock, rerunBlock, rerunBlocked, selectBlockOutput, sendBlockOutput } from './block-actions.ts'
 import { timeLabel } from './unread.ts'
 import type { Runtime } from './types.ts'
 
@@ -110,8 +110,7 @@ export function installBlockBar(rt: Runtime): BlockBar {
   }
 
   const drawHeader = (b: Block, top: number): void => {
-    const output = blockOutput(rt, b)
-    const outputReason = 'ok' in output ? undefined : output.disabled
+    const outputReason = blockOutputBlocked(rt, b) // row counts only: the text is read when an action runs
     const rerunReason = rerunBlocked(rt, b)
     const dur = blockDuration(b)
     const key = `${b.id}|${b.state}|${b.exitCode}|${b.command}|${dur === undefined ? '' : formatDuration(dur)}|${outputReason}|${rerunReason}`
@@ -281,8 +280,8 @@ export function installBlockBar(rt: Runtime): BlockBar {
         break
       case 'send':
         // The picker takes the keyboard itself.
-        sendBlockOutput(rt, block, { x: e.clientX, y: e.clientY })
-        return
+        if (sendBlockOutput(rt, block, { x: e.clientX, y: e.clientY })) return
+        break
     }
     flashButton(button, ok)
     term.focus()
