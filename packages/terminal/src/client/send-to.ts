@@ -9,6 +9,7 @@ import { displayName } from './names.ts'
 import { openTerminal } from './windows.ts'
 import { providerById, providerForCommand } from './providers.ts'
 import { isOverview } from './mission.ts'
+import { showNotice } from './notices.ts'
 import type { Activity, Runtime, WinState } from './types.ts'
 
 /** Selections bigger than this ask before they are sent. */
@@ -114,6 +115,36 @@ export function sendSelection(selection: string, targetId: string): boolean {
 
 /** How long a fresh agent gets to come up before the send is given up (the text is copied instead). */
 export const NEW_AGENT_TIMEOUT_MS = 60_000
+let newAgentTimeoutMs = NEW_AGENT_TIMEOUT_MS
+/** Tests shorten the wait (undefined restores it). */
+export function setNewAgentTimeoutForTests(ms: number | undefined): void {
+  newAgentTimeoutMs = ms ?? NEW_AGENT_TIMEOUT_MS
+}
+
+/** The last "new agent terminal here" send that timed out, for the help panel's diagnostics. */
+let lastSendTimeout: { provider: string; at: number; reported: boolean } | null = null
+export const getLastSendTimeout = (): { provider: string; at: number; reported: boolean } | null => lastSendTimeout
+
+/** The text of the notice shown when a new agent never became ready (exported for tests). */
+export function sendTimeoutNotice(label: string, reported: boolean, copied: boolean): string {
+  const why = reported
+    ? `${label} did not get ready within ${Math.round(newAgentTimeoutMs / 1000)} s`
+    : `${label} reported no status within ${Math.round(newAgentTimeoutMs / 1000)} s, so it was never seen ready (Help → Diagnostics)`
+  return `${why}. ${copied ? 'The selection was copied to the clipboard instead: paste it yourself.' : 'The selection could not be sent or copied.'}`
+}
+
+/** A new agent never became ready: copy the text instead and say so where the user can see it. */
+function giveUpNewAgent(selection: string, providerId: string, label: string, rt: Runtime): void {
+  const reported = rt.agent?.provider === providerId
+  lastSendTimeout = { provider: providerId, at: Date.now(), reported }
+  const notify = (copied: boolean): void => {
+    showNotice(sendTimeoutNotice(label, reported, copied))
+  }
+  const clipboard = navigator.clipboard
+  if (clipboard === undefined) return notify(false)
+  clipboard.writeText(selection).then(() => notify(true), () => notify(false))
+  emit()
+}
 
 /**
  * Open a terminal for an agent beside the source (same folder and shell) and send once the provider says
@@ -132,9 +163,9 @@ export function sendToNewAgent(selection: string, sourceId: string, providerId: 
     const rt = runtimes.get(id)
     if (rt === undefined) return
     const now = Date.now()
-    if (now - started > NEW_AGENT_TIMEOUT_MS) {
+    if (now - started > newAgentTimeoutMs) {
       clearInterval(timer)
-      navigator.clipboard?.writeText(selection).catch(() => {})
+      giveUpNewAgent(selection, provider.id, provider.label, rt)
       return
     }
     if (!provider.ready(rt, now)) return

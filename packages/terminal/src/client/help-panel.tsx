@@ -24,7 +24,8 @@ import {
   diagnosticRows,
 } from './help-data.ts'
 import type { DiagnosticsInput } from './help-data.ts'
-import { providers } from './providers.ts'
+import { providerById, providerOfWin, providers } from './providers.ts'
+import { getLastSendTimeout } from './send-to.ts'
 import {
   SHORTCUTS,
   SHORTCUT_GROUPS,
@@ -68,7 +69,27 @@ function readDiagnostics(now: number): DiagnosticsInput {
     conns: countConns([...runtimes.values()].map((rt) => rt.conn)),
     sampledAt: getStats()?.stats.limits.sampledAt,
     now,
+    agentReports: agentReports(),
+    sendTimeout: sendTimeoutInfo(),
   }
+}
+
+/** Per provider with open terminals: how many reported a status (an Antigravity one that never does prints no OSC 7501). */
+function agentReports(): { label: string; terminals: number; reporting: number }[] {
+  const out: { label: string; terminals: number; reporting: number }[] = []
+  for (const provider of providers) {
+    const wins = getWins().filter((w) => providerOfWin(w)?.id === provider.id)
+    if (wins.length === 0) continue
+    const reporting = wins.filter((w) => runtimes.get(w.id)?.agent?.provider === provider.id).length
+    out.push({ label: provider.label, terminals: wins.length, reporting })
+  }
+  return out
+}
+
+function sendTimeoutInfo(): { label: string; at: number; reported: boolean } | null {
+  const last = getLastSendTimeout()
+  if (last === null) return null
+  return { label: providerById(last.provider)?.label ?? last.provider, at: last.at, reported: last.reported }
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }): ReactElement {

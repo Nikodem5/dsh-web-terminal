@@ -95,6 +95,10 @@ const VIEW_CSS = `
 .wt-row { display: flex; gap: 6px; align-items: center; }
 .wt-dim { font-size: 12px; color: var(--wt-dim); }
 .wt-note { font-size: 12px; color: var(--dsw-alias-state-warn-label, #f0b429); }
+/* page notices (notices.ts): bottom centre, above the windows */
+.wt-notices { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 70; display: flex; flex-direction: column; gap: 6px; max-width: min(560px, calc(100% - 32px)); pointer-events: none; }
+.wt-notice { pointer-events: auto; display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 0.5px solid var(--wt-warn); border-radius: 10px; background: var(--wt-surface); color: var(--wt-text); font-size: 12px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+.wt-notice > span { flex: 1; }
 .wt-chip { height: 24px; padding: 0 10px; border: 0.5px solid var(--wt-line); border-radius: 12px; background: var(--wt-field); color: var(--wt-text); font: inherit; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 
 /* canvas + windows */

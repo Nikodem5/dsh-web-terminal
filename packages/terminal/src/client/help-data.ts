@@ -180,6 +180,12 @@ export interface DiagnosticsInput {
   /** When the limits were last reported by a Claude terminal. */
   sampledAt: number | null | undefined
   now: number
+  /** Per provider with open terminals: how many there are and how many reported a status (absent or empty: no row). */
+  agentReports?: { label: string; terminals: number; reporting: number }[]
+  /** The last "New <agent> terminal here" send that gave up, if any. */
+  sendTimeout?: { label: string; at: number; reported: boolean } | null
+  /** Opt-in integrations and their state (absent: no row). */
+  integrations?: { label: string; value: string; bad?: boolean }[]
 }
 
 /** One probe result as `found (path)` / `not found`, or `unknown` while the host has not answered. */
@@ -221,6 +227,16 @@ export function diagnosticRows(d: DiagnosticsInput): DiagnosticRow[] {
     { label: 'Shell integration', value: `${d.shellIntegration ? 'on' : 'off'} (setting); ${markers}` },
     { label: 'Terminals', value: `${c.live} live, ${c.connecting} connecting, ${c.offline} offline${c.exited > 0 ? `, ${c.exited} exited` : ''}`, bad: c.offline > 0 },
     { label: 'Stats sample', value: age },
+    ...(d.agentReports ?? []).map((r) => ({
+      label: `${r.label} status`,
+      value: `${r.reporting} of ${r.terminals} ${r.terminals === 1 ? 'terminal' : 'terminals'} reported a status`,
+      // One that is still starting has not reported yet; none at all is worth a look.
+      bad: r.reporting === 0,
+    })),
+    ...(d.sendTimeout == null
+      ? []
+      : [{ label: 'Last send to a new agent', value: `${d.sendTimeout.label} timed out at ${formatClock(d.sendTimeout.at)} (${d.sendTimeout.reported ? 'it reported, but never became ready' : 'no status was seen'}); the text was copied instead`, bad: true }]),
+    ...(d.integrations ?? []),
   ]
 }
 

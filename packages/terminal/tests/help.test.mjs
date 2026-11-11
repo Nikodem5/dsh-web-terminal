@@ -183,3 +183,17 @@ test('the agent help covers each provider, the resume caveat and what a hand-typ
   assert.match(text, /fake a status/)
   assert.match(text, /Started by hand/)
 })
+
+test('diagnostics: agent status reports, a timed-out send and integrations add rows only when given', () => {
+  const d = base()
+  d.agentReports = [{ label: 'Antigravity', terminals: 2, reporting: 0 }, { label: 'Claude', terminals: 1, reporting: 1 }]
+  d.sendTimeout = { label: 'Antigravity', at: NOW, reported: false }
+  d.integrations = [{ label: 'Antigravity integration', value: 'not installed' }]
+  const text = h.buildDiagnostics(d)
+  assert.match(text, /^Antigravity status: 0 of 2 terminals reported a status$/m)
+  assert.match(text, /^Claude status: 1 of 1 terminal reported a status$/m)
+  assert.match(text, /^Last send to a new agent: Antigravity timed out at \d\d:\d\d \(no status was seen\); the text was copied instead$/m)
+  assert.match(text, /^Antigravity integration: not installed$/m)
+  const bad = h.diagnosticRows(d).filter((r) => r.bad).map((r) => r.label)
+  assert.deepEqual(bad, ['Antigravity status', 'Last send to a new agent'])
+})
