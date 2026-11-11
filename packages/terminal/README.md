@@ -173,6 +173,32 @@ first; completed ones are dimmed and drop off about five minutes after they end.
 run. The host sends `{"type":"subagents","tasks":[...]}` (the full list) on change, and `attached` carries `subagents`;
 an older host without them simply shows an empty panel.
 
+### Overseer (ask what the terminals are doing)
+`Overseer` in the toolbar (or Ctrl+Shift+O, Cmd+Shift+O on macOS) opens a chat panel where you ask a model about your
+terminals without interrupting them: "what is T3 doing?", "what did the agent in the api folder decide about caching?",
+"which terminals are waiting for me?". It is strictly **read-only**: it never types into, starts or stops a terminal, and
+the model gets no tools. Answers stream in (Stop ends one, Clear forgets the conversation) and cite terminals as `T3`;
+click one to focus that window. Every question, follow-ups included, reads the terminals afresh.
+
+It uses the app's `llm` service and its default model (the app's model settings); nothing is hardcoded. Without a model
+service, or with no default model selected, the panel says so and the terminals work as usual.
+
+What each question sends, under a fixed size limit (about 60 000 characters, `DSH_WT_OVERSEER_BUDGET`): the terminal list
+(number, name, title, folder, agent state, what it waits for, sub-agents, files the agent changed) and, per terminal, the
+recent screen text as plain text (colours stripped, progress-bar overwrites applied, repeated redraws reduced) and, for a
+Claude terminal, a condensed conversation read from its transcript (prompts, replies, one line per tool call, sub-agent
+hand-offs and reports; never raw tool output). Terminals the question names or the picker selects get most of the room;
+the others a short tail. The answer notes when content was left out. Terminal content is fenced as untrusted data in the
+prompt, and the model is told to describe it, never to follow instructions in it.
+
+**Privacy.** Terminal content is sent to the model provider configured in the app, each time you ask; a note says so
+once before the first question. Obvious secrets (vendor API keys and tokens, `KEY=value` / `"apiKey": "..."` lines,
+private key blocks, Authorization and Cookie headers, passwords in URLs) are replaced with `[REDACTED]` first, but that is
+a best effort, not a guarantee. ◉ / ⊘ next to a terminal in the panel hides it from the Overseer entirely: the host saves
+that list (`~/.dsh/web-terminal/overseer.json`) and leaves those terminals out of every request. The transcript read for
+a terminal is only the one its own authenticated Claude hook reported, and only inside the Claude config folder
+(`CLAUDE_CONFIG_DIR` or `~/.claude`); it is read from the end, incrementally and asynchronously.
+
 ### Files changed by an agent
 When a Claude session in one of your open terminals edits a file (Edit, Write, MultiEdit, NotebookEdit), the code editor
 plugin, if installed, marks that file with a small lightning badge in its explorer, tabs, quick open and CHANGES list;
@@ -479,6 +505,16 @@ agent changed): `window.__dshTerminals = { version: 1, listEdits(), subscribe(cb
 `[{terminalId, name, live, files: [{path, at, tool}]}]` for terminals that are currently open, and `subscribe(cb)` returns
 an unsubscribe function. The same changes fire a `dsh-terminals:edits` event on `window`. Closing a terminal removes its
 entries and notifies subscribers.
+
+### Overseer
+`POST /api/dsh-web-terminal/overseer/ask` with `{question, history: [{question, answer}], terminals: [{id, num, name,
+title?, cwd?, activity?, attention?}], selected: [num] | null, hidden: [windowId]}` (`id` is the socket's session id).
+Pre-stream failures answer JSON `{ok: false, code: "no-llm" | "no-model" | "bad-request", error}`. Otherwise the reply is
+`text/event-stream`: `meta` (`{model, terminals, focus, sections, truncated, budget, used}`), `delta` (`{text}`), `error`
+(`{code, error}`) and `done` (`{reason: "stop" | "max-tokens" | "aborted" | "error"}`); closing the request aborts the model
+call. `GET /api/dsh-web-terminal/overseer/hidden` returns `{ok, hidden}`; `POST {id, hidden}` changes one window. Both go
+through the same loopback + Host + token check as every other route. Claude hook payloads now also record
+`transcript_path` and `session_id` on the terminal's host record. Code: `lib/overseer/`, `src/client/overseer-*.ts(x)`.
 
 ### Usage and the stats endpoint
 

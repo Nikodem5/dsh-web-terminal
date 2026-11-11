@@ -140,7 +140,7 @@ function socketBase(): string {
 
 /** Key combinations the app handles itself, so the terminal must not swallow them. */
 function isAppShortcut(event: KeyboardEvent): boolean {
-  return windowShortcut(event) !== null || isMissionShortcut(event) || matchShortcut('help', event)
+  return windowShortcut(event) !== null || isMissionShortcut(event) || matchShortcut('help', event) || matchShortcut('overseer', event)
 }
 
 /** Build (once) the xterm + socket for a window. */
