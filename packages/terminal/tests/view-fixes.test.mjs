@@ -240,3 +240,29 @@ test('folder chips in the New terminal dialog take the keyboard', async () => {
   assert.ok(q('.wt-dialog'), 'Enter on the chip does not open the terminal')
   assert.equal(v.getWins().length, 0)
 })
+
+// ── 15. broadcast feedback ──
+
+test('the broadcast bar says when the line did not reach every selected terminal', async () => {
+  v.openTerminal({ cwd: 'C:\a' })
+  v.openTerminal({ cwd: 'C:\b' })
+  render()
+  await until(() => FakeWebSocket.instances.length === 2, 'both sockets')
+  v.flushSync(() => v.setBroadcast({ on: true }))
+  const input = () => q('.wt-bar2 input.wt-input')
+  const send = (text) => {
+    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    set.call(input(), text)
+    v.flushSync(() => input().dispatchEvent(new window.InputEvent('input', { bubbles: true, inputType: 'insertText' })))
+    v.flushSync(() => input().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  }
+  FakeWebSocket.instances[0].drop() // one of two goes away
+  send('echo hi')
+  assert.match(v.getNotices().map((n) => n.text).join('|'), /Sent to 1 of 2/)
+  assert.equal(input().value, '', 'the line was sent, so the field clears')
+  FakeWebSocket.instances[1].readyState = 3
+  v.clearNotices()
+  send('echo again')
+  assert.match(v.getNotices().map((n) => n.text).join('|'), /Not sent/)
+  assert.equal(input().value, 'echo again', 'an unsent line is kept')
+})

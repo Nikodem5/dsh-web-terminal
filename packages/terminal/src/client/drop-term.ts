@@ -6,6 +6,7 @@
 
 import { dropShellKind, planDrop } from './drop-paths.ts'
 import { pasteInput } from './send-to.ts'
+import { showNotice } from './notice.ts'
 import { hostInfo, runtimes } from './state.ts'
 import type { DragEvent as ReactDragEvent } from 'react'
 
@@ -44,7 +45,10 @@ export function onTerminalDrop(e: ReactDragEvent, id: string, shellId: string, s
     }
   })
   const plan = planDrop(paths, dropShellKind(shellId, hostInfo.platform === 'win32'))
-  if (plan.skipped > 0) console.warn(`[terminal] ${plan.skipped} dropped item(s) not pasted (no full path or not safely quotable for this shell)`)
+  if (plan.skipped > 0) {
+    console.warn(`[terminal] ${plan.skipped} dropped item(s) not pasted (no full path or not safely quotable for this shell)`)
+    showNotice(`${plan.skipped} dropped item${plan.skipped === 1 ? ' was' : 's were'} not pasted (no full path, or not safely quotable for this shell)`)
+  }
   if (plan.text.length === 0) return
   rt.lastInputAt = Date.now()
   rt.socket.send(JSON.stringify({ type: 'input', data: pasteInput(plan.text, rt.term.modes.bracketedPasteMode) }))

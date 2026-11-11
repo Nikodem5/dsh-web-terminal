@@ -19,7 +19,7 @@ import { applyEdits, notifyEdits } from './edits-api.ts'
 import { startupTiming, startupWait } from './prompt-ready.ts'
 import { termTheme } from './theme.ts'
 import { openSearch } from './search.ts'
-import { showNotice } from './notice.ts'
+import { copyText, showNotice } from './notice.ts'
 import { registerPathLinks } from './path-links.ts'
 import { createBlocks } from './blocks.ts'
 import { installBlockBar } from './block-bar.ts'
@@ -295,7 +295,7 @@ export function ensureRuntime(win: WinState): Runtime {
     }
     if (matchShortcut('copy-always', event) || (term.hasSelection() && matchShortcut('copy', event))) {
       // Nothing selected: leave the clipboard alone (an empty write would wipe what the user copied elsewhere).
-      if (term.hasSelection()) navigator.clipboard?.writeText(term.getSelection()).catch(() => {})
+      if (term.hasSelection()) copyText(term.getSelection())
       return false
     }
     // Ctrl+Shift+S: send the selection to another terminal (without one it stays a plain key).
@@ -304,7 +304,9 @@ export function ensureRuntime(win: WinState): Runtime {
       return false
     }
     if (matchShortcut('paste', event)) {
-      navigator.clipboard?.readText().then((text) => term.paste(text)).catch(() => {})
+      const clipboard = navigator.clipboard
+      if (clipboard === undefined) showNotice('Paste failed: the clipboard is not available here')
+      else clipboard.readText().then((text) => term.paste(text)).catch(() => showNotice('Paste failed: the clipboard refused access'))
       return false
     }
     return true

@@ -36,6 +36,13 @@ export function showNotice(text: string, ms = NOTICE_MS): void {
   if (existing === undefined) change([...notices, { id, text }].slice(-3))
 }
 
+/** Copy `text` to the clipboard; a notice says so when that is not possible. */
+export function copyText(text: string): void {
+  const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard
+  if (clipboard === undefined) return showNotice('Copy failed: the clipboard is not available here')
+  clipboard.writeText(text).catch(() => showNotice('Copy failed: the clipboard refused the text'))
+}
+
 /** Drop every notice (tests use it between cases). */
 export function clearNotices(): void {
   for (const timer of timers.values()) clearTimeout(timer)

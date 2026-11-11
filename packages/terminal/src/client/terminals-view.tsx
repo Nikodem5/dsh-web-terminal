@@ -14,6 +14,7 @@ import { Pop } from './popover.tsx'
 import { LayoutsMenu, SettingsMenu } from './menus.tsx'
 import { SendMenu } from './send-menu.tsx'
 import { Notices } from './notice-view.tsx'
+import { showNotice } from './notice.ts'
 import { isModalOpen, setModalOpen } from './modal.ts'
 import { pressable } from './pressable.ts'
 import { getSendRequest } from './send-to.ts'
@@ -605,7 +606,12 @@ export function TerminalsView({ useWorkspaces }: ViewProps): ReactElement {
   const sendBroadcast = () => {
     const text = bcText.trim()
     if (text.length === 0) return
-    broadcastLine(text)
+    const sent = broadcastLine(text)
+    if (sent === 0) {
+      showNotice('Not sent: none of the selected terminals is connected')
+      return // keep the line so it can be sent once they are back
+    }
+    if (sent < broadcast.ids.size) showNotice(`Sent to ${sent} of ${broadcast.ids.size} selected terminals; the others are not connected`)
     setBcText('')
   }
   const runningAgents = runningSubagents()

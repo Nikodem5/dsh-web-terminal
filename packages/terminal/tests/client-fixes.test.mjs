@@ -147,3 +147,25 @@ test('Rows wraps into columns instead of making windows shorter than the minimum
   assert.equal(new Set(s.getWins().map((w) => w.x)).size, 1, 'tall canvas: one column')
   assert.equal(ids.length, 7)
 })
+
+// ── 15. failures that used to be silent ──
+
+test('a refused clipboard write or paste shows a notice', async () => {
+  Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')), readText: () => Promise.reject(new Error('denied')) }, configurable: true })
+  const { rt, handler } = await open()
+  rt.term.selectAll()
+  handler(ev({ key: 'C', ctrlKey: true, shiftKey: true }))
+  await until(() => s.getNotices().some((n) => /Copy failed/.test(n.text)), 'the copy notice')
+  handler(ev({ key: 'V', ctrlKey: true, shiftKey: true }))
+  await until(() => s.getNotices().some((n) => /Paste failed/.test(n.text)), 'the paste notice')
+})
+
+test('broadcastLine reports how many terminals got the line', async () => {
+  const a = await open()
+  const b = await open()
+  s.setBroadcast({ on: true })
+  assert.equal(s.broadcastLine('ls'), 2)
+  b.sock.drop()
+  assert.equal(s.broadcastLine('ls'), 1, 'a disconnected terminal does not count')
+  assert.equal(a.sock.sent.filter((f) => f.data === 'ls\r').length, 2)
+})
