@@ -6,6 +6,7 @@ import { useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { requestClose } from './actions.ts'
 import { pressable } from './pressable.ts'
+import { tagProps } from './tag-palette.ts'
 import {
   baseName,
   displayName,
@@ -81,6 +82,7 @@ export function Sidebar({ wins, focusId }: Props): ReactElement {
               key={win.id}
               className="wt-li"
               data-focused={focusId === win.id}
+              {...tagProps(win.color)}
               data-attn={attn}
               data-over={overId === win.id && dragId !== win.id}
               draggable={renaming !== win.id}

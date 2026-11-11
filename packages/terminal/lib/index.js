@@ -44,6 +44,7 @@ import { createTokenTotals } from './token-totals.js'
 import { createUsage } from './usage.js'
 import { createSelfUpdate } from './self-update.js'
 import { safeCall } from './shared/safe-call.js'
+import { ASK_PATH, HIDDEN_PATH, createOverseer } from './overseer/index.js'
 
 /** Stable cordis plugin name. */
 const name = 'web-terminal'
@@ -812,6 +813,19 @@ function apply(ctx) {
     },
   }), noop)
 
+  // Overseer: read-only questions about the terminals. `llm` is optional and not in `inject`, so it is
+  // looked up per request with ctx.get (a strict context throws on reading an un-injected property).
+  const service = (key) => {
+    try {
+      return ctx.get(key) ?? undefined
+    } catch {
+      return undefined
+    }
+  }
+  const overseer = optional('overseer', () => createOverseer({ sessions, service, dir }), undefined)
+  const disposeOverseerAsk = overseer === undefined ? noop : optional('overseer route', () => registerSecured({ kind: 'exact', path: ASK_PATH, handler: overseer.askHandler }), noop)
+  const disposeOverseerHidden = overseer === undefined ? noop : optional('overseer hidden route', () => registerSecured({ kind: 'exact', path: HIDDEN_PATH, handler: overseer.hiddenHandler }), noop)
+
   /** End one session for good. */
   const destroy = (id) => {
     const session = sessions.get(id)
@@ -1116,6 +1130,9 @@ function apply(ctx) {
     safeCall(disposeOpen)
     safeCall(disposeUpdate)
     safeCall(disposeRelaunch)
+    safeCall(disposeOverseerAsk)
+    safeCall(disposeOverseerHidden)
+    safeCall(() => overseer?.dispose())
     safeCall(() => selfUpdate.dispose())
     clearInterval(usageTimer)
     saveUsage(true)

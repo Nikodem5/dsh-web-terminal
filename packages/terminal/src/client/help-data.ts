@@ -42,6 +42,9 @@ export const MOUSE_ACTIONS: readonly MouseAction[] = [
   { how: 'Right-click a selection', what: `Send menu: copy, another terminal, or a new agent terminal (${AGENT_NAMES})` },
   { how: 'Shift+right-click a selection', what: 'The same inside programs that use the mouse (they get plain right-clicks)' },
   { how: 'Shift+drag in the terminal', what: 'Select text inside programs that use the mouse (Windows / Linux)' },
+  { how: 'Ctrl+wheel over a terminal', what: 'Zoom the font of that terminal one pixel per notch (8-32 px); it is saved with the terminal and the PTY is resized once you stop. Ctrl+0 returns to the Aa size (with shrink-to-fit)' },
+  { how: 'Select text (with Aa: Copy on select)', what: 'Off by default. When on, the selection is copied the moment you finish selecting and a short "Copied" note shows in the terminal; "Copy blocked" appears when the clipboard is not allowed' },
+  { how: '⋯ menu: Colour tag', what: 'Pick one of eight colours (or none): a strip on the window title bar, the terminal list row and the overview tile. Saved with the window and in saved layouts' },
   { how: 'Click "↓ N new lines"', what: 'Jump to where you left off' },
   { how: 'Click a terminal in the list', what: 'Focus it; drag to reorder, double-click the name to rename, hover for duplicate / close' },
   { how: 'Click a minimized chip', what: 'Restore that window (chips are in the toolbar)' },
@@ -65,6 +68,15 @@ export const AGENT_HELP: readonly MouseAction[] = [
   { how: 'Antigravity: reopening', what: 'Resumes with --conversation <id> once agy has printed one on a clean exit. With none, a terminal that had a turn reopens with `agy -c`, the latest conversation in that folder, so two Antigravity terminals in one folder can open the same one' },
   { how: 'Antigravity: trust', what: 'Its status is read from terminal output, so a program that prints the same sequence in an Antigravity terminal can fake a status dot or alert. It can only mislead' },
   { how: 'Started by hand', what: 'An agent you type into a plain shell, or run over ssh, reports nothing: the dot shows only Running or Idle (over ssh, Connected)' },
+]
+
+/** The Overseer panel (README: Overseer). Each line is checked against overseer-panel.tsx / overseer-state.ts and lib/overseer/. */
+export const OVERSEER_HELP: readonly MouseAction[] = [
+  { how: 'Overseer button, or Ctrl+Shift+O', what: 'Ask a model what the terminals are doing ("what is T3 doing?", "which terminals are waiting for me?"). It uses the app\'s default model and only reads: it never types into, starts or stops a terminal' },
+  { how: 'What is sent', what: 'Each question sends the terminal list (names, folders, agent state, sub-agents, changed files), the recent screen text of every visible terminal and, for Claude, a condensed conversation (prompts, replies, one line per tool call; no tool output) to the model provider configured in the app' },
+  { how: 'Privacy', what: 'A note asks once before the first question. Obvious secrets (API keys, tokens, KEY=value lines, private keys, Authorization headers) are replaced before sending, but not everything can be caught: ◉ / ⊘ next to a terminal hides it from the Overseer entirely, and the host enforces that for every question' },
+  { how: 'Picker: All / T1, T2…', what: 'Picked terminals (and terminals the question names) are read in depth; the others get a short summary. Each question has a size limit, and the answer says when content was left out' },
+  { how: 'Click T3 in an answer', what: 'Focus that terminal. Stop ends an answer early, Clear forgets the conversation; follow-up questions read the terminals afresh' },
 ]
 
 export interface AttentionLegend {

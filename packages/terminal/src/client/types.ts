@@ -6,6 +6,7 @@ import type { SearchAddon } from '@xterm/addon-search'
 import type { SubagentInfo } from './subagents.ts'
 import type { BlockModel } from './blocks.ts'
 import type { EditInfo } from './edits-api.ts'
+import type { TermPrefs } from './term-prefs.ts'
 import type { PatternAlert } from './pattern-alerts-core.ts'
 
 /** Rectangle in canvas fractions (0..1). */
@@ -62,6 +63,10 @@ export interface WinState extends Rect {
   /** Last real grid size (after a fit); a terminal created before its page opens starts at this size. */
   cols?: number
   rows?: number
+  /** Font zoom: whole pixels added to the global font size (Ctrl+wheel); unset = the global size with shrink-to-fit. */
+  zoom?: number
+  /** Colour tag: an id from tag-palette.ts. */
+  color?: string
 }
 
 /** Connection phase of one terminal runtime. */
@@ -198,7 +203,7 @@ export interface FontPrefs {
 }
 
 /** One window inside a saved layout. */
-export type LayoutWin = Pick<WinState, 'title' | 'nameManual' | 'shell' | 'cwd' | 'startup' | 'ssh' | 'x' | 'y' | 'w' | 'h' | 'pinned' | 'minimized'>
+export type LayoutWin = Pick<WinState, 'title' | 'nameManual' | 'shell' | 'cwd' | 'startup' | 'ssh' | 'x' | 'y' | 'w' | 'h' | 'pinned' | 'minimized' | 'color'>
 
 export interface SavedLayout {
   name: string
@@ -281,6 +286,8 @@ export interface Prefs {
   sendCodeBlock: boolean
   /** A command that ran at least this many seconds raises a done / failed flag when the terminal is unattended; 0 = never. */
   commandNotifySec: number
+  /** Scrollback, cursor and copy-on-select (term-prefs.ts). */
+  term: TermPrefs
 }
 
 /** Everything the view reads; mutated in place, `version` bumps on change. */

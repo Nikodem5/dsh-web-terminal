@@ -340,7 +340,7 @@ check(focusedBefore !== focusedAfter, `Ctrl+Alt+Right moves focus (${focusedBefo
   const popCss = [...doc.querySelectorAll('style')].map((t) => t.textContent).join('\n').split('\n').find((l) => l.startsWith('.wt-pop {')) ?? ''
   check(popCss.includes('overflow-y: auto') && popCss.includes('overscroll-behavior: contain'), 'popover css scrolls and contains the wheel')
   const sections = qa('.wt-pop [data-section]').map((e) => e.textContent)
-  check(['Font', 'Readability', 'Paths', 'Sending', 'Shell', 'Alerts'].every((t, i) => sections[i] === t), `Aa menu sections in order (got ${sections.join(', ')})`)
+  check(['Font', 'Readability', 'Terminal', 'Paths', 'Sending', 'Shell', 'Alerts'].every((t, i) => sections[i] === t), `Aa menu sections in order (got ${sections.join(', ')})`)
   window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
   await sleep(30)
   check(q('.wt-pop') === null, 'Esc closes the Aa menu')
@@ -349,7 +349,33 @@ check(focusedBefore !== focusedAfter, `Ctrl+Alt+Right moves focus (${focusedBefo
   check(q('.wt-view').style.getPropertyValue('--wt-term-bg') === '#14161b', 'window chrome matches the terminal background')
   check(numbers[0] === '14', `default terminal font size is 14 (got ${numbers[0]})`)
   check(byText('.wt-pop .wt-item', 'Shrink font to fit window') !== undefined && numbers.includes('100'), 'settings offer auto-fit font with a 100-column default')
+  check(q('.wt-pop [data-setting="scrollback"]')?.value === '5000' && q('.wt-pop [data-setting="cursor-style"]')?.value === 'block' && q('.wt-pop [data-setting="cursor-blink"]')?.checked === true && q('.wt-pop [data-setting="copy-on-select"]')?.checked === false, 'settings offer scrollback 5000, a blinking block cursor and copy on select off')
   click(byText('.wt-bar button', 'Aa'))
+  await sleep(20)
+}
+
+// colour tag: picked in the window menu, shown on the title bar, the list row and the overview tile
+{
+  click(q('.wt-win .wt-hbtn[title="More"]'))
+  await sleep(30)
+  check(qa('.wt-pop .wt-swatch').length === 9, 'the window menu offers "no colour" and eight swatches')
+  click(q('.wt-pop .wt-swatch[aria-label="Red"]'))
+  await sleep(40)
+  check(q('.wt-win .wt-head')?.getAttribute('data-tag') === 'red' && q('.wt-win .wt-head').style.getPropertyValue('--wt-tag') === '#ef4444', 'the title bar carries the tag')
+  check(qa('.wt-li[data-tag="red"]').length === 1, 'the list row carries the tag')
+  click(byText('.wt-bar button', 'Overview'))
+  await sleep(60)
+  check(qa('.wt-tile-head[data-tag="red"]').length === 1, 'the overview tile carries the tag')
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await sleep(60)
+  if (q('.wt-pop .wt-swatch') === null) {
+    click(q('.wt-win .wt-hbtn[title="More"]'))
+    await sleep(30)
+  }
+  click(q('.wt-pop .wt-swatch[aria-label="No colour"]'))
+  await sleep(40)
+  check(q('.wt-win .wt-head')?.getAttribute('data-tag') === null && qa('.wt-li[data-tag]').length === 0, 'No colour removes the tag again')
+  window.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
   await sleep(20)
 }
 
@@ -768,7 +794,7 @@ await sleep(20)
   click(btn)
   await sleep(40)
   check(q('.wt-help') !== null, 'the Help button opens the panel')
-  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Agent terminals|Status colours|Files changed by an agent|Stats bar|Diagnostics|Update from source', 'all nine sections render')
+  check(qa('.wt-help-sec h4').map((h) => h.textContent).join('|') === 'Keyboard shortcuts|Mouse|SSH terminals|Agent terminals|Overseer|Status colours|Files changed by an agent|Stats bar|Diagnostics|Update from source', 'all ten sections render')
   const total = qa('.wt-help [data-shortcut]').length
   check(total >= 15 && qa('.wt-help-group').length >= 7, 'shortcuts are listed in groups')
   check(qa('.wt-help .wt-dot').map((d) => d.dataset.a).join(',') === 'working,needs-you,finished,running,idle,exited,offline,connected,disconnected', 'the legend draws every status dot with the real .wt-dot classes')

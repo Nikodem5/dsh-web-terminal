@@ -18,6 +18,7 @@ import {
   COMMAND_ALERT_LEGEND,
   GUTTER_LEGEND,
   MOUSE_ACTIONS,
+  OVERSEER_HELP,
   SSH_HELP,
   STATS_LEGEND,
   buildDiagnostics,
@@ -172,6 +173,15 @@ export function HelpPanel({ onClose }: { onClose: () => void }): ReactElement {
 
         <Section title="Agent terminals">
           {AGENT_HELP.map((m) => (
+            <div key={m.how} className="wt-help-row">
+              <span className="wt-help-how">{m.how}</span>
+              <span>{m.what}</span>
+            </div>
+          ))}
+        </Section>
+
+        <Section title="Overseer">
+          {OVERSEER_HELP.map((m) => (
             <div key={m.how} className="wt-help-row">
               <span className="wt-help-how">{m.how}</span>
               <span>{m.what}</span>
