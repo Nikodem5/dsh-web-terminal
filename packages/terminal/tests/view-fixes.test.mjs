@@ -266,3 +266,44 @@ test('the broadcast bar says when the line did not reach every selected terminal
   assert.match(v.getNotices().map((n) => n.text).join('|'), /Not sent/)
   assert.equal(input().value, 'echo again', 'an unsent line is kept')
 })
+
+// ── 9. dragging and resizing ──
+
+const pointer = (el, type, x, y) => v.flushSync(() => el.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 })))
+
+test('dragging a window redraws only that window and writes the store once, on release', async () => {
+  const id = v.openTerminal({ cwd: 'C:\work' })
+  v.updateWin(id, { x: 0.2, y: 0.2, w: 0.4, h: 0.4 })
+  render()
+  await until(() => q('.wt-win'), 'the window')
+  const winEl = q('.wt-win')
+  const head = q('.wt-head')
+  const before = v.getWins()
+  const version = v.getVersion()
+  pointer(head, 'pointerdown', 200, 100)
+  const left0 = parseFloat(winEl.style.left)
+  for (let i = 1; i <= 10; i++) pointer(head, 'pointermove', 200 + i * 10, 100 + i * 5)
+  assert.ok(parseFloat(winEl.style.left) > left0, 'the window follows the pointer')
+  assert.equal(v.getWins(), before, 'the store is not touched while dragging')
+  assert.equal(v.getVersion(), version, 'nothing else redraws')
+  pointer(head, 'pointerup', 300, 150)
+  const win = v.getWins()[0]
+  assert.notEqual(v.getWins(), before)
+  assert.ok(win.x > 0.2 && win.y > 0.2, 'the final position is stored')
+  assert.equal(parseFloat(winEl.style.left), win.x * 600, 'and is what is shown')
+})
+
+test('resizing from a grip also keeps the rectangle local until release', async () => {
+  const id = v.openTerminal({ cwd: 'C:\work' })
+  v.updateWin(id, { x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
+  render()
+  await until(() => q('.wt-win .wt-grip[data-d="se"]'), 'the grip')
+  const grip = q('.wt-win .wt-grip[data-d="se"]')
+  const before = v.getWins()
+  pointer(grip, 'pointerdown', 300, 200)
+  for (let i = 1; i <= 8; i++) pointer(grip, 'pointermove', 300 + i * 10, 200 + i * 10)
+  assert.equal(v.getWins(), before, 'not stored while resizing')
+  pointer(grip, 'pointerup', 380, 280)
+  const win = v.getWins()[0]
+  assert.ok(win.w > 0.4 && win.h > 0.5, 'the grown size is stored on release')
+})

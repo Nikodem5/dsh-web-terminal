@@ -219,6 +219,8 @@ interface WindowProps {
 function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps): ReactElement {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [dragging, setDragging] = useState(false)
+  // While dragging or resizing the rectangle lives here (re-rendering only this window); the store gets it once, on release.
+  const [live, setLive] = useState<Rect | null>(null)
   const [renaming, setRenaming] = useState(false)
   // Escape blurs the input to close it, and blur commits; this tells the blur handler to discard instead.
   const cancelRename = useRef(false)
@@ -267,7 +269,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     }
   }, [more])
 
-  const px = toPx(win, stage)
+  const px = toPx(live ?? win, stage)
   const tile = mission?.tiles.get(win.id)
 
   /** Drag the window by its header, with edge snapping and Windows-style zones. */
@@ -287,6 +289,8 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     const targets = targetsFor(win.id, stage)
     let moved = false
     let zone: Rect | null = null
+    let zoneKey = ''
+    let last: Rect | null = null
     setDragging(true)
 
     const move = (e: PointerEvent) => {
@@ -309,15 +313,24 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
       r.x = Math.min(Math.max(r.x, -r.w + 80), stage.w - 80)
       r.y = Math.min(Math.max(r.y, 0), stage.h - 30)
       zone = zoneFor(e.clientX - bounds.left, e.clientY - bounds.top, stage)
-      onGhost(zone)
-      updateWin(win.id, { ...toFrac(r, stage), maximized: false, restore: wasMax ? undefined : win.restore })
+      const key = zone === null ? '' : `${zone.x},${zone.y},${zone.w},${zone.h}`
+      if (key !== zoneKey) {
+        zoneKey = key
+        onGhost(zone) // only when the snap zone changes: the whole page redraws for it
+      }
+      const first = last === null
+      last = toFrac(r, stage)
+      setLive(last)
+      if (first && wasMax) updateWin(win.id, { ...last, maximized: false, restore: undefined })
     }
     const up = () => {
       header.removeEventListener('pointermove', move)
       header.removeEventListener('pointerup', up)
       header.removeEventListener('pointercancel', up)
       setDragging(false)
+      setLive(null)
       onGhost(null)
+      if (zone === null && last !== null) updateWin(win.id, { ...last, maximized: false })
       if (zone !== null) {
         const full = zone.w === 1 && zone.h === 1
         updateWin(win.id, {
@@ -341,6 +354,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
     grip.setPointerCapture(event.pointerId)
     const start = { px: event.clientX, py: event.clientY, rect: toPx(win, stage) }
     const targets = targetsFor(win.id, stage)
+    let last: Rect | null = null
     setDragging(true)
 
     const move = (e: PointerEvent) => {
@@ -353,13 +367,16 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
       if (dir.includes('w')) x = snapEdge(Math.min(right - MIN_W, x + dx), targets.xs)
       if (dir.includes('s')) bottom = snapEdge(Math.max(y + MIN_H, bottom + dy), targets.ys)
       if (dir.includes('n')) y = snapEdge(Math.min(bottom - MIN_H, y + dy), targets.ys)
-      updateWin(win.id, toFrac({ x, y, w: Math.max(MIN_W, right - x), h: Math.max(MIN_H, bottom - y) }, stage))
+      last = toFrac({ x, y, w: Math.max(MIN_W, right - x), h: Math.max(MIN_H, bottom - y) }, stage)
+      setLive(last)
     }
     const up = () => {
       grip.removeEventListener('pointermove', move)
       grip.removeEventListener('pointerup', up)
       grip.removeEventListener('pointercancel', up)
       setDragging(false)
+      setLive(null)
+      if (last !== null) updateWin(win.id, last)
     }
     grip.addEventListener('pointermove', move)
     grip.addEventListener('pointerup', up)
