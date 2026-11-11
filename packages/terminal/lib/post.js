@@ -2,8 +2,7 @@
 // Cheap and silent on purpose: nothing here throws or prints.
 
 import { request } from 'node:http'
-
-const TOKEN_HEADER = 'x-dsh-wt-token'
+import { TOKEN_HEADER } from './agent-signals.js'
 
 /** Idle-socket limit for the post: short, because a status line must stay cheap. DSH_WT_POST_TIMEOUT_MS raises it (tests on a loaded machine). */
 function postTimeoutMs() {

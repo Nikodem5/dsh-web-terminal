@@ -13,6 +13,18 @@ import { fileURLToPath } from 'node:url'
 /** Lines of step output kept for the panel. */
 const LOG_LINES = 200
 
+/** A read-only git query that takes longer than this is abandoned (unreachable origin, hung credential helper). */
+const GIT_TIMEOUT_MS = 20_000
+
+/** One update step (npm install and build included) that takes longer than this is killed. */
+const STEP_TIMEOUT_MS = 10 * 60_000
+
+/** How long a status answer about HEAD and the branch is reused (the panel polls every second). */
+const STATUS_TTL_MS = 3_000
+
+/** Never let git ask for a password or a passphrase: nobody can answer on a headless step. */
+const NO_PROMPT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }
+
 /** Absolute path of the detached relaunch helper. */
 const RELAUNCH_SCRIPT = fileURLToPath(new URL('./relaunch.js', import.meta.url))
 
@@ -59,11 +71,29 @@ export function updateSteps({ repo, profile, node, branch = null, pullable = tru
  * @param options.node - returns the `node` on PATH, or undefined (read when a step needs it).
  * @param options.spawnImpl - child_process.spawn; tests pass a fake.
  */
-export function createSelfUpdate({ pluginDir, node, spawnImpl = spawn }) {
+export function createSelfUpdate({ pluginDir, node, spawnImpl = spawn, gitTimeoutMs = GIT_TIMEOUT_MS, stepTimeoutMs = STEP_TIMEOUT_MS, statusTtlMs = STATUS_TTL_MS }) {
   const where = profileOf(pluginDir)
   /** {running, step, log, ok, error, finishedAt}; ok is null until a run ends. */
   const state = { running: false, step: null, log: [], ok: null, error: null, finishedAt: null }
   let child = null
+  /** {at, value, epoch} - the last head/branch answer; `epoch` changes whenever a run starts or ends. */
+  let headCache = null
+  let epoch = 0
+
+  /** End a child and anything it started (cmd.exe and npm leave grandchildren behind). */
+  const killTree = (proc) => {
+    const single = () => { try { proc.kill() } catch {} }
+    if (process.platform === 'win32' && Number.isInteger(proc.pid)) {
+      try {
+        // Killing the shell first would orphan its children before taskkill can walk the tree: fall back only on failure.
+        const killer = spawnImpl('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+        killer.on('error', single)
+        killer.on('close', (code) => { if (code !== 0) single() })
+        return
+      } catch {}
+    }
+    single()
+  }
 
   const append = (text) => {
     for (const line of text.split(/\r?\n/)) {
@@ -76,14 +106,26 @@ export function createSelfUpdate({ pluginDir, node, spawnImpl = spawn }) {
     new Promise((resolve, reject) => {
       append(`> ${step.label}`)
       try {
-        child = spawnImpl(step.file, step.args, { cwd, shell: step.shell === true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+        child = spawnImpl(step.file, step.args, { cwd, env: NO_PROMPT_ENV, shell: step.shell === true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
       } catch (error) {
         return reject(error)
       }
-      child.stdout?.on('data', (chunk) => append(String(chunk)))
-      child.stderr?.on('data', (chunk) => append(String(chunk)))
-      child.on('error', reject)
-      child.on('close', (code) => {
+      const proc = child
+      let timedOut = false
+      const timer = setTimeout(() => {
+        timedOut = true
+        killTree(proc)
+        // A grandchild can keep the pipes open for good: do not wait for 'close'.
+        child = null
+        reject(new Error(`${step.label} timed out after ${Math.round(stepTimeoutMs / 1000)}s`))
+      }, stepTimeoutMs)
+      timer.unref?.()
+      proc.stdout?.on('data', (chunk) => append(String(chunk)))
+      proc.stderr?.on('data', (chunk) => append(String(chunk)))
+      proc.on('error', (error) => { clearTimeout(timer); reject(error) })
+      proc.on('close', (code) => {
+        clearTimeout(timer)
+        if (timedOut) return
         child = null
         if (code === 0) resolve()
         else reject(new Error(`${step.label} failed (exit ${code})`))
@@ -103,20 +145,36 @@ export function createSelfUpdate({ pluginDir, node, spawnImpl = spawn }) {
       let out = ''
       let proc
       try {
-        proc = spawnImpl('git', ['-C', repo, ...args], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })
+        proc = spawnImpl('git', ['-C', repo, ...args], { env: NO_PROMPT_ENV, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })
       } catch {
         return resolve(null)
       }
+      const timer = setTimeout(() => {
+        killTree(proc)
+        resolve(null)
+      }, gitTimeoutMs)
+      timer.unref?.()
       proc.stdout?.on('data', (chunk) => { out += String(chunk) })
-      proc.on('error', () => resolve(null))
-      proc.on('close', (code) => resolve(code === 0 ? out.trim() : null))
+      proc.on('error', () => { clearTimeout(timer); resolve(null) })
+      proc.on('close', (code) => { clearTimeout(timer); resolve(code === 0 ? out.trim() : null) })
     })
 
   return {
     async status() {
       const reason = unavailable()
       const source = reason === null ? readSource(pluginDir) : null
-      const [head, branch] = source === null ? [null, null] : await Promise.all([git(source.repo, ['rev-parse', 'HEAD']), git(source.repo, ['rev-parse', '--abbrev-ref', 'HEAD'])])
+      let head = null
+      let branch = null
+      if (source !== null) {
+        if (headCache !== null && headCache.epoch === epoch && Date.now() - headCache.at < statusTtlMs) {
+          ;({ head, branch } = headCache)
+        } else {
+          const asked = epoch
+          ;[head, branch] = await Promise.all([git(source.repo, ['rev-parse', 'HEAD']), git(source.repo, ['rev-parse', '--abbrev-ref', 'HEAD'])])
+          // An answer that raced a run's start or end may describe the old checkout: do not keep it.
+          if (asked === epoch) headCache = { at: Date.now(), epoch, head, branch }
+        }
+      }
       return {
         available: reason === null,
         reason,
@@ -141,6 +199,7 @@ export function createSelfUpdate({ pluginDir, node, spawnImpl = spawn }) {
       if (state.running || unavailable() !== null) return false
       const { repo } = readSource(pluginDir)
       Object.assign(state, { running: true, step: null, log: [], ok: null, error: null, finishedAt: null })
+      epoch++
       void (async () => {
         try {
           const nodeBin = node()
@@ -166,6 +225,7 @@ export function createSelfUpdate({ pluginDir, node, spawnImpl = spawn }) {
           state.running = false
           state.step = null
           state.finishedAt = Date.now()
+          epoch++
         }
       })()
       return true
@@ -192,7 +252,7 @@ export function createSelfUpdate({ pluginDir, node, spawnImpl = spawn }) {
     },
 
     dispose() {
-      try { child?.kill() } catch {}
+      if (child !== null) killTree(child)
     },
   }
 }

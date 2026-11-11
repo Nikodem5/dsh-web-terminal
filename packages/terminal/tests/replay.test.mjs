@@ -61,3 +61,17 @@ test('a sequence completed before the cut does not move it', () => {
   const text = `\x1b[0m${'a'.repeat(30)}`
   assert.equal(trimReplay(text, 10), 'a'.repeat(10))
 })
+
+test('a cut deep inside a long OSC payload (inline image) skips to its terminator', () => {
+  const image = `\x1b]1337;File=inline=1:${'A'.repeat(50_000)}\x07`
+  assert.equal(trimReplay(`before${image}tail`, 'tail'.length + 20_000), 'tail')
+  const sixel = `\x1bPq${'#0;2;0;0;0'.repeat(10_000)}\x1b\\`
+  assert.equal(trimReplay(`x${sixel}end`, 'end'.length + 5_000), 'end')
+})
+
+test('a cut inside a long sequence that is still open keeps it whole, up to a bound', () => {
+  const open = `\x1b]1337;File=inline=1:${'A'.repeat(30_000)}`
+  assert.equal(trimReplay(`${'a'.repeat(100)}${open}`, 10_000), open)
+  const huge = `\x1b]1337;File=inline=1:${'A'.repeat(200_000)}`
+  assert.equal(trimReplay(huge, 10_000).length, 10_000, 'too long to keep: cut as plain text')
+})

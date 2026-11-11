@@ -12,7 +12,17 @@ export const MAX_TEMPLATE_LENGTH = 500
 const MAX_PATH_LENGTH = 4096
 
 /** What "OS default app" must never launch: opening these runs them rather than showing them. */
-const EXECUTABLE_EXT = new Set(['.exe', '.com', '.bat', '.cmd', '.ps1', '.psm1', '.msi', '.msp', '.scr', '.pif', '.lnk', '.url', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.cpl', '.reg', '.jar', '.desktop', '.sh', '.appimage', '.command', '.app', '.workflow'])
+const EXECUTABLE_EXT = new Set(['.exe', '.com', '.bat', '.cmd', '.ps1', '.psm1', '.msi', '.msp', '.scr', '.pif', '.lnk', '.url', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.cpl', '.reg', '.jar', '.desktop', '.sh', '.appimage', '.command', '.app', '.workflow', '.application', '.appref-ms', '.sct', '.wsc', '.msc', '.gadget', '.inf', '.scf'])
+
+/**
+ * True when opening `file` with the OS default app would run it. Win32 drops trailing dots and spaces from a
+ * name (`run.exe.` is `run.exe`) and treats `name:stream` as a stream of `name`, so the extension is read after both.
+ */
+export function runsOnOpen(file) {
+  const name = basename(file).replace(/[. ]+$/, '')
+  const bare = name.split(':')[0].replace(/[. ]+$/, '')
+  return EXECUTABLE_EXT.has(extname(name).toLowerCase()) || EXECUTABLE_EXT.has(extname(bare).toLowerCase())
+}
 
 /** Error with a message the browser shows verbatim. */
 export class OpenError extends Error {}
@@ -165,7 +175,7 @@ export function createOpener({ spawn = (...args) => (spawnOverride ?? nodeSpawn)
     // A folder goes to the file manager whatever the target: no editor opens it usefully with -g.
     if (info.isDirectory()) return openDefault(file)
     if (target === 'default') {
-      if (EXECUTABLE_EXT.has(extname(file).toLowerCase())) throw new OpenError(`Not opening ${basename(file)} with the OS default app: that would run it. Pick an editor in Aa.`)
+      if (runsOnOpen(file)) throw new OpenError(`Not opening ${basename(file)} with the OS default app: that would run it. Pick an editor in Aa.`)
       return openDefault(file)
     }
     if (target === 'custom') {

@@ -12,7 +12,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../lib/index.js'
 import { expand, linuxCwd, resolveCandidates } from '../lib/paths.js'
-import { OpenError, createOpener, setSpawnForTests, gotoArg, splitTemplate, templateToArgv } from '../lib/open.js'
+import { OpenError, createOpener, runsOnOpen, setSpawnForTests, gotoArg, splitTemplate, templateToArgv } from '../lib/open.js'
 
 const home = mkdtempSync(join(tmpdir(), 'dsh-wt-paths-home-'))
 process.env.DSH_HOME = home
@@ -181,6 +181,17 @@ test('open default: explorer.exe / xdg-open / open; scripts and programs are ref
   assert.equal(calls.length, 0)
 })
 
+test('open default refuses executables however Windows spells them', async () => {
+  for (const name of ['run.exe.', 'run.exe ', 'run.exe. .', 'RUN.EXE', 'a.txt:evil.exe', 'x.application', 'x.appref-ms', 'x.sct', 'x.wsc', 'x.msc', 'x.gadget', 'x.inf', 'x.scf']) {
+    assert.equal(runsOnOpen(name), true, name)
+    const { spawn, calls } = fakeSpawn()
+    const open = createOpener({ spawn, which: async () => undefined, platform: 'win32', statFn: async () => ({ isDirectory: () => false }) })
+    await assert.rejects(open({ path: `C:/tmp/${name}`, target: 'default' }), /would run it/, name)
+    assert.equal(calls.length, 0, name)
+  }
+  for (const name of ['notes.md', 'photo.png', 'README', 'a.txt:notes']) assert.equal(runsOnOpen(name), false, name)
+})
+
 test('a folder opens in the file manager whatever the target', async () => {
   const { spawn, calls } = fakeSpawn()
   const open = createOpener({ spawn, which: async (n) => `/usr/bin/${n}`, platform: 'linux' })
@@ -300,4 +311,11 @@ test('POST /open: spawns through the fake, returns errors as JSON', async () => 
   assert.deepEqual(bad.body, { ok: false, error: 'That path no longer exists' })
   assert.equal((await call(url, 'POST', '[]')).status, 400)
   assert.equal(spawned.length, 1)
+})
+
+test('resolveCandidates: a stat that never answers (dead network share) does not hold the others back', async () => {
+  const statFn = (path) => (path.includes('dead') ? new Promise(() => {}) : Promise.resolve({ isDirectory: () => false }))
+  const r = await resolveCandidates(['/dead/share/a.ts', '/ok/b.ts'], { cwd: '/', home: '/home' }, statFn, 30)
+  assert.equal(r[0].path, null)
+  assert.match(r[1].path, /b.ts$/)
 })

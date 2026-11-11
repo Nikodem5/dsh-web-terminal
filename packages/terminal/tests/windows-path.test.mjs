@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createWindowsPath, mergePath, parseRegPath, pathKey, withPath, REG_TTL_MS } from '../lib/windows-path.js'
+import { createWindowsPath, listerCwd, mergePath, parseRegPath, pathKey, withPath, REG_TTL_MS } from '../lib/windows-path.js'
 
 const MACHINE = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment'
 const USER = 'HKCU\\Environment'
@@ -203,4 +203,25 @@ test('childEnv replaces the PATH under its existing key and does not mutate the 
   assert.deepEqual(Object.keys(child).sort(), ['OTHER', 'Path'])
   assert.match(child.Path, /^C:\\app;C:\\Windows\\System32;C:\\Tools\\;/)
   assert.equal(base.Path, 'C:\\app;C:\\Windows\\System32')
+})
+
+test('listerCwd is the system folder, never the host cwd', () => {
+  assert.equal(listerCwd({ SystemRoot: 'D:\\Win' }), 'D:\\Win\\System32')
+  assert.equal(listerCwd({}), 'C:\\Windows\\System32')
+})
+
+test('where.exe run from listerCwd ignores a binary planted in the current directory', { skip: process.platform !== 'win32' }, async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { spawnSync } = await import('node:child_process')
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-wt-where-'))
+  try {
+    writeFileSync(join(dir, 'dshplanted.exe'), '')
+    const where = (cwd) => spawnSync('where.exe', ['dshplanted'], { cwd, encoding: 'utf8', windowsHide: true })
+    assert.equal(where(dir).status, 0, 'where finds it in the cwd: that is the hazard')
+    assert.notEqual(where(listerCwd()).status, 0)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
