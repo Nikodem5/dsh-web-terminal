@@ -47,24 +47,57 @@ function baseOf(cache) {
   return base
 }
 
-/** Recursively list `.jsonl` files with size and mtime. Unreadable folders are skipped. */
-async function listTranscripts(dir, out = []) {
-  let entries
+/** Files stat-ed at once (one by one, a big tree is thousands of sequential round trips). */
+const STAT_BATCH = 32
+/** A folder changed this recently may still gain entries within the same timestamp tick: list it again. */
+const FRESH_MS = 2000
+
+/** `fn` over `items`, STAT_BATCH at a time, results in order. */
+async function inBatches(items, fn) {
+  const results = []
+  for (let i = 0; i < items.length; i += STAT_BATCH) results.push(...(await Promise.all(items.slice(i, i + STAT_BATCH).map(fn))))
+  return results
+}
+
+/**
+ * Recursively list `.jsonl` files with size and mtime. Unreadable folders are skipped.
+ * A folder's own mtime changes when files or folders are added or removed, so its listing is kept in `tree`
+ * and read again only then; the files are still stat-ed every time, as appending to one does not touch the folder.
+ */
+async function listTranscripts(dir, tree, clock) {
+  let dirMtime
   try {
-    entries = await readdir(dir, { withFileTypes: true })
+    dirMtime = (await stat(dir)).mtimeMs
   } catch {
-    return out
+    tree.delete(dir)
+    return []
   }
-  for (const entry of entries) {
-    const path = join(dir, entry.name)
-    if (entry.isDirectory()) await listTranscripts(path, out)
-    else if (entry.name.endsWith('.jsonl')) {
-      try {
-        const info = await stat(path)
-        out.push({ path, size: info.size, mtimeMs: info.mtimeMs })
-      } catch {}
+  let node = tree.get(dir)
+  if (node === undefined || node.mtimeMs !== dirMtime || clock() - dirMtime < FRESH_MS) {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      tree.delete(dir)
+      return []
     }
+    node = {
+      mtimeMs: dirMtime,
+      dirs: entries.filter((e) => e.isDirectory()).map((e) => join(dir, e.name)),
+      files: entries.filter((e) => !e.isDirectory() && e.name.endsWith('.jsonl')).map((e) => join(dir, e.name)),
+    }
+    tree.set(dir, node)
   }
+  const found = await inBatches(node.files, async (path) => {
+    try {
+      const info = await stat(path)
+      return { path, size: info.size, mtimeMs: info.mtimeMs }
+    } catch {
+      return null
+    }
+  })
+  const out = found.filter((f) => f !== null)
+  for (const sub of node.dirs) out.push(...(await listTranscripts(sub, tree, clock)))
   return out
 }
 
@@ -81,6 +114,7 @@ export function createTokenTotals({ dir = claudeDir(), intervalMs = 60_000, now 
   /** State of the delta over the cache; thrown away when the cache's date moves. */
   let marker // lastComputedDate the delta was built for
   const offsets = new Map() // path -> bytes consumed (whole lines only)
+  const tree = new Map() // folder -> {mtimeMs, dirs, files}: its last listing
   const seen = new Map() // message.id + requestId -> usage parts (max over streamed repeats)
   let delta = empty()
 
@@ -169,7 +203,7 @@ export function createTokenTotals({ dir = claudeDir(), intervalMs = 60_000, now 
       delta = empty()
     }
     const cutoff = endOfLocalDay(date) ?? 0
-    const files = await listTranscripts(join(dir, 'projects'))
+    const files = await listTranscripts(join(dir, 'projects'), tree, now)
     for (const file of files) {
       if (file.mtimeMs < cutoff) continue
       try {

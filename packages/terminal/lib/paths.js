@@ -72,16 +72,31 @@ export function expand(candidate, { cwd, home, platform = process.platform }) {
   return out
 }
 
+/** A stat on a dead network share or an asleep drive can take a minute: give up on one path after this long. */
+const STAT_TIMEOUT_MS = 1500
+
+/** `statFn(path)` that rejects after `ms` (the stat itself cannot be cancelled and is left to finish). */
+function statWithin(statFn, path, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('stat timed out')), ms)
+    timer.unref?.()
+    Promise.resolve().then(() => statFn(path)).then(
+      (info) => { clearTimeout(timer); resolve(info) },
+      (error) => { clearTimeout(timer); reject(error) },
+    )
+  })
+}
+
 /**
  * Resolve candidates to existing paths.
- * @returns one `{candidate, path, isDir}` per input, `path: null` when nothing exists.
+ * @returns one `{candidate, path, isDir}` per input, `path: null` when nothing exists (or answers in time).
  */
-export async function resolveCandidates(candidates, ctx, statFn = stat) {
+export async function resolveCandidates(candidates, ctx, statFn = stat, timeoutMs = STAT_TIMEOUT_MS) {
   return Promise.all(
     candidates.map(async (candidate) => {
       for (const path of expand(candidate, ctx)) {
         try {
-          const info = await statFn(path)
+          const info = await statWithin(statFn, path, timeoutMs)
           return { candidate, path, isDir: info.isDirectory() }
         } catch {}
       }

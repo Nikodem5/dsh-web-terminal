@@ -33,8 +33,8 @@ import { createGitBashResolver } from './git-bash.js'
 import { createSshHosts } from './ssh-config.js'
 import { createGitHeader } from './git-header.js'
 import { POSIX_SHELLS, WINDOWS_SHELLS, defaultShellSpec, shellSpec } from './shells.js'
-import { createProcessTable } from './process-table.js'
-import { createWindowsPath } from './windows-path.js'
+import { activityDue, createProcessTable } from './process-table.js'
+import { createWindowsPath, listerCwd } from './windows-path.js'
 import { trimReplay } from './replay.js'
 import { createSubagents } from './subagents.js'
 import { createEdits } from './edits.js'
@@ -226,7 +226,7 @@ async function resolveOnPath(command) {
     let child
     try {
       const lister = process.platform === 'win32' ? 'where.exe' : 'which'
-      child = spawn(lister, [command], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env })
+      child = spawn(lister, [command], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env, cwd: process.platform === 'win32' ? listerCwd() : undefined })
     } catch {
       resolve(undefined)
       return
@@ -424,9 +424,18 @@ function apply(ctx) {
       if (ws === null || ws.readyState !== ws.OPEN) return stopDrainWatch(session)
       if (ws.bufferedAmount > config.lowWater) return
       stopDrainWatch(session)
-      send(ws, { type: 'resync', replay: replayOf(session) })
+      send(ws, catchUpFrame(session))
     }, config.drainMs)
     session.drainTimer.unref?.()
+  }
+  /**
+   * What a socket that fell behind missed. The frames it did get form an unbroken prefix of the stream, so the dropped
+   * tail alone continues it; only when that tail outgrew the replay limit is the whole replay repainted.
+   */
+  const catchUpFrame = (session) => {
+    const missed = session.missed
+    session.missed = undefined
+    return typeof missed === 'string' && missed !== '' ? { type: 'data', data: missed } : { type: 'resync', replay: replayOf(session) }
   }
   /** The scrollback to repaint from, trimmed to the limit (it may sit slightly over between trims). */
   const replayOf = (session) => {
@@ -449,6 +458,7 @@ function apply(ctx) {
     if (text === '' || ws === null || ws.readyState !== ws.OPEN || session.congested) return
     if (ws.bufferedAmount > config.highWater) {
       session.congested = true
+      session.missed = text
       watchDrain(session)
       return
     }
@@ -457,7 +467,12 @@ function apply(ctx) {
   /** Queue one chunk of live output for the attached browser; it goes out within `batchMs`. */
   const forwardData = (session, text) => {
     const ws = session.ws
-    if (ws === null || ws.readyState !== ws.OPEN || session.congested) return
+    if (ws === null || ws.readyState !== ws.OPEN) return
+    if (session.congested) {
+      // null: too much was missed to resend, the whole replay is repainted instead.
+      if (typeof session.missed === 'string') session.missed = session.missed.length + text.length > REPLAY_LIMIT ? null : session.missed + text
+      return
+    }
     session.pendingText += text
     if (session.flushTimer !== null) return
     session.flushTimer = setTimeout(() => flushData(session), config.batchMs)
@@ -833,9 +848,12 @@ function apply(ctx) {
   // On Windows that walk goes through one long-lived PowerShell helper, stopped when idle and on dispose.
   const processes = optional('process table', () => createProcessTable(), { snapshot: async () => undefined, stop() {} })
   let polling = false
+  let activityTick = 0
   const activityTimer = setInterval(async () => {
     if (polling) return
-    const watched = [...sessions.values()].filter((s) => !s.exited && s.ws !== null && typeof s.handle.pid === 'number')
+    // A window in a hidden page is looked at on every few ticks only (its "agent stopped" alert still comes, later).
+    activityTick++
+    const watched = [...sessions.values()].filter((s) => !s.exited && s.ws !== null && typeof s.handle.pid === 'number' && activityDue(s.hidden === true, activityTick))
     if (watched.length === 0) return
     polling = true
     try {
@@ -930,6 +948,7 @@ function apply(ctx) {
       dropPending(session)
       send(ws, { type: 'attached', created: false, replay: replayOf(session), exited: session.exited, exitCode: session.exitCode, agent: session.agent ?? null, subagents: session.subagents.list(), edits: session.edits.list() })
       session.lastBusy = undefined
+      session.hidden = false // the client says so again when its page is hidden
       gitHeader?.attach(session)
       if (cols > 0 && rows > 0 && !session.exited) resizeHandle(session.handle, cols, rows)
     } else {
@@ -1009,12 +1028,11 @@ function apply(ctx) {
           live.exitCode = outcome?.exitCode ?? null
           if (live.subagents.endAll()) notifySubagents(live)
           // A congested socket missed output: repaint it from the replay now, so no later resync lands after the exit.
+          if (!live.congested) flushData(live) // may find the socket backed up and mark it congested
           if (live.congested) {
             stopDrainWatch(live)
             dropPending(live)
-            send(live.ws, { type: 'resync', replay: replayOf(live) })
-          } else {
-            flushData(live)
+            send(live.ws, catchUpFrame(live))
           }
           send(live.ws, { type: 'exit', exitCode: live.exitCode })
         },
@@ -1043,6 +1061,8 @@ function apply(ctx) {
         const c = clampDim(message.cols, 0, 2, 500)
         const r = clampDim(message.rows, 0, 1, 200)
         if (c > 0 && r > 0 && !bound.exited) resizeHandle(bound.handle, c, r)
+      } else if (message.type === 'visibility') {
+        bound.hidden = message.visible === false
       } else if (message.type === 'signal' && ALLOWED_SIGNALS.has(message.signal)) {
         safeCall(() => bound.handle.signalForeground(message.signal))
       } else if (message.type === 'git-refresh') {
