@@ -87,6 +87,63 @@ test('checkPatternAlert refuses empty, invalid, over-long and empty-matching reg
   assert.equal(bad({ text: '(' }).ok, true)
 })
 
+test('regexes that backtrack without bound are refused when saved: alternation, counted or optional parts in a repeated group', () => {
+  const bad = (text) => s.checkPatternAlert(pattern({ text, regex: true }))
+  for (const text of ['(a|aa)+$', '(a|a)*b', '(a{1,9})+x', '(a+)+$', '(a?){25}a{25}', '((a)|b)+c', '(?:a|b)*c', '(x(y|z)w)+']) {
+    const checked = bad(text)
+    assert.equal(checked.ok, false, text)
+    assert.match(checked.error, /repeated group/, text)
+  }
+  // Many open-ended repeats in a row are polynomial, so they are capped too.
+  assert.match(bad('.*a.*b.*c.*d').error, /at most 3 open-ended/)
+  // Shapes that are fine: alternation or repeats outside a repeated group, a group that is optional or exactly once, classes and escapes.
+  for (const text of ['(error|fail)ed?', '(a|b)c', '(ab)+c', '(\\d+) items', '[()+*|]+x', '\\(a|b\\)+', '(a+)?b', '(a|b){1}c', 'a.*b.*c']) assert.equal(bad(text).ok, true, text)
+  // The shipped examples stay valid.
+  for (const p of s.defaultPatternAlerts()) assert.equal(s.checkPatternAlert(p).ok, true, p.id)
+  // A stored (hand-edited) pattern of that shape never reaches the matcher.
+  assert.equal(s.cleanPatternAlerts([pattern({ text: '(a|aa)+$', regex: true })]).length, 0)
+  assert.deepEqual(s.activeMatchers([pattern({ id: 'x', text: '(a|aa)+$', regex: true })], 't1'), [])
+})
+
+test('a regex only looks at the first characters of a line, and one that takes too long is switched off', () => {
+  const re = pattern({ id: 'slow', text: 'z$', regex: true })
+  const text = pattern({ id: 'plain', text: 'needle' })
+  const matchers = s.activeMatchers([re, text], 't1')
+  const [m] = matchers
+  assert.equal(m.test('a'.repeat(s.REGEX_LINE_MAX - 1) + 'z'), true)
+  assert.equal(m.test('a'.repeat(s.REGEX_LINE_MAX + 1) + 'z'), false, 'beyond the cap nothing is read')
+  // A clock that jumps 100 ms per reading: the first test of the pattern goes over the budget.
+  let t = 0
+  const clock = () => (t += 100)
+  const slow = []
+  const state = s.newScanState()
+  const hits = s.scanChunk(state, 'one z\nneedle z\n', matchers, 0, { onSlow: (p, ms) => slow.push([p.id, ms]), clock })
+  assert.deepEqual(slow, [['slow', 100]], 'told once')
+  assert.deepEqual(hits.map((h) => h.pattern.id), ['slow', 'plain'], 'the line it ran on still counts, the plain pattern is not timed')
+  assert.equal(m.slow, true)
+  s.scanChunk(state, 'again z\n', matchers, 10_000_000, { onSlow: (p) => slow.push(p.id), clock })
+  assert.equal(slow.length, 1, 'a switched-off pattern is not run again')
+  assert.deepEqual(s.activeMatchers([re], 't1'), [], 'and is no longer active')
+})
+
+test('feeding output to a slow regex switches the pattern off in the list and shows a notice', () => {
+  s.clearNotices()
+  s.getPrefs().patternAlerts = [pattern({ id: 'slow2', name: 'Slow one', text: 'q$', regex: true })]
+  const id = s.openTerminal({ cwd: 'C:\\work' })
+  const rt = s.ensureRuntime(s.getWins().find((w) => w.id === id))
+  const realNow = performance.now.bind(performance)
+  let t = 0
+  performance.now = () => (t += 100)
+  try {
+    s.feedPatternAlerts(rt, 'nothing q\n')
+  } finally {
+    performance.now = realNow
+  }
+  assert.equal(s.getPrefs().patternAlerts[0].enabled, false)
+  assert.match(s.getNotices().map((n) => n.text).join('|'), /Slow one.*switched off/)
+  s.clearNotices()
+})
+
 test('checkPatternAlert normalises the rest: cooldown clamped, name cut, unknown level urgent, fresh id', () => {
   const ok = s.checkPatternAlert({ text: 'x', name: 'n'.repeat(80), cooldownSec: 99999, level: 'weird', id: 'bad id!' })
   assert.equal(ok.ok, true)
