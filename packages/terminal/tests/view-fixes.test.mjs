@@ -188,3 +188,18 @@ test('a window opened in another tab offers a Reconnect button', async () => {
   assert.equal(FakeWebSocket.instances.length, before + 1)
   assert.equal(q('.wt-win [data-act="reconnect"]'), null, 'gone once reconnecting')
 })
+
+// ── 13. maximize on a pinned window ──
+
+test('the maximize button is disabled, with a tooltip, on a pinned window', async () => {
+  const id = v.openTerminal({ cwd: 'C:\work' })
+  render()
+  await until(() => q('.wt-win [data-act="maximize"]'), 'the button')
+  const button = () => q('.wt-win [data-act="maximize"]')
+  assert.equal(button().disabled, false)
+  v.flushSync(() => v.updateWin(id, { pinned: true }))
+  assert.equal(button().disabled, true)
+  assert.match(button().title, /Unpin/)
+  v.flushSync(() => v.updateWin(id, { pinned: false }))
+  assert.equal(button().disabled, false)
+})

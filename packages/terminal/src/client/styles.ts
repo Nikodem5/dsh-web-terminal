@@ -156,6 +156,8 @@ const VIEW_CSS = `
 .wt-hbtn { width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--wt-dim); font-size: 13px; line-height: 1; cursor: pointer; flex: none; }
 .wt-hbtn:hover { background: var(--wt-hover); color: var(--wt-text); }
 .wt-hbtn[data-on="true"] { color: var(--wt-accent); }
+.wt-hbtn:disabled { opacity: 0.4; cursor: default; }
+.wt-hbtn:disabled:hover { background: transparent; color: var(--wt-dim); }
 .wt-hbtn[data-danger="true"]:hover { background: #ef444433; color: #ef4444; }
 .wt-body { flex: 1; min-height: 0; padding: 8px; background: var(--wt-term-bg, var(--wt-deep)); }
 .wt-holder { width: 100%; height: 100%; }

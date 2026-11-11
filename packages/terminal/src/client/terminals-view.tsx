@@ -426,7 +426,7 @@ function TerminalWindow({ win, stage, focused, onGhost, mission }: WindowProps):
         </button>
         <button type="button" className="wt-hbtn" title="More" onPointerDown={(e) => e.stopPropagation()} onClick={() => setMore((v) => !v)}>⋯</button>
         <button type="button" className="wt-hbtn" title="Minimize" onClick={() => updateWin(win.id, { minimized: true })}>–</button>
-        <button type="button" className="wt-hbtn" title={win.maximized ? 'Restore' : 'Maximize'} onClick={() => toggleMaximize(win.id)}>{win.maximized ? '❐' : '□'}</button>
+        <button type="button" className="wt-hbtn" data-act="maximize" disabled={win.pinned} title={win.pinned ? 'Unpin this window to maximize it' : win.maximized ? 'Restore' : 'Maximize'} onClick={() => toggleMaximize(win.id)}>{win.maximized ? '❐' : '□'}</button>
         <button type="button" className="wt-hbtn" data-danger="true" title="Close and end the shell" onClick={() => requestClose([win.id])}>✕</button>
       </div>
       {more ? (
