@@ -169,3 +169,26 @@ test('broadcastLine reports how many terminals got the line', async () => {
   assert.equal(s.broadcastLine('ls'), 1, 'a disconnected terminal does not count')
   assert.equal(a.sock.sent.filter((f) => f.data === 'ls\r').length, 2)
 })
+
+// ── 10. the block header decides from row counts ──
+
+test('blockOutputBlocked reads no text from the buffer; blank output is found out when an action runs', async () => {
+  const { rt } = await open()
+  const blank = '\x1b]133;A\x07$ \x1b]133;B\x07true\r\n\x1b]633;E;true\x07\x1b]133;C\x07\r\n\r\n\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07'
+  rt.term.write(blank)
+  await new Promise((resolve) => rt.term.write('', resolve))
+  const block = rt.blocks.list().find((b) => b.command === 'true')
+  assert.ok(block, 'the finished command has a block')
+  const buf = rt.term.buffer.active
+  const real = buf.getLine.bind(buf)
+  let reads = 0
+  buf.getLine = (y) => { reads++; return real(y) }
+  try {
+    assert.equal(s.blockOutputBlocked(rt, block), undefined, 'rows exist, so the actions are offered')
+    assert.equal(reads, 0, 'no buffer line was read')
+  } finally {
+    delete buf.getLine
+  }
+  assert.ok('disabled' in s.blockOutput(rt, block), 'extracting finds that there is only blank output')
+  assert.equal(await s.copyBlockOutput(rt, block), false)
+})

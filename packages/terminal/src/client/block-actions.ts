@@ -24,6 +24,16 @@ export function blockSpans(rt: Runtime): { spans: Span[]; byId: Map<number, Bloc
   return { spans, byId }
 }
 
+/**
+ * Why the output actions are unavailable, from row positions alone: nothing is read out of the buffer, so the
+ * header can ask on every refresh. (Output that is only blank rows is found out when an action runs.)
+ */
+export function blockOutputBlocked(rt: Runtime, block: Block): string | undefined {
+  const buf = rt.term.buffer.active
+  const rows = outputRows(block, buf.baseY + buf.cursorY, buf.cursorX)
+  return 'disabled' in rows ? rows.disabled : undefined
+}
+
 /** The block's output as text, or why it cannot be had. */
 export function blockOutput(rt: Runtime, block: Block): { ok: OutputText } | { disabled: string } {
   const buf = rt.term.buffer.active
