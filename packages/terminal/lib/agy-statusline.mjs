@@ -8,16 +8,18 @@
 //     `--settings` overrides for the session) and relays its output, so what they see does not change.
 // Silent: it never prints errors and always exits 0.
 
-import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { postJson, readStdin } from './post.js'
+import { runUser } from './run-user.js'
 
 const USER_TIMEOUT_MS = 4000
 /** Set on the user's command so a status line that runs this wrapper again cannot loop. */
 const GUARD_ENV = 'DSH_WT_AGY_STATUSLINE'
+
+export { runUser }
 
 /** agy's config folder (DSH_WT_GEMINI_DIR overrides it, for tests). */
 export function geminiDir(env = process.env) {
@@ -43,28 +45,9 @@ export function userAgyStatusLine(env = process.env) {
   }
 }
 
-/** Run the user's command with `input` on stdin; resolves with its stdout ('' on any failure). */
-function runUser(command, input) {
-  // agy expands a leading `~` itself; do the same, since the command now runs from here.
-  const expanded = command.startsWith('~') ? join(homedir(), command.slice(1)) : command
-  return new Promise((resolve) => {
-    let child
-    try {
-      child = spawn(expanded, { shell: true, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: { ...process.env, [GUARD_ENV]: '1' } })
-    } catch {
-      return resolve('')
-    }
-    const out = []
-    const timer = setTimeout(() => {
-      try { child.kill() } catch {}
-      resolve(Buffer.concat(out).toString('utf8'))
-    }, USER_TIMEOUT_MS)
-    child.stdout.on('data', (chunk) => out.push(chunk))
-    child.stdin.on('error', () => {})
-    child.on('error', () => { clearTimeout(timer); resolve('') })
-    child.on('close', () => { clearTimeout(timer); resolve(Buffer.concat(out).toString('utf8')) })
-    child.stdin.end(input)
-  })
+/** agy expands a leading `~` itself; do the same, since the command now runs from here. */
+function expandHome(command) {
+  return command.startsWith('~') ? join(homedir(), command.slice(1)) : command
 }
 
 async function main() {
@@ -75,7 +58,7 @@ async function main() {
   const runnable = user !== undefined && !user.command.includes('agy-statusline')
   const [, output] = await Promise.all([
     token && base ? postJson(`${base}/antigravity-status`, token, input) : undefined,
-    runnable ? runUser(user.command, input) : '',
+    runnable ? runUser(expandHome(user.command), input, GUARD_ENV, USER_TIMEOUT_MS) : '',
   ])
   if (output) process.stdout.write(output)
 }

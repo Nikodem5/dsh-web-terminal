@@ -168,6 +168,25 @@ test('hook.mjs forwards the event with the secret, keeps only what the host read
   }
 })
 
+test('agy-statusline.mjs shares the Claude wrapper runUser, which kills a hung command with everything it started', async () => {
+  const { runUser: claudeRunUser } = await import('../lib/statusline.js')
+  const { runUser } = await import('../lib/agy-statusline.mjs')
+  assert.equal(runUser, claudeRunUser, 'one implementation, not a copy')
+  const pidFile = join(root, 'agy-grandchild.pid')
+  const file = join(root, 'agy-hang.js')
+  writeFileSync(file, `const { spawn } = require('node:child_process')
+const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit'] })
+require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid))
+setInterval(() => {}, 1000)`)
+  assert.equal(await runUser(`node "${file.replaceAll('\\', '/')}"`, '{}', 'DSH_WT_AGY_STATUSLINE', 1500), '')
+  const pid = Number(readFileSync(pidFile, 'utf8'))
+  const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
+  const deadline = Date.now() + 10_000
+  while (alive() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+  if (alive()) { try { process.kill(pid) } catch {} }
+  assert.equal(alive(), false, 'the grandchild must not survive the timeout')
+})
+
 test('agy-statusline.mjs posts the payload and relays the user\'s own status line', async () => {
   const host = await fakeHost()
   const gemini = fresh('gemini')
