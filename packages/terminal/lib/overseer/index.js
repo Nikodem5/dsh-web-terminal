@@ -100,11 +100,12 @@ const str = (v, max) => (typeof v === 'string' && v.length > 0 ? v.slice(0, max)
  * @param options.service - name -> an optional service, or undefined (never throws).
  * @param options.dir - folder for the hidden-terminal list.
  * @param options.transcriptDirs - allowed Claude config folders (tests only).
+ * @param options.readTranscript - replaces the transcript reader (tests only).
  */
-export function createOverseer({ sessions, service, dir, transcriptDirs }) {
+export function createOverseer({ sessions, service, dir, transcriptDirs, readTranscript }) {
   const budget = envNumber('DSH_WT_OVERSEER_BUDGET', DEFAULT_BUDGET)
   const maxTokens = envNumber('DSH_WT_OVERSEER_MAX_TOKENS', 4096)
-  const transcripts = createTranscriptReader({ dirs: transcriptDirs })
+  const transcripts = readTranscript === undefined ? createTranscriptReader({ dirs: transcriptDirs }) : { read: readTranscript }
   const file = join(dir, 'overseer.json')
 
   /** Window ids hidden from the Overseer: persisted, and enforced here for every request. */
@@ -198,10 +199,33 @@ export function createOverseer({ sessions, service, dir, transcriptDirs }) {
     if (target.code !== undefined) return writeJson(res, 200, { ok: false, code: target.code, error: target.error })
     const { llm, selection } = target
 
+    // The client may stop (Stop button, closed panel, reload) at any point, including while the context is
+    // built: listen from the start, and never call the model for a request nobody waits for any more.
+    const controller = new AbortController()
+    let finished = false
+    res.on('close', () => {
+      if (!finished) controller.abort()
+    })
+    inflight.add(controller)
+    try {
+      await answer(res, controller, { body, question, llm, selection })
+    } finally {
+      finished = true
+      inflight.delete(controller)
+    }
+  }
+
+  /** Build the context and stream the model's answer for one request; returns when it is over (or abandoned). */
+  const answer = async (res, controller, { body, question, llm, selection }) => {
     const terminals = visibleTerminals(body)
     const selected = Array.isArray(body.selected) ? body.selected.filter((n) => Number.isInteger(n)) : null
     const marker = newMarker()
     const context = await buildContext({ question, terminals, selected, budget, marker, readTranscript: transcripts.read })
+    if (controller.signal.aborted || res.destroyed) {
+      // Nobody is waiting (the client left, or the plugin unloaded): no model call.
+      if (!res.writableEnded && !res.destroyed) res.end()
+      return
+    }
     const history = boundHistory(body.history)
     const options = {
       provider: selection.provider,
@@ -213,18 +237,11 @@ export function createOverseer({ sessions, service, dir, transcriptDirs }) {
     }
 
     // The answer streams as server-sent events. The client reads them with fetch (it needs the auth header).
-    const controller = new AbortController()
-    let finished = false
     res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no', 'referrer-policy': 'no-referrer' })
     const event = (name, data) => {
       if (res.writableEnded || res.destroyed) return
       res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
     }
-    // The client stopped (Stop button, closed panel, reload): stop the model call too.
-    res.on('close', () => {
-      if (!finished) controller.abort()
-    })
-    inflight.add(controller)
     event('meta', {
       model: { provider: selection.provider, model: selection.model },
       terminals: terminals.map((t) => ({ num: t.num, id: t.id })),
@@ -257,9 +274,6 @@ export function createOverseer({ sessions, service, dir, transcriptDirs }) {
         reason = 'error'
         event('error', { code: 'model-error', error: (error instanceof Error ? error.message : String(error)).slice(0, 500) })
       }
-    } finally {
-      finished = true
-      inflight.delete(controller)
     }
     event('done', { reason })
     if (!res.writableEnded) res.end()

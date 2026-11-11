@@ -178,6 +178,45 @@ test('closing the request aborts the model call', async () => {
   }
 })
 
+test('a client that leaves while the context is being built never reaches the model', async () => {
+  // createOverseer directly, with a transcript read that stays pending until the test lets it finish.
+  const { createOverseer } = await import('../lib/overseer/index.js')
+  const { Readable } = await import('node:stream')
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  let reading = false
+  const streamed = []
+  const sessions = new Map([['tx1-0', { cwd: 'C:\\w', shellId: 'default', exited: false, replay: 'out\r\n', transcript: { path: 'C:\\t.jsonl' } }]])
+  const model = { stream: (options) => { streamed.push(options); return (async function* () { yield { type: 'finish', reason: { kind: 'stop' } } })() } }
+  const service = (name) => (name === 'llm' ? model : { currentSelection: () => ({ provider: 'fake', model: 'fake-1' }) })
+  const overseer = createOverseer({ sessions, service, dir: join(home, 'overseer-abort'), readTranscript: async () => { reading = true; await gate; return undefined } })
+  try {
+    const ask = (aborted) => {
+      const req = Readable.from([Buffer.from(JSON.stringify({ question: 'what now?', terminals: [{ id: 'tx1-0', num: 1, name: 'x' }] }))])
+      req.method = 'POST'
+      const res = new EventEmitter()
+      Object.assign(res, { writableEnded: false, destroyed: false, written: [], writeHead() {}, write(chunk) { this.written.push(chunk) }, end() { this.writableEnded = true } })
+      return { res, done: overseer.askHandler(req, res) }
+    }
+    const left = ask()
+    await until(() => reading, 'the context build to start')
+    left.res.destroyed = true
+    left.res.emit('close') // the client disconnected (or pressed Stop) mid-build
+    release()
+    await left.done
+    assert.equal(streamed.length, 0, 'the model is not called for a request nobody waits for')
+    assert.deepEqual(left.res.written, [], 'and nothing is written to the dead socket')
+    // A client that stays gets its answer as before.
+    reading = false
+    const stays = ask()
+    await stays.done
+    assert.equal(streamed.length, 1)
+    assert.ok(stays.res.written.some((c) => c.startsWith('event: done')))
+  } finally {
+    overseer.dispose()
+  }
+})
+
 test('a model error is reported as an error event', async () => {
   await terminal('ta4-0', 'x\r\n')
   const saved = llm.script
