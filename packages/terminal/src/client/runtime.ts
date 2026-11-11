@@ -667,6 +667,7 @@ export function disposeRuntime(id: string, kill: boolean): void {
   } catch {}
   untrackUnread(id)
   rt.blockBar?.dispose()
+  rt.blocks?.dispose() // its OSC handlers and the markers on the buffer
   try {
     rt.term.dispose()
   } catch {}

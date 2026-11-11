@@ -7,7 +7,7 @@ import { providerForCommand } from './providers.ts'
 import { noteFolder, noteSsh } from './preferences.ts'
 import { disposeRuntime } from './runtime.ts'
 import { sshTitle } from './ssh.ts'
-import type { Rect, SshTarget, WinState } from './types.ts'
+import type { Activity, Rect, SshTarget, WinState } from './types.ts'
 
 // ── window operations ──────────────────────────────────────────────────────
 
@@ -201,12 +201,12 @@ export function closeAll(): void {
   persistSoon()
 }
 
+/** Whether a terminal in this state is doing something the user might not want to lose (closing or restarting it ends that). */
+export const isBusyActivity = (a: Activity | undefined): boolean => a === 'working' || a === 'needs-you' || a === 'running'
+
 /** Terminals whose shell is doing something the user might not want to lose. */
 export function busyAmong(ids: string[]): WinState[] {
-  return store.wins.filter((w) => ids.includes(w.id)).filter((w) => {
-    const a = runtimes.get(w.id)?.activity
-    return a === 'working' || a === 'needs-you' || a === 'running'
-  })
+  return store.wins.filter((w) => ids.includes(w.id)).filter((w) => isBusyActivity(runtimes.get(w.id)?.activity))
 }
 
 /** Layout presets over the non-pinned, non-minimized windows. */

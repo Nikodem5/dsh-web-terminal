@@ -285,3 +285,19 @@ test('a minimized window gives its GPU context back, and gets one again when sho
     s.gpuRenderer.create = real
   }
 })
+
+// ── 17. cleanups ──
+
+test('one definition of "busy" serves closing, restarting and the update prompt', () => {
+  for (const a of ['working', 'needs-you', 'running']) assert.equal(s.isBusyActivity(a), true, a)
+  for (const a of ['idle', 'finished', 'exited', 'offline', 'connected', 'disconnected', undefined]) assert.equal(s.isBusyActivity(a), false, String(a))
+})
+
+test('closing a terminal disposes its command-block model', async () => {
+  const { id, rt } = await open()
+  let disposed = 0
+  const real = rt.blocks.dispose.bind(rt.blocks)
+  rt.blocks.dispose = () => { disposed++; real() }
+  s.closeWin(id)
+  assert.equal(disposed, 1)
+})
