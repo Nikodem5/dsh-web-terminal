@@ -1,8 +1,8 @@
 {
-  "name": "dsh-web-terminal",
+  "name": "@nikodem5/dsh-web-terminal",
   "version": "0.1.0",
-  "private": true,
-  "description": "Interactive PTY terminals inside the DeepSeek Harness web GUI, with one-click launchers for Claude Code (subscription sign-in via claude login) and Antigravity CLI.",
+  "private": false,
+  "description": "Multi-terminal workspace inside the DeepSeek Harness web GUI: draggable PTY windows for running several coding agents side by side, with one-click Claude Code and Antigravity CLI launchers, attention states, usage stats, command blocks and SSH.",
   "author": "Nikodem Marcinkiewicz",
   "repository": {
     "type": "git",
@@ -13,6 +13,15 @@
   "bugs": {
     "url": "https://github.com/Nikodem5/dsh-web-terminal/issues"
   },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "terminal",
+    "pty",
+    "web-terminal",
+    "claude-code"
+  ],
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -24,6 +33,12 @@
     },
     "./package.json": "./package.json"
   },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -35,6 +50,9 @@
       ]
     }
   },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
   "devDependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
@@ -43,13 +61,11 @@
     "@xterm/xterm": "^6.0.0",
     "esbuild": "^0.25.0",
     "jsdom": "^29.1.1",
-    "react-dom": "^18.3.1",
-    "ws": "^8.18.0"
+    "react-dom": "^18.3.1"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-host-webserver": ">=0.1.2-rc.1",
-    "@deepseek-ai/dsh-subprocess": ">=0.1.2-rc.1",
-    "react": "^18.2.0"
+    "@deepseek-ai/dsh-subprocess": ">=0.1.2-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-host-webserver": {
@@ -61,10 +77,14 @@
   },
   "scripts": {
     "build": "node build.mjs",
+    "prepack": "npm run build",
     "test": "node --test tests/*.test.mjs && node smoke-host.mjs && node smoke-client.mjs && node smoke-view.mjs"
   },
   "engines": {
     "node": ">=22"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }

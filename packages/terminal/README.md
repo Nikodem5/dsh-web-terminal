@@ -1,9 +1,24 @@
-# dsh-web-terminal
+# @nikodem5/dsh-web-terminal
 
 A **Terminals** page for DeepSeek Harness: a sidebar entry (right after *Plugins*) that opens a full page holding a
 free-form workspace of real PTY terminals — open as many as you like, drag and resize them like app
 windows, snap them to edges/halves/quarters, pin them in place, and watch what every agent is doing from a
 list on the right. Built for running several agents (Claude Code and the Antigravity CLI) side by side.
+
+## Install
+
+```powershell
+dsh plugin --profile web add @nikodem5/dsh-web-terminal
+```
+
+Restart the GUI afterwards. Use `--profile desktop` for the desktop app, and remove it with
+`dsh plugin --profile web remove @nikodem5/dsh-web-terminal`.
+
+Requires DSH 0.1.2-rc.1 or newer and Node.js 22+ on `PATH`. Terminals run on the host's own PTY, so there are no
+native builds and no postinstall scripts. Optional: the Claude Code CLI for the agent features, and Git for the
+Git Bash shell target on Windows.
+
+The companion plugin adds the Code page: `dsh plugin --profile web add dsh-code-editor`.
 
 ## Using it
 
