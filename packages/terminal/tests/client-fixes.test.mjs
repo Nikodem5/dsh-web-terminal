@@ -195,30 +195,122 @@ test('blockOutputBlocked reads no text from the buffer; blank output is found ou
 
 // ── 8. unread bookkeeping while output streams in the background ──
 
-test('background output redraws at most once per frame, and not at all once the badge is capped', async () => {
-  const { id, rt } = await open()
-  let emits = 0
-  const stop = s.subscribe(() => emits++)
-  try {
-    const line = async (n) => {
-      rt.term.write(`line ${n}\r\n`)
-      await new Promise((resolve) => rt.term.write('', resolve))
-    }
-    const t0 = Date.now()
-    for (let i = 0; i < 150; i++) await line(i)
-    const frames = Math.ceil((Date.now() - t0) / 16) + 2
-    assert.ok(s.unreadCount(id) > 99, 'the lines were counted')
-    assert.ok(emits <= frames, `${emits} redraws for 150 writes in ${Date.now() - t0} ms (at most ${frames} frames)`)
-    assert.ok(emits < 100, 'not one redraw per write')
-    await sleep(120) // let a pending frame emit
-    const settled = emits
-    for (let i = 150; i < 250; i++) await line(i)
-    await sleep(120)
-    assert.equal(emits, settled, 'the badge reads 99+ either way: nothing to redraw')
-  } finally {
-    stop()
+/**
+ * Frames and the fallback timer, run by hand on a virtual clock. The unread code asks for a redraw at the
+ * next animation frame and, for a page that gets no frames, for a timer too: one callback handed to both.
+ * Those two are captured here and run only when the test says so, so what is counted never depends on how
+ * fast the machine is. Every other timer and frame request goes to the real ones.
+ */
+function manualFrames() {
+  const real = { raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame, set: globalThis.setTimeout, clear: globalThis.clearTimeout }
+  const frames = new Map() // id -> callback
+  const timers = new Map() // id -> { due, fn }
+  const mine = new Set() // the ids handed out here
+  const asked = new WeakSet() // callbacks given to requestAnimationFrame
+  let now = 0
+  globalThis.requestAnimationFrame = (fn) => {
+    const id = {}
+    mine.add(id)
+    frames.set(id, fn)
+    asked.add(fn)
+    return id
   }
-})
+  globalThis.cancelAnimationFrame = (id) => (mine.has(id) ? frames.delete(id) : real.caf(id))
+  globalThis.setTimeout = (fn, ms = 0, ...args) => {
+    if (!asked.has(fn)) return real.set(fn, ms, ...args)
+    const id = {}
+    mine.add(id)
+    timers.set(id, { due: now + ms, fn })
+    return id
+  }
+  globalThis.clearTimeout = (id) => (mine.has(id) ? timers.delete(id) : real.clear(id))
+  return {
+    /** One animation frame: every callback asked for so far, unless an earlier one cancelled it. */
+    frame() {
+      now += 16
+      for (const [id, fn] of [...frames]) if (frames.delete(id)) fn(now)
+    },
+    /** Time passes without a frame. */
+    advance(ms) {
+      now += ms
+      for (const [id, t] of [...timers].sort((a, b) => a[1].due - b[1].due)) if (t.due <= now && timers.delete(id)) t.fn()
+    },
+    /** Run frames and timers until nothing is waiting. */
+    settle() {
+      for (let i = 0; i < 5 && (frames.size > 0 || timers.size > 0); i++) {
+        this.frame()
+        this.advance(100)
+      }
+      assert.equal(frames.size + timers.size, 0, 'nothing is left waiting')
+    },
+    restore() {
+      globalThis.requestAnimationFrame = real.raf
+      globalThis.cancelAnimationFrame = real.caf
+      globalThis.setTimeout = real.set
+      globalThis.clearTimeout = real.clear
+    },
+  }
+}
+
+/** An attached terminal nobody is looking at, its redraws counted, with frames driven by hand. */
+async function backgroundTerminal(run) {
+  // Opening a terminal needs real frames. It, and the tests before this one, may leave a frame or a timer pending
+  // that would redraw in the middle of the test. Timers run in the order they are due, so once a timer set now
+  // has fired, every one set before it has too (the fallback is 50 ms, a real frame 16 ms).
+  const { id, rt } = await open()
+  await sleep(60)
+  const frames = manualFrames()
+  try {
+    let emits = 0
+    const stop = s.subscribe(() => emits++)
+    try {
+      const line = async (n) => {
+        rt.term.write(`line ${n}\r\n`)
+        await new Promise((resolve) => rt.term.write('', resolve))
+      }
+      await run({ id, frames, line, emits: () => emits })
+    } finally {
+      stop()
+    }
+  } finally {
+    frames.restore()
+  }
+}
+
+test('background output redraws at most once per frame, and not at all once the badge is capped', () =>
+  backgroundTerminal(async ({ id, frames, line, emits }) => {
+    for (let i = 0; i < 150; i++) await line(i)
+    assert.ok(s.unreadCount(id) > 99, 'the lines were counted')
+    assert.equal(emits(), 0, 'no frame yet: nothing is redrawn per write')
+    frames.frame()
+    assert.equal(emits(), 1, 'one redraw for the whole burst')
+    frames.settle()
+    assert.equal(emits(), 1, 'and nothing more for that burst')
+    for (let i = 150; i < 250; i++) await line(i)
+    frames.settle()
+    assert.equal(emits(), 1, 'the badge reads 99+ either way: nothing to redraw')
+  }))
+
+test('a redraw waits for the frame it asked for; the fallback timer only stands in for a missing frame', () =>
+  backgroundTerminal(async ({ frames, line, emits }) => {
+    await line(1)
+    frames.advance(16)
+    frames.frame()
+    assert.equal(emits(), 1, 'the first frame redraws')
+    // The timer asked for along with that frame is not left to fire for the next one.
+    await line(2)
+    frames.advance(40)
+    assert.equal(emits(), 1, 'no frame has come: output between frames is not redrawn')
+    frames.frame()
+    assert.equal(emits(), 2, 'the next frame redraws')
+    // A page that gets no frames still redraws, once.
+    await line(3)
+    frames.advance(50)
+    assert.equal(emits(), 3, 'the timer redraws when no frame comes')
+    frames.frame()
+    assert.equal(emits(), 3, 'the frame that comes late has nothing left to do')
+    frames.settle()
+  }))
 
 test('focus changes still move the new-since marks: only the terminals concerned are re-decided', async () => {
   const a = await open()
