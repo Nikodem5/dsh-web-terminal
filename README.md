@@ -44,12 +44,21 @@ Both plugins run locally; the one feature that sends data out is the terminal's 
 
 ### From npm
 
+For the desktop app:
+
 ```powershell
 dsh plugin --profile desktop add @nikodem5/dsh-web-terminal
 dsh plugin --profile desktop add @nikodem5/dsh-code-editor
 ```
 
-Use `--profile web` instead of `desktop` for the browser GUI. Restart DSH afterwards, since plugins load at startup.
+For the browser GUI (`dsh web`):
+
+```powershell
+dsh plugin --profile web add @nikodem5/dsh-web-terminal
+dsh plugin --profile web add @nikodem5/dsh-code-editor
+```
+
+Restart DSH afterwards, since plugins load at startup.
 Remove one with `dsh plugin --profile <profile> remove <name>`.
 
 ### From a release archive
