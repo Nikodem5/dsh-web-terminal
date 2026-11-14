@@ -1,18 +1,31 @@
 {
-  "name": "dsh-code-editor",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Monaco-based code editor and reviewer inside the DeepSeek Harness web GUI.",
-  "author": "Nikodem Marcinkiewicz",
+  "name": "@nikodem5/dsh-code-editor",
+  "version": "0.2.0",
+  "private": false,
+  "description": "Monaco-based code editor and reviewer inside the DeepSeek Harness web GUI: explorer, git tools, search in files and Markdown preview.",
+  "author": {
+    "name": "Nikodem Marcinkiewicz",
+    "url": "https://github.com/Nikodem5"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Nikodem5/dsh-web-terminal.git",
     "directory": "packages/code-editor"
   },
-  "homepage": "https://github.com/Nikodem5/dsh-web-terminal#readme",
+  "homepage": "https://github.com/Nikodem5/dsh-web-terminal/tree/main/packages/code-editor#readme",
   "bugs": {
     "url": "https://github.com/Nikodem5/dsh-web-terminal/issues"
   },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "code-editor",
+    "monaco-editor",
+    "code-review",
+    "git"
+  ],
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -24,6 +37,12 @@
     },
     "./package.json": "./package.json"
   },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -35,9 +54,11 @@
       ]
     }
   },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
   "peerDependencies": {
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.2-rc.1",
-    "react": "^18.2.0"
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.2-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-host-webserver": {
@@ -46,19 +67,22 @@
   },
   "scripts": {
     "build": "node scripts/copy-shared-host.mjs && node build.mjs",
+    "prepack": "npm run build",
     "test": "node scripts/copy-shared-host.mjs && node --test tests/*.test.mjs && node smoke-view.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "dompurify": "^3.4.16",
     "esbuild": "^0.25.0",
     "jsdom": "^29.1.1",
     "marked": "^18.1.0",
     "monaco-editor": "^0.52.2",
-    "react-dom": "^18.3.1",
-    "ws": "^8.18.0"
+    "react-dom": "^18.3.1"
   }
 }

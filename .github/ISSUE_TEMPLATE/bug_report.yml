@@ -1,0 +1,83 @@
+name: Bug report
+description: Report something that is broken in dsh-web-terminal or dsh-code-editor
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here. Use the link in the issue chooser instead.
+  - type: dropdown
+    id: plugin
+    attributes:
+      label: Which plugin
+      options:
+        - dsh-web-terminal
+        - dsh-code-editor
+        - both
+        - not sure
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Shown in the help panel (F1) diagnostics, or the version in the installed package.json
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DeepSeek Harness version
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+        - macOS
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Browser or desktop app
+      description: For example the DSH desktop app, or the browser and its version when using the web interface
+    validations:
+      required: true
+  - type: input
+    id: shell
+    attributes:
+      label: Shell
+      description: For terminal bugs only, for example PowerShell 7, Git Bash, bash or WSL
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Terminals page
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Optional. Remove anything private, such as paths, tokens or terminal output you do not want to share

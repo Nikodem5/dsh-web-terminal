@@ -1,9 +1,49 @@
-# dsh-web-terminal
+# @nikodem5/dsh-web-terminal
 
 A **Terminals** page for DeepSeek Harness: a sidebar entry (right after *Plugins*) that opens a full page holding a
 free-form workspace of real PTY terminals — open as many as you like, drag and resize them like app
 windows, snap them to edges/halves/quarters, pin them in place, and watch what every agent is doing from a
 list on the right. Built for running several agents (Claude Code and the Antigravity CLI) side by side.
+
+![Terminals page with several tiled terminal windows and the terminal list](https://raw.githubusercontent.com/Nikodem5/dsh-web-terminal/main/docs/images/terminals.png)
+
+## Install
+
+From npm:
+
+```powershell
+dsh plugin --profile desktop add @nikodem5/dsh-web-terminal
+dsh plugin --profile web add @nikodem5/dsh-web-terminal
+```
+
+Use the profile you run (`desktop` for the desktop app, `web` for the web GUI) and restart DSH afterwards. Remove it
+with `dsh plugin --profile <profile> remove @nikodem5/dsh-web-terminal`.
+
+Requires DSH 0.1.5 or newer (tested against 0.2.2-rc.1; older versions load the plugin without showing its sidebar entry) and Node.js 22+ on `PATH`. Terminals run on the host's own PTY, so there are no
+native builds and no postinstall scripts. Optional: the Claude Code CLI for the agent features, and Git for the
+Git Bash shell target on Windows.
+
+The companion plugin adds the Code page: `dsh plugin --profile web add @nikodem5/dsh-code-editor`.
+
+From a release archive: download `dsh-plugins-<version>.zip` from
+[GitHub Releases](https://github.com/Nikodem5/dsh-web-terminal/releases), unzip it, close the app and run
+`node install.mjs desktop` (or `web`) in the unzipped folder. `--dry-run` previews, `--remove` uninstalls,
+and `--package dsh-web-terminal` installs only this plugin.
+
+From source:
+
+```powershell
+git clone https://github.com/Nikodem5/dsh-web-terminal.git
+cd dsh-web-terminal
+npm install
+npm run build
+npm run install:desktop      # or install:web; restart the app afterwards
+```
+
+Up to 0.1.0 this plugin was installed from a release archive or a clone under the unscoped name `dsh-web-terminal`.
+Installing 0.2.0 or newer with the archive or clone installer replaces that copy. If you switch to the npm package,
+remove the old copy first with the installer you used (`node install.mjs --remove --package dsh-web-terminal <profile>`),
+otherwise both copies are loaded.
 
 ## Using it
 
@@ -416,8 +456,8 @@ npm test                     # host (real PTY), client registration, jsdom rende
 npm run install:desktop      # copies into ~/.dsh/profiles/desktop (= node scripts/install.mjs desktop)
 ```
 
-The installer takes `--dry-run` to preview, `--remove` to uninstall and `--package dsh-web-terminal` to skip other
-plugins of the repo.
+The installer takes `--dry-run` to preview, `--remove` to uninstall and `--package @nikodem5/dsh-web-terminal` (or the
+short name `dsh-web-terminal`, or the folder name `terminal`) to skip other plugins of the repo.
 
 Restart the desktop app: plugins load at boot.
 

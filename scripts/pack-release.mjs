@@ -18,7 +18,7 @@ const PLUGINS = ['terminal', 'code-editor']
 
 export const releaseReadme = (v) => `# DeepSeek Harness plugins ${v}
 
-Two plugins for the DeepSeek Harness desktop app: **dsh-web-terminal** (Terminals page) and **dsh-code-editor** (Code page).
+Two plugins for the DeepSeek Harness desktop app: **@nikodem5/dsh-web-terminal** (Terminals page) and **@nikodem5/dsh-code-editor** (Code page).
 Requires Node.js 22+ on PATH. Full documentation: https://github.com/Nikodem5/dsh-web-terminal
 
 ## Install
@@ -28,12 +28,12 @@ Requires Node.js 22+ on PATH. Full documentation: https://github.com/Nikodem5/ds
 3. Start the app.
 
 Preview first with \`node install.mjs --dry-run desktop\`. Use \`--package dsh-web-terminal\` or \`--package dsh-code-editor\`
-to install only one plugin.
+(the scoped npm names and the folder names \`terminal\` and \`code-editor\` work too) to install only one plugin.
 
 ## Update
 
 Close the app, download the newer archive, unzip it and run \`node install.mjs desktop\` again. It replaces the
-installed copies.
+installed copies, including a 0.1.0 copy that was installed under the old unscoped name.
 
 ## Remove
 
@@ -43,13 +43,13 @@ The installer uses \`~/.dsh\` (or \`DSH_HOME\` if set) and only touches the plug
 License: MIT (see LICENSE).
 `
 
-export function pack() {
+/** Build the archive under `dist` (default: dist/ in the repo) and return its folder, archive path and size. */
+export function pack(dist = join(root, 'dist')) {
   for (const name of PLUGINS) {
     if (!existsSync(join(root, 'packages', name, 'lib', 'client.js'))) {
       throw new Error(`packages/${name}/lib/client.js is missing: run \`npm run build\` first`)
     }
   }
-  const dist = join(root, 'dist')
   const base = `dsh-plugins-${version}`
   const dir = join(dist, base)
   const zip = join(dist, `${base}.zip`)
@@ -73,7 +73,7 @@ export function pack() {
   const run = (cmd, args) => spawnSync(cmd, args, { cwd: dist, stdio: 'inherit' }).status === 0
   // Relative names + cwd=dist: GNU tar (e.g. from Git Bash) misreads `C:` as a remote host. On Windows prefer the
   // system bsdtar, which writes .zip with -a.
-  const winTar = join(process.env.SystemRoot ?? 'C:\Windows', 'System32', 'tar.exe')
+  const winTar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
   let ok = process.platform === 'win32'
     ? run(existsSync(winTar) ? winTar : 'tar', ['-a', '-cf', `${base}.zip`, base])
     : spawnSync('zip', ['-q', '-r', `${base}.zip`, base], { cwd: dist }).status === 0

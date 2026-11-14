@@ -9,4 +9,4 @@
 # profile, so no extra row is needed here.
 - insert:
     - id: web-terminal
-      name: dsh-web-terminal
+      name: '@nikodem5/dsh-web-terminal'
