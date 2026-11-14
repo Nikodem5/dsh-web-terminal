@@ -63,7 +63,7 @@ Remove one with `dsh plugin --profile <profile> remove <name>`.
 
 ### From a release archive
 
-1. Download `dsh-plugins-0.2.0.zip` from [GitHub Releases](https://github.com/Nikodem5/dsh-web-terminal/releases) and unzip it.
+1. Download `dsh-plugins-0.2.1.zip` from [GitHub Releases](https://github.com/Nikodem5/dsh-web-terminal/releases) and unzip it.
 2. Close the app.
 3. In the unzipped folder run `node install.mjs desktop` (or `web`; with no profile both are used). `--dry-run` previews.
 4. Start the app.
@@ -84,7 +84,7 @@ npm run install:desktop      # or install:web; restart the app afterwards
 
 After that, the help panel (F1) → **Update from source** pulls, rebuilds and reinstalls with one button; **Restart app** next to it restarts the app.
 
-`npm test` runs all tests; `npm run pack` builds the release archive `dsh-plugins-0.2.0.zip` into `dist/`. The installer copies each plugin
+`npm test` runs all tests; `npm run pack` builds the release archive `dsh-plugins-0.2.1.zip` into `dist/`. The installer copies each plugin
 into `~/.dsh/profiles/<profile>/node_modules` (override the location with `DSH_HOME`), because linked packages outside
 the profile tree do not get their browser half loaded.
 

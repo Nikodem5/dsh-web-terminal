@@ -1,6 +1,6 @@
 {
   "name": "@nikodem5/dsh-web-terminal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "Multi-terminal workspace inside the DeepSeek Harness web GUI: draggable PTY windows for running several coding agents side by side, with one-click Claude Code and Antigravity CLI launchers, attention states, usage stats, command blocks and SSH.",
   "author": {
