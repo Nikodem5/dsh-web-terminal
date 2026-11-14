@@ -1,20 +1,45 @@
-# dsh-code-editor
+# @nikodem5/dsh-code-editor
 
 A Monaco code editor and reviewer for the DeepSeek Harness web GUI: browse and edit files in folders
 you register, review what an agent changed, and run git from the same page. Everything runs locally;
 no data leaves your machine.
 
+![Code page with the file tree, the Monaco editor and the git changes list](https://raw.githubusercontent.com/Nikodem5/dsh-web-terminal/main/docs/images/code-editor.png)
+
 ## Install
 
+From npm:
+
 ```powershell
-dsh plugin --profile web add dsh-code-editor
+dsh plugin --profile desktop add @nikodem5/dsh-code-editor
+dsh plugin --profile web add @nikodem5/dsh-code-editor
 ```
 
-Restart the GUI afterwards. Use `--profile desktop` for the desktop app.
-Remove it with `dsh plugin --profile web remove dsh-code-editor`.
+Use the profile you run (`desktop` for the desktop app, `web` for the web GUI) and restart DSH afterwards. Remove it
+with `dsh plugin --profile <profile> remove @nikodem5/dsh-code-editor`.
 
-Requires DSH 0.1.2-rc.1 or newer, Node.js 22+, and `git` on `PATH` for the git features.
+Requires DSH 0.1.5 or newer (tested against 0.2.2-rc.1; older versions load the plugin without showing its sidebar entry), Node.js 22+, and `git` on `PATH` for the git features.
 No native builds and no postinstall scripts, so installing cannot leave a half-configured profile.
+
+From a release archive: download `dsh-plugins-<version>.zip` from
+[GitHub Releases](https://github.com/Nikodem5/dsh-web-terminal/releases), unzip it, close the app and run
+`node install.mjs desktop` (or `web`) in the unzipped folder. `--dry-run` previews, `--remove` uninstalls,
+and `--package dsh-code-editor` installs only this plugin.
+
+From source:
+
+```powershell
+git clone https://github.com/Nikodem5/dsh-web-terminal.git
+cd dsh-web-terminal
+npm install
+npm run build
+npm run install:desktop      # or install:web; restart the app afterwards
+```
+
+Up to 0.1.0 this plugin was installed from a release archive or a clone under the unscoped name `dsh-code-editor`.
+Installing 0.2.0 or newer with the archive or clone installer replaces that copy. If you switch to the npm package,
+remove the old copy first with the installer you used (`node install.mjs --remove --package dsh-code-editor <profile>`),
+otherwise both copies are loaded.
 
 ## What you get
 
@@ -31,7 +56,7 @@ Two halves:
 - **Host** (`lib/index.js`, this section): confined file and git routes plus a live-update WebSocket.
 - **Client** (`lib/client.js`, built from `src/` by `build.mjs`): the "Code" page.
 
-The host/client contract is [API.md](docs/API.md). It is the source of truth for routes, bodies, error codes and frames.
+The host/client contract is [API.md](https://github.com/Nikodem5/dsh-web-terminal/blob/main/packages/code-editor/docs/API.md). It is the source of truth for routes, bodies, error codes and frames.
 
 ## Host
 
