@@ -1,6 +1,6 @@
 # dsh-code-editor: host <-> client contract (v1)
 
-Package: `packages/code-editor`, npm name `dsh-code-editor`, cordis plugin name `code-editor`.
+Package: `packages/code-editor`, npm name `@nikodem5/dsh-code-editor`, cordis plugin name `code-editor`.
 Host half: `lib/index.js` (plain JS, ESM). Client half: `lib/client.js` (esbuild IIFE, like the terminal).
 Host `inject = ['webServer']` ONLY (plus `subprocess` if needed). NEVER read any other ctx property: a real cordis ctx throws on uninjected properties.
 All routes: JSON in/out, `cache-control: no-store`. Errors: `{ ok: false, error: string, code?: string }` with a fitting HTTP status.

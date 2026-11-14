@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-code-editor',
+  id: '@nikodem5/dsh-code-editor',
   factory: (require) => {
     // The loader's contract is a CommonJS-ish factory: `module` and `exports`
     // must exist before the bundled body runs, because esbuild's IIFE assigns

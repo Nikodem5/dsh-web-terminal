@@ -7,4 +7,4 @@
 # registry from the `dsh.client` and `exports["./client"]` fields in package.json.
 - insert:
     - id: code-editor
-      name: dsh-code-editor
+      name: '@nikodem5/dsh-code-editor'

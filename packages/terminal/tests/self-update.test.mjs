@@ -57,6 +57,15 @@ test('profileOf reads home and profile from the installed path, null elsewhere',
   assert.equal(profileOf(join(root, 'repo', 'packages', 'terminal')), null)
 })
 
+test('profileOf skips one scope segment: node_modules/@scope/<pkg> is a profile install too', () => {
+  const { home } = layout('scoped')
+  const scoped = join(home, 'profiles', 'web', 'node_modules', '@nikodem5', 'dsh-web-terminal')
+  assert.deepEqual(profileOf(scoped), { home, profile: 'web' })
+  // A scope folder outside node_modules, or a package nested deeper than one scope, is not a profile install.
+  assert.equal(profileOf(join(root, 'scoped', '@nikodem5', 'dsh-web-terminal')), null)
+  assert.equal(profileOf(join(home, 'profiles', 'web', 'node_modules', '@nikodem5', 'extra', 'dsh-web-terminal')), null)
+})
+
 test('readSource needs install-source.json pointing at a git clone', () => {
   const { pluginDir, repo } = layout('source')
   assert.deepEqual(readSource(pluginDir), { repo, commit: 'a'.repeat(40) })
