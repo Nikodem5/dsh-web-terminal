@@ -6,13 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.2.1] - 2026-11-14
 
+### Changed
+
+- **Repository:** The README spells out the `--profile web` install commands next to the desktop ones.
+
 ### Fixed
 
 - **Terminal:** Background output no longer redraws the terminal list between animation frames. A redraw was scheduled on both the next frame and a 50 ms fallback timer, and the one that lost stayed scheduled; now whichever fires first cancels the other.
 
-### Changed
+### Security
 
-- **Repository:** The README spells out the `--profile web` install commands next to the desktop ones.
+- **Code editor:** The Markdown preview's bundled sanitizer (DOMPurify) is updated from 3.4.16 to 3.4.18, which fixes three published advisories. The preview does not use the options those advisories concern, so this is a precaution.
 
 ## [0.2.0] - 2026-11-14
 
