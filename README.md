@@ -17,7 +17,7 @@ Terminals and a code editor for the DeepSeek Harness (DSH) desktop app, built fo
 | `@nikodem5/dsh-web-terminal` | **Terminals** page: a workspace of real terminals, with agent status for Claude Code and Antigravity CLI | [packages/terminal](packages/terminal/README.md) | [npm](https://www.npmjs.com/package/@nikodem5/dsh-web-terminal) |
 | `@nikodem5/dsh-code-editor` | **Code** page: Monaco editor, git tools and markers for files an agent changed | [packages/code-editor](packages/code-editor/README.md) | [npm](https://www.npmjs.com/package/@nikodem5/dsh-code-editor) |
 
-Everything runs locally.
+Both plugins run locally; the one feature that sends data out is the terminal's optional Overseer (see [How it works](#how-it-works)).
 
 ## Terminals (`dsh-web-terminal`)
 
@@ -98,7 +98,9 @@ Up to 0.1.0 the plugins were installed under the unscoped names `dsh-web-termina
 
 Each plugin has a host half (a Node module mounted in the DSH server: PTY sessions, file and git routes, WebSockets)
 and a client half (a bundle loaded into the app UI). Every route and socket accepts only loopback peers and Hosts and requires a per-boot token (see SECURITY.md).
-No data leaves your machine except what the agents you run in a terminal (Claude Code, Antigravity CLI) send themselves.
+No data leaves your machine, with two exceptions: what the agents you run in a terminal (Claude Code, Antigravity CLI)
+send themselves, and the Overseer, which sends terminal content to the model provider configured in the app each time
+you ask it a question (it says so before the first one).
 
 ## Security notes
 
