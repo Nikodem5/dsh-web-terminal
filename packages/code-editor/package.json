@@ -1,6 +1,6 @@
 {
   "name": "@nikodem5/dsh-code-editor",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "Monaco-based code editor and reviewer inside the DeepSeek Harness web GUI: explorer, git tools, search in files and Markdown preview.",
   "author": {

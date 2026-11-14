@@ -4,6 +4,16 @@ All notable changes to the `dsh-web-terminal` and `dsh-code-editor` plugins are 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-14
+
+### Fixed
+
+- **Terminal:** Background output no longer redraws the terminal list between animation frames. A redraw was scheduled on both the next frame and a 50 ms fallback timer, and the one that lost stayed scheduled; now whichever fires first cancels the other.
+
+### Changed
+
+- **Repository:** The README spells out the `--profile web` install commands next to the desktop ones.
+
 ## [0.2.0] - 2026-11-14
 
 ### Added
@@ -66,5 +76,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 First public release.
 
+[0.2.1]: https://github.com/Nikodem5/dsh-web-terminal/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Nikodem5/dsh-web-terminal/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Nikodem5/dsh-web-terminal/releases/tag/v0.1.0
