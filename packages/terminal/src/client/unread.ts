@@ -84,13 +84,18 @@ let framePending = false
 function emitSoon(): void {
   if (framePending) return
   framePending = true
+  let frame = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  // Whichever comes first redraws and takes the other back: a leftover timer would otherwise find the next
+  // request pending and redraw for it in the middle of a frame.
   const go = (): void => {
-    if (!framePending) return
+    cancelAnimationFrame(frame)
+    clearTimeout(timer)
     framePending = false
     emit()
   }
-  requestAnimationFrame(go)
-  setTimeout(go, 50)
+  frame = requestAnimationFrame(go)
+  timer = setTimeout(go, 50)
 }
 
 /** Absolute line of the cursor in the active buffer. */
